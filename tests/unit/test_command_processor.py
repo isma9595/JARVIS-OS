@@ -189,10 +189,12 @@ def test_empty_command():
     )
 
 
-def test_exit_command_should_exit():
+def test_stop_command_is_voice_cancel_without_exit():
     result = CommandProcessor(sample_profile()).process("стоп")
 
-    assert result["should_exit"] is True
+    assert result["intent"] == "voice.confirmation.none"
+    assert result["should_exit"] is False
+    assert "нет голосового действия" in result["response"]
 
 
 def test_normalizes_command():
@@ -561,6 +563,64 @@ def test_voice_simulation_identity_command():
     assert manager.has_pending_confirmation() is False
 
 
+def test_voice_simulation_jarvis_identity_command():
+    processor, manager = create_voice_enabled_processor()
+
+    result = processor.process("джарвис кто я")
+
+    assert result["intent"] == "voice.command.simulated"
+    assert result["should_exit"] is False
+    assert result["channel"] == "voice"
+    assert manager.has_pending_confirmation() is False
+
+
+def test_voice_simulation_jarvis_status_command():
+    processor, _manager = create_voice_enabled_processor()
+
+    result = processor.process("jarvis статус системы")
+
+    assert result["intent"] == "voice.command.simulated"
+    assert result["should_exit"] is False
+    assert "Активных сервисов" in result["response"]
+
+
+def test_voice_simulation_say_identity_command():
+    processor, _manager = create_voice_enabled_processor()
+
+    result = processor.process("скажи кто я")
+
+    assert result["intent"] == "voice.command.simulated"
+    assert result["should_exit"] is False
+
+
+def test_voice_simulation_ask_status_command():
+    processor, _manager = create_voice_enabled_processor()
+
+    result = processor.process("спроси статус системы")
+
+    assert result["intent"] == "voice.command.simulated"
+    assert result["should_exit"] is False
+
+
+def test_voice_simulation_voice_ask_status_command():
+    processor, _manager = create_voice_enabled_processor()
+
+    result = processor.process("голосом спроси статус системы")
+
+    assert result["intent"] == "voice.command.simulated"
+    assert result["should_exit"] is False
+
+
+def test_voice_simulation_nested_jarvis_say_memory_command():
+    processor, _manager = create_voice_enabled_processor()
+
+    result = processor.process("джарвис скажи покажи память")
+
+    assert result["intent"] == "voice.command.simulated"
+    assert result["should_exit"] is False
+    assert "принял голосовую команду: покажи память" in result["response"]
+
+
 def test_voice_simulation_profile_alias_command():
     processor, manager = create_voice_enabled_processor()
 
@@ -611,6 +671,16 @@ def test_voice_simulation_requires_confirmation():
     assert manager.get_pending_confirmation()["text"] == "отправь письмо"
 
 
+def test_voice_alias_requires_confirmation():
+    processor, manager = create_voice_enabled_processor()
+
+    result = processor.process("джарвис отправь письмо")
+
+    assert result["intent"] == "voice.confirmation_required"
+    assert manager.has_pending_confirmation() is True
+    assert manager.get_pending_confirmation()["text"] == "отправь письмо"
+
+
 def test_voice_confirmation_command_confirms_pending_action():
     processor, manager = create_voice_enabled_processor()
     processor.process("голосовая команда отправь письмо")
@@ -621,6 +691,25 @@ def test_voice_confirmation_command_confirms_pending_action():
     assert manager.has_pending_confirmation() is False
 
 
+def test_short_voice_confirmation_command_confirms_pending_action():
+    processor, manager = create_voice_enabled_processor()
+    processor.process("джарвис отправь письмо")
+
+    result = processor.process("подтверждаю")
+
+    assert result["intent"] == "voice.confirmation.confirmed"
+    assert manager.has_pending_confirmation() is False
+
+
+def test_short_voice_confirmation_command_without_pending():
+    processor, _manager = create_voice_enabled_processor()
+
+    result = processor.process("можно")
+
+    assert result["intent"] == "voice.confirmation.none"
+    assert result["should_exit"] is False
+
+
 def test_voice_cancellation_command_cancels_pending_action():
     processor, manager = create_voice_enabled_processor()
     processor.process("голосовая команда отправь письмо")
@@ -629,6 +718,25 @@ def test_voice_cancellation_command_cancels_pending_action():
 
     assert result["intent"] == "voice.confirmation.cancelled"
     assert manager.has_pending_confirmation() is False
+
+
+def test_short_voice_cancellation_command_cancels_pending_action():
+    processor, manager = create_voice_enabled_processor()
+    processor.process("джарвис отправь письмо")
+
+    result = processor.process("отмена")
+
+    assert result["intent"] == "voice.confirmation.cancelled"
+    assert manager.has_pending_confirmation() is False
+
+
+def test_short_voice_cancellation_command_without_pending():
+    processor, _manager = create_voice_enabled_processor()
+
+    result = processor.process("отбой")
+
+    assert result["intent"] == "voice.confirmation.none"
+    assert result["should_exit"] is False
 
 
 def test_voice_confirmation_command_without_pending():
@@ -660,7 +768,7 @@ def run_tests():
     test_exit_command()
     test_unknown_command()
     test_empty_command()
-    test_exit_command_should_exit()
+    test_stop_command_is_voice_cancel_without_exit()
     test_normalizes_command()
     test_send_email_requires_confirmation()
     test_delete_file_requires_confirmation()
@@ -683,13 +791,24 @@ def run_tests():
     test_memory_delete_command_delete_memory_does_not_delete()
     test_memory_delete_command_forget_all_does_not_delete()
     test_voice_simulation_identity_command()
+    test_voice_simulation_jarvis_identity_command()
+    test_voice_simulation_jarvis_status_command()
+    test_voice_simulation_say_identity_command()
+    test_voice_simulation_ask_status_command()
+    test_voice_simulation_voice_ask_status_command()
+    test_voice_simulation_nested_jarvis_say_memory_command()
     test_voice_simulation_profile_alias_command()
     test_voice_simulation_system_status_alias_command()
     test_voice_simulation_recognized_text_alias_command()
     test_voice_simulation_empty_text()
     test_voice_simulation_requires_confirmation()
+    test_voice_alias_requires_confirmation()
     test_voice_confirmation_command_confirms_pending_action()
+    test_short_voice_confirmation_command_confirms_pending_action()
+    test_short_voice_confirmation_command_without_pending()
     test_voice_cancellation_command_cancels_pending_action()
+    test_short_voice_cancellation_command_cancels_pending_action()
+    test_short_voice_cancellation_command_without_pending()
     test_voice_confirmation_command_without_pending()
 
 

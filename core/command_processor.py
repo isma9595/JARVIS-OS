@@ -64,21 +64,38 @@ class CommandProcessor:
     }
     VOICE_SIMULATION_PREFIXES = (
         "голосовая команда",
+        "распознанный текст",
+        "голосом спроси",
+        "голосом скажи",
+        "джарвис спроси",
+        "джарвис скажи",
         "голосом",
         "как голос",
-        "распознанный текст",
+        "джарвис",
+        "jarvis",
+        "скажи",
+        "спроси",
     )
     VOICE_CONFIRMATION_COMMANDS = {
         "подтвердить голосовую команду",
         "подтверждаю голосовую команду",
         "голос подтверждаю",
         "подтвердить голосом",
+        "подтверждаю",
+        "да подтверждаю",
+        "можно",
+        "давай",
+        "выполняй",
     }
     VOICE_CANCELLATION_COMMANDS = {
         "отменить голосовую команду",
         "отмени голосовую команду",
         "голос отмена",
         "отменить голосом",
+        "отмена",
+        "отбой",
+        "не надо",
+        "стоп",
     }
     COMMANDS_LIST_COMMANDS = {
         "покажи команды",
@@ -88,7 +105,6 @@ class CommandProcessor:
     }
     EXIT_COMMANDS = {
         "выход",
-        "стоп",
         "остановись",
         "завершить",
         "закрыть",
@@ -318,7 +334,7 @@ class CommandProcessor:
         if command_text is None:
             return ""
 
-        return str(command_text).strip().lower()
+        return " ".join(str(command_text).strip().lower().split())
 
     def _result(self, intent, response, should_exit=False):
         return {

@@ -7,6 +7,41 @@ class VoiceInputManager:
     READY = "ready"
     LISTENING = "listening"
     STOPPED = "stopped"
+    VOICE_PREFIXES = (
+        "голосовая команда",
+        "распознанный текст",
+        "голосом спроси",
+        "голосом скажи",
+        "джарвис спроси",
+        "джарвис скажи",
+        "голосом",
+        "как голос",
+        "джарвис",
+        "jarvis",
+        "скажи",
+        "спроси",
+    )
+    VOICE_CONFIRMATION_COMMANDS = {
+        "подтвердить голосовую команду",
+        "подтверждаю голосовую команду",
+        "голос подтверждаю",
+        "подтвердить голосом",
+        "подтверждаю",
+        "да подтверждаю",
+        "можно",
+        "давай",
+        "выполняй",
+    }
+    VOICE_CANCELLATION_COMMANDS = {
+        "отменить голосовую команду",
+        "отмени голосовую команду",
+        "голос отмена",
+        "отменить голосом",
+        "отмена",
+        "отбой",
+        "не надо",
+        "стоп",
+    }
 
     def __init__(self, command_processor=None, dialogue_manager=None, user_profile=None):
         self.user_profile = user_profile or {}
@@ -67,28 +102,66 @@ class VoiceInputManager:
             "message": self.dialogue_manager.voice_listening_stopped_response(),
         }
 
+    def normalize_voice_text(self, text):
+        if text is None:
+            return ""
+
+        return " ".join(str(text).strip().lower().split())
+
+    def extract_voice_command(self, text):
+        normalized_text = self.normalize_voice_text(text)
+        for prefix in self.VOICE_PREFIXES:
+            if normalized_text == prefix:
+                return ""
+            if normalized_text.startswith(prefix + " "):
+                return normalized_text[len(prefix) :].strip()
+
+        return normalized_text
+
+    def is_voice_alias(self, text):
+        normalized_text = self.normalize_voice_text(text)
+        return any(
+            normalized_text == prefix or normalized_text.startswith(prefix + " ")
+            for prefix in self.VOICE_PREFIXES
+        )
+
+    def is_voice_confirmation(self, text):
+        return self.normalize_voice_text(text) in self.VOICE_CONFIRMATION_COMMANDS
+
+    def is_voice_cancel(self, text):
+        return self.normalize_voice_text(text) in self.VOICE_CANCELLATION_COMMANDS
+
     def process_recognized_text(self, text):
-        recognized_text = "" if text is None else str(text).strip()
-        if not recognized_text:
+        recognized_text = self.normalize_voice_text(text)
+        command_text = self.extract_voice_command(recognized_text)
+        if not command_text:
             return {
                 "intent": "voice.empty",
                 "response": self.dialogue_manager.voice_empty_input_response(),
                 "should_exit": False,
+                "channel": "voice",
+                "source": "recognized_text",
             }
 
-        result = self.command_processor.process(recognized_text)
+        if self.is_voice_confirmation(command_text):
+            return self.confirm_pending_action()
+
+        if self.is_voice_cancel(command_text):
+            return self.cancel_pending_action()
+
+        result = self.command_processor.process(command_text)
         category = result.get("category")
 
         if category == "confirmation_required" or result.get("requires_confirmation"):
             self._pending_confirmation = {
-                "text": recognized_text,
+                "text": command_text,
                 "channel": "voice",
                 "risk": "confirmation_required",
             }
             return {
                 "intent": "voice.confirmation_required",
                 "response": self.dialogue_manager.voice_confirmation_required_response(
-                    recognized_text
+                    command_text
                 ),
                 "should_exit": False,
                 "channel": "voice",
@@ -103,7 +176,7 @@ class VoiceInputManager:
             return {
                 "intent": "voice.forbidden",
                 "response": self.dialogue_manager.voice_forbidden_response(
-                    recognized_text
+                    command_text
                 ),
                 "should_exit": False,
                 "channel": "voice",
@@ -114,7 +187,7 @@ class VoiceInputManager:
         result["channel"] = "voice"
         result["source"] = "recognized_text"
         result["response"] = (
-            self.dialogue_manager.voice_command_received_response(recognized_text)
+            self.dialogue_manager.voice_command_received_response(command_text)
             + "\n"
             + result["response"]
         )
@@ -139,6 +212,8 @@ class VoiceInputManager:
                 "intent": "voice.confirmation.none",
                 "response": self.dialogue_manager.voice_confirmation_none_response(),
                 "should_exit": False,
+                "channel": "voice",
+                "source": "confirmation_simulation",
             }
 
         self.clear_pending_confirmation()
@@ -159,6 +234,8 @@ class VoiceInputManager:
                 "intent": "voice.confirmation.none",
                 "response": self.dialogue_manager.voice_cancellation_none_response(),
                 "should_exit": False,
+                "channel": "voice",
+                "source": "confirmation_simulation",
             }
 
         self.clear_pending_confirmation()

@@ -84,6 +84,81 @@ def test_stop_listening():
     assert "остановлен" in result["message"]
 
 
+def test_normalize_voice_text_handles_none():
+    manager = VoiceInputManager(user_profile=sample_profile())
+
+    assert manager.normalize_voice_text(None) == ""
+
+
+def test_normalize_voice_text_trims_spaces_and_lowercases():
+    manager = VoiceInputManager(user_profile=sample_profile())
+
+    assert manager.normalize_voice_text("  Джарвис   кто Я  ") == "джарвис кто я"
+
+
+def test_extract_voice_command_jarvis_alias():
+    manager = VoiceInputManager(user_profile=sample_profile())
+
+    assert manager.extract_voice_command("джарвис кто я") == "кто я"
+
+
+def test_extract_voice_command_say_alias():
+    manager = VoiceInputManager(user_profile=sample_profile())
+
+    assert manager.extract_voice_command("скажи кто я") == "кто я"
+
+
+def test_extract_voice_command_ask_alias():
+    manager = VoiceInputManager(user_profile=sample_profile())
+
+    assert (
+        manager.extract_voice_command("спроси статус системы")
+        == "статус системы"
+    )
+
+
+def test_extract_voice_command_voice_ask_alias():
+    manager = VoiceInputManager(user_profile=sample_profile())
+
+    assert (
+        manager.extract_voice_command("голосом спроси статус системы")
+        == "статус системы"
+    )
+
+
+def test_extract_voice_command_nested_jarvis_say_alias():
+    manager = VoiceInputManager(user_profile=sample_profile())
+
+    assert (
+        manager.extract_voice_command("джарвис скажи покажи память")
+        == "покажи память"
+    )
+
+
+def test_is_voice_alias():
+    manager = VoiceInputManager(user_profile=sample_profile())
+
+    assert manager.is_voice_alias("джарвис кто я") is True
+    assert manager.is_voice_alias("спроси статус системы") is True
+    assert manager.is_voice_alias("кто я") is False
+
+
+def test_is_voice_confirmation():
+    manager = VoiceInputManager(user_profile=sample_profile())
+
+    assert manager.is_voice_confirmation("подтверждаю") is True
+    assert manager.is_voice_confirmation("можно") is True
+    assert manager.is_voice_confirmation("кто я") is False
+
+
+def test_is_voice_cancel():
+    manager = VoiceInputManager(user_profile=sample_profile())
+
+    assert manager.is_voice_cancel("отмена") is True
+    assert manager.is_voice_cancel("стоп") is True
+    assert manager.is_voice_cancel("кто я") is False
+
+
 def test_process_recognized_text():
     manager = VoiceInputManager(user_profile=sample_profile())
 
@@ -107,6 +182,24 @@ def test_process_empty_recognized_text():
     assert "не получил распознанный текст" in result["response"]
 
 
+def test_process_recognized_text_jarvis_alias():
+    manager = VoiceInputManager(user_profile=sample_profile())
+
+    result = manager.process_recognized_text("джарвис кто я")
+
+    assert result["intent"] == "user.identity"
+    assert "принял голосовую команду: кто я" in result["response"]
+
+
+def test_process_recognized_text_say_status_alias():
+    manager = VoiceInputManager(user_profile=sample_profile())
+
+    result = manager.process_recognized_text("скажи статус системы")
+
+    assert result["intent"] == "system.status"
+    assert "принял голосовую команду: статус системы" in result["response"]
+
+
 def test_recognized_text_requires_pending_confirmation():
     manager = VoiceInputManager(user_profile=sample_profile())
 
@@ -123,6 +216,42 @@ def test_recognized_text_requires_pending_confirmation():
         "risk": "confirmation_required",
     }
     assert "требует подтверждения" in result["response"]
+
+
+def test_voice_alias_requires_pending_confirmation():
+    manager = VoiceInputManager(user_profile=sample_profile())
+
+    result = manager.process_recognized_text("джарвис отправь письмо")
+
+    assert result["intent"] == "voice.confirmation_required"
+    assert manager.has_pending_confirmation() is True
+    assert manager.get_pending_confirmation()["text"] == "отправь письмо"
+
+
+def test_short_confirmation_works_only_with_pending_voice_action():
+    manager = VoiceInputManager(user_profile=sample_profile())
+
+    none_result = manager.process_recognized_text("подтверждаю")
+    assert none_result["intent"] == "voice.confirmation.none"
+
+    manager.process_recognized_text("джарвис отправь письмо")
+    confirmed_result = manager.process_recognized_text("подтверждаю")
+
+    assert confirmed_result["intent"] == "voice.confirmation.confirmed"
+    assert manager.has_pending_confirmation() is False
+
+
+def test_short_cancel_works_only_with_pending_voice_action():
+    manager = VoiceInputManager(user_profile=sample_profile())
+
+    none_result = manager.process_recognized_text("стоп")
+    assert none_result["intent"] == "voice.confirmation.none"
+
+    manager.process_recognized_text("джарвис отправь письмо")
+    cancelled_result = manager.process_recognized_text("отмена")
+
+    assert cancelled_result["intent"] == "voice.confirmation.cancelled"
+    assert manager.has_pending_confirmation() is False
 
 
 def test_clear_pending_confirmation():
@@ -203,9 +332,24 @@ def run_tests():
     test_start_listening_when_disabled()
     test_start_listening_when_ready()
     test_stop_listening()
+    test_normalize_voice_text_handles_none()
+    test_normalize_voice_text_trims_spaces_and_lowercases()
+    test_extract_voice_command_jarvis_alias()
+    test_extract_voice_command_say_alias()
+    test_extract_voice_command_ask_alias()
+    test_extract_voice_command_voice_ask_alias()
+    test_extract_voice_command_nested_jarvis_say_alias()
+    test_is_voice_alias()
+    test_is_voice_confirmation()
+    test_is_voice_cancel()
     test_process_recognized_text()
     test_process_empty_recognized_text()
+    test_process_recognized_text_jarvis_alias()
+    test_process_recognized_text_say_status_alias()
     test_recognized_text_requires_pending_confirmation()
+    test_voice_alias_requires_pending_confirmation()
+    test_short_confirmation_works_only_with_pending_voice_action()
+    test_short_cancel_works_only_with_pending_voice_action()
     test_clear_pending_confirmation()
     test_confirm_pending_action_is_safe_simulation()
     test_confirm_pending_action_without_pending()
