@@ -275,6 +275,59 @@ def test_help_response():
     assert "Для выхода напишите: выход" in response
 
 
+def test_voice_disabled_response():
+    dialogue = DialogueManager(sample_profile())
+
+    response = dialogue.voice_disabled_response()
+
+    assert "голосовой ввод отключён" in response
+    assert "не слушаю микрофон" in response
+
+
+def test_voice_enabled_response():
+    dialogue = DialogueManager(sample_profile())
+
+    response = dialogue.voice_enabled_response()
+
+    assert "голосовой ввод подготовлен" in response
+    assert "реальный микрофон пока не включается" in response
+
+
+def test_voice_listening_started_response():
+    dialogue = DialogueManager(sample_profile())
+
+    response = dialogue.voice_listening_started_response()
+
+    assert "режим ожидания" in response
+    assert "Микрофон в этой версии не включается" in response
+
+
+def test_voice_listening_stopped_response():
+    dialogue = DialogueManager(sample_profile())
+
+    response = dialogue.voice_listening_stopped_response()
+
+    assert "остановлен" in response
+    assert "Микрофон не использовался" in response
+
+
+def test_voice_empty_input_response():
+    dialogue = DialogueManager(sample_profile())
+
+    response = dialogue.voice_empty_input_response()
+
+    assert "не получил распознанный текст" in response
+
+
+def test_voice_not_real_microphone_response():
+    dialogue = DialogueManager(sample_profile())
+
+    response = dialogue.voice_not_real_microphone_response()
+
+    assert "голосовой фундамент есть" in response
+    assert "микрофон пока не включается" in response
+
+
 def run_tests():
     test_creation_without_profile()
     test_creation_with_profile()
@@ -307,6 +360,12 @@ def run_tests():
     test_services_response()
     test_commands_response()
     test_help_response()
+    test_voice_disabled_response()
+    test_voice_enabled_response()
+    test_voice_listening_started_response()
+    test_voice_listening_stopped_response()
+    test_voice_empty_input_response()
+    test_voice_not_real_microphone_response()
 
 
 if __name__ == "__main__":

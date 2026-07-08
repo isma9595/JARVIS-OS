@@ -95,7 +95,7 @@ def test_system_status_command():
     assert result["intent"] == "system.status"
     assert result["should_exit"] is False
     assert "система работает" in result["response"]
-    assert "Активных сервисов: 7" in result["response"]
+    assert "Активных сервисов: 8" in result["response"]
 
 
 def test_services_command():
@@ -105,7 +105,41 @@ def test_services_command():
     assert result["should_exit"] is False
     assert "активные системные сервисы" in result["response"]
     assert "1. logger" in result["response"]
-    assert "7. memory_manager" in result["response"]
+    assert "8. voice_input_manager" in result["response"]
+
+
+def test_voice_status_command():
+    result = CommandProcessor(sample_profile()).process("голос")
+
+    assert result["intent"] == "voice.status"
+    assert result["should_exit"] is False
+    assert "голосовой фундамент есть" in result["response"]
+    assert "микрофон пока не включается" in result["response"]
+
+
+def test_voice_status_alias_command():
+    result = CommandProcessor(sample_profile()).process("статус голоса")
+
+    assert result["intent"] == "voice.status"
+    assert result["should_exit"] is False
+
+
+def test_voice_enable_command():
+    result = CommandProcessor(sample_profile()).process("включи голос")
+
+    assert result["intent"] == "voice.enable"
+    assert result["should_exit"] is False
+    assert "голосовой ввод подготовлен" in result["response"]
+    assert "реальный микрофон пока не включается" in result["response"]
+
+
+def test_voice_disable_command():
+    result = CommandProcessor(sample_profile()).process("отключи голос")
+
+    assert result["intent"] == "voice.disable"
+    assert result["should_exit"] is False
+    assert "голосовой ввод отключён" in result["response"]
+    assert "не слушаю микрофон" in result["response"]
 
 
 def test_show_commands_command():
@@ -425,6 +459,10 @@ def run_tests():
     test_show_version_command()
     test_system_status_command()
     test_services_command()
+    test_voice_status_command()
+    test_voice_status_alias_command()
+    test_voice_enable_command()
+    test_voice_disable_command()
     test_show_commands_command()
     test_commands_list_command()
     test_exit_command()

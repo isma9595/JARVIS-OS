@@ -245,6 +245,9 @@ class DialogueManager:
                 "- статус системы",
                 "- покажи версию",
                 "- покажи сервисы",
+                "- голос",
+                "- включи голос",
+                "- отключи голос",
                 "- покажи команды",
                 "",
                 "Безопасность:",
@@ -262,6 +265,44 @@ class DialogueManager:
             "сохранять идеи, запоминать факты, искать по памяти, показывать "
             "статус системы и различать риск действий. Голос, зрение экрана "
             "и автоматизация будут добавлены позже. Для выхода напишите: выход."
+        )
+
+    def voice_disabled_response(self):
+        return (
+            f"{self.get_preferred_name()}, голосовой ввод отключён. "
+            "Я не слушаю микрофон."
+        )
+
+    def voice_enabled_response(self):
+        return (
+            f"{self.get_preferred_name()}, голосовой ввод подготовлен, "
+            "но реальный микрофон пока не включается. "
+            "Это будет добавлено безопасно позже."
+        )
+
+    def voice_listening_started_response(self):
+        return (
+            f"{self.get_preferred_name()}, голосовой ввод переведён в режим ожидания. "
+            "Микрофон в этой версии не включается."
+        )
+
+    def voice_listening_stopped_response(self):
+        return (
+            f"{self.get_preferred_name()}, режим ожидания голосового ввода остановлен. "
+            "Микрофон не использовался."
+        )
+
+    def voice_empty_input_response(self):
+        return (
+            f"{self.get_preferred_name()}, я не получил распознанный текст "
+            "для голосовой команды."
+        )
+
+    def voice_not_real_microphone_response(self):
+        return (
+            f"{self.get_preferred_name()}, голосовой фундамент есть, "
+            "но микрофон пока не включается. "
+            "Голосовые команды будут добавлены безопасно позже."
         )
 
     def profile_response(self):

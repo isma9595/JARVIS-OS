@@ -7,6 +7,7 @@ from core.module_manager import ModuleManager
 from dialogue import DialogueManager
 from ideas import IdeaManager
 from memory import LocalMemoryManager
+from voice import VoiceInputManager
 
 
 class JARVISKernel:
@@ -18,6 +19,7 @@ class JARVISKernel:
         "action_router",
         "idea_manager",
         "memory_manager",
+        "voice_input_manager",
     }
 
     def __init__(self, version="0.2", user_profile=None):
@@ -38,6 +40,11 @@ class JARVISKernel:
             system_status_provider=self.get_system_status,
         )
         self.command_processor.action_router = self.action_router
+        self.voice_input_manager = VoiceInputManager(
+            command_processor=self.command_processor,
+            dialogue_manager=self.dialogue,
+            user_profile=self.user_profile,
+        )
         self.logger = Logger()
         self.event_bus = EventBus()
         self.module_manager = ModuleManager()
@@ -49,6 +56,7 @@ class JARVISKernel:
             "action_router": self.action_router,
             "idea_manager": self.idea_manager,
             "memory_manager": self.memory_manager,
+            "voice_input_manager": self.voice_input_manager,
         }
         self.state = "created"
         self.running = False
@@ -90,6 +98,7 @@ class JARVISKernel:
         self.logger.info("SafeActionRouter: OK")
         self.logger.info("IdeaManager: OK")
         self.logger.info("LocalMemoryManager: OK")
+        self.logger.info("VoiceInputManager: OK")
 
         self.state = "running"
         self.running = True

@@ -47,6 +47,21 @@ class CommandProcessor:
         "какие сервисы работают",
         "системные сервисы",
     }
+    VOICE_STATUS_COMMANDS = {
+        "голос",
+        "статус голоса",
+        "голосовой ввод",
+        "голосовой режим",
+    }
+    VOICE_ENABLE_COMMANDS = {
+        "включи голос",
+        "включить голосовой ввод",
+        "активируй голос",
+    }
+    VOICE_DISABLE_COMMANDS = {
+        "отключи голос",
+        "отключить голосовой ввод",
+    }
     COMMANDS_LIST_COMMANDS = {
         "покажи команды",
         "список команд",
@@ -186,6 +201,24 @@ class CommandProcessor:
                 self.dialogue_manager.services_response(status["services"]),
             )
 
+        if command in self.VOICE_STATUS_COMMANDS:
+            return self._result(
+                "voice.status",
+                self.dialogue_manager.voice_not_real_microphone_response(),
+            )
+
+        if command in self.VOICE_ENABLE_COMMANDS:
+            return self._result(
+                "voice.enable",
+                self.dialogue_manager.voice_enabled_response(),
+            )
+
+        if command in self.VOICE_DISABLE_COMMANDS:
+            return self._result(
+                "voice.disable",
+                self.dialogue_manager.voice_disabled_response(),
+            )
+
         if command in self.COMMANDS_LIST_COMMANDS:
             return self._result(
                 "assistant.commands",
@@ -263,6 +296,7 @@ class CommandProcessor:
                 "action_router",
                 "idea_manager",
                 "memory_manager",
+                "voice_input_manager",
             ],
         }
 

@@ -8,6 +8,7 @@ from core.module_manager import ModuleManager
 from dialogue import DialogueManager
 from ideas import IdeaManager
 from memory import LocalMemoryManager
+from voice import VoiceInputManager
 
 
 def assert_raises(expected_exception, callback):
@@ -44,6 +45,7 @@ def test_kernel_services_exist():
     assert isinstance(kernel.action_router, SafeActionRouter)
     assert isinstance(kernel.idea_manager, IdeaManager)
     assert isinstance(kernel.memory_manager, LocalMemoryManager)
+    assert isinstance(kernel.voice_input_manager, VoiceInputManager)
     assert isinstance(kernel.dialogue, DialogueManager)
 
 
@@ -89,6 +91,12 @@ def test_get_service_memory_manager():
     assert kernel.get_service("memory_manager") is kernel.memory_manager
 
 
+def test_get_service_voice_input_manager():
+    kernel = JARVISKernel()
+
+    assert kernel.get_service("voice_input_manager") is kernel.voice_input_manager
+
+
 def test_get_version():
     kernel = JARVISKernel()
 
@@ -112,6 +120,7 @@ def test_list_services():
         "action_router",
         "idea_manager",
         "memory_manager",
+        "voice_input_manager",
     ]
 
 
@@ -129,6 +138,7 @@ def test_get_system_status():
             "action_router",
             "idea_manager",
             "memory_manager",
+            "voice_input_manager",
         ],
     }
 
@@ -152,7 +162,14 @@ def test_command_processor_uses_kernel_system_status():
     result = kernel.command_processor.process("статус системы")
 
     assert result["intent"] == "system.status"
-    assert "Активных сервисов: 7" in result["response"]
+    assert "Активных сервисов: 8" in result["response"]
+
+
+def test_voice_input_manager_uses_kernel_services():
+    kernel = JARVISKernel()
+
+    assert kernel.voice_input_manager.command_processor is kernel.command_processor
+    assert kernel.voice_input_manager.dialogue_manager is kernel.dialogue
 
 
 def test_get_unknown_service_error():
@@ -233,6 +250,7 @@ def run_tests():
     test_get_service_action_router()
     test_get_service_idea_manager()
     test_get_service_memory_manager()
+    test_get_service_voice_input_manager()
     test_get_version()
     test_get_state()
     test_list_services()
@@ -240,6 +258,7 @@ def run_tests():
     test_existing_services_are_available_through_get_service()
     test_command_processor_uses_kernel_memory_manager()
     test_command_processor_uses_kernel_system_status()
+    test_voice_input_manager_uses_kernel_services()
     test_get_unknown_service_error()
     test_start()
     test_repeated_start_error()
