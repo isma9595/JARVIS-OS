@@ -1,5 +1,6 @@
 from core.action_router import SafeActionRouter
 from dialogue import DialogueManager
+from ideas import IdeaManager
 
 
 class CommandProcessor:
@@ -33,10 +34,23 @@ class CommandProcessor:
         "завершить",
         "закрыть",
     }
+    IDEA_ADD_PREFIXES = (
+        "добавь идею",
+        "запомни идею",
+        "сохрани идею",
+        "записать идею",
+    )
+    IDEA_LIST_COMMANDS = {
+        "покажи идеи",
+        "мои идеи",
+        "список идей",
+        "идеи",
+    }
 
-    def __init__(self, user_profile=None, dialogue_manager=None):
+    def __init__(self, user_profile=None, dialogue_manager=None, idea_manager=None):
         self.user_profile = user_profile or {}
         self.dialogue_manager = dialogue_manager or DialogueManager(self.user_profile)
+        self.idea_manager = idea_manager or IdeaManager()
         self.action_router = SafeActionRouter(
             user_profile=self.user_profile,
             dialogue_manager=self.dialogue_manager,
@@ -82,6 +96,12 @@ class CommandProcessor:
                 should_exit=True,
             )
 
+        if self._is_idea_add_command(command):
+            return self._add_idea(command)
+
+        if command in self.IDEA_LIST_COMMANDS:
+            return self._list_ideas()
+
         route = self.action_router.route(command)
         return self._route_result(route)
 
@@ -97,6 +117,38 @@ class CommandProcessor:
             "response": response,
             "should_exit": should_exit,
         }
+
+    def _is_idea_add_command(self, command):
+        return any(
+            command == prefix or command.startswith(prefix + " ")
+            for prefix in self.IDEA_ADD_PREFIXES
+        )
+
+    def _add_idea(self, command):
+        title = self._extract_idea_title(command)
+        idea = self.idea_manager.add_idea(title)
+        return self._result(
+            "idea.add",
+            self.dialogue_manager.idea_saved_response(idea["title"]),
+        )
+
+    def _extract_idea_title(self, command):
+        for prefix in self.IDEA_ADD_PREFIXES:
+            if command == prefix:
+                return ""
+            if command.startswith(prefix + " "):
+                return command[len(prefix) :].strip()
+
+        return command
+
+    def _list_ideas(self):
+        ideas = self.idea_manager.list_ideas()
+        if not ideas:
+            response = self.dialogue_manager.no_ideas_response()
+        else:
+            response = self.dialogue_manager.ideas_list_response(ideas)
+
+        return self._result("idea.list", response)
 
     def _route_result(self, route):
         intent_by_category = {

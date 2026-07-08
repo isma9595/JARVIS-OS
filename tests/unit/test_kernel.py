@@ -6,6 +6,7 @@ from core.kernel import JARVISKernel
 from core.logger import Logger
 from core.module_manager import ModuleManager
 from dialogue import DialogueManager
+from ideas import IdeaManager
 
 
 def assert_raises(expected_exception, callback):
@@ -40,6 +41,7 @@ def test_kernel_services_exist():
     assert isinstance(kernel.module_manager, ModuleManager)
     assert isinstance(kernel.command_processor, CommandProcessor)
     assert isinstance(kernel.action_router, SafeActionRouter)
+    assert isinstance(kernel.idea_manager, IdeaManager)
     assert isinstance(kernel.dialogue, DialogueManager)
 
 
@@ -71,6 +73,12 @@ def test_get_service_action_router():
     kernel = JARVISKernel()
 
     assert kernel.get_service("action_router") is kernel.action_router
+
+
+def test_get_service_idea_manager():
+    kernel = JARVISKernel()
+
+    assert kernel.get_service("idea_manager") is kernel.idea_manager
 
 
 def test_get_unknown_service_error():
@@ -149,6 +157,7 @@ def run_tests():
     test_get_service_module_manager()
     test_get_service_command_processor()
     test_get_service_action_router()
+    test_get_service_idea_manager()
     test_get_unknown_service_error()
     test_start()
     test_repeated_start_error()

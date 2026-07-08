@@ -1,4 +1,7 @@
 from core.command_processor import CommandProcessor
+from ideas import IdeaManager
+from pathlib import Path
+from tempfile import TemporaryDirectory
 
 
 def sample_profile():
@@ -140,6 +143,45 @@ def test_unknown_action_is_future_idea_without_execution():
     assert result["risk_level"] == "unknown"
 
 
+def test_add_idea_command():
+    with TemporaryDirectory() as tmp_dir:
+        idea_manager = IdeaManager(Path(tmp_dir) / "ideas.json")
+        processor = CommandProcessor(sample_profile(), idea_manager=idea_manager)
+
+        result = processor.process("добавь идею научиться видеть экран")
+
+        assert result["intent"] == "idea.add"
+        assert result["should_exit"] is False
+        assert idea_manager.count_ideas() == 1
+        assert idea_manager.list_ideas()[0]["title"] == "научиться видеть экран"
+        assert "я сохранил идею: научиться видеть экран" in result["response"]
+
+
+def test_remember_idea_command():
+    with TemporaryDirectory() as tmp_dir:
+        idea_manager = IdeaManager(Path(tmp_dir) / "ideas.json")
+        processor = CommandProcessor(sample_profile(), idea_manager=idea_manager)
+
+        result = processor.process("запомни идею сделать голосовое управление")
+
+        assert result["intent"] == "idea.add"
+        assert result["should_exit"] is False
+        assert idea_manager.list_ideas()[0]["title"] == "сделать голосовое управление"
+
+
+def test_list_ideas_command():
+    with TemporaryDirectory() as tmp_dir:
+        idea_manager = IdeaManager(Path(tmp_dir) / "ideas.json")
+        idea_manager.add_idea("научиться видеть экран")
+        processor = CommandProcessor(sample_profile(), idea_manager=idea_manager)
+
+        result = processor.process("покажи идеи")
+
+        assert result["intent"] == "idea.list"
+        assert result["should_exit"] is False
+        assert "1. научиться видеть экран" in result["response"]
+
+
 def run_tests():
     test_creation_without_profile()
     test_creation_with_profile()
@@ -156,6 +198,9 @@ def run_tests():
     test_delete_file_requires_confirmation()
     test_delete_system32_is_forbidden()
     test_unknown_action_is_future_idea_without_execution()
+    test_add_idea_command()
+    test_remember_idea_command()
+    test_list_ideas_command()
 
 
 if __name__ == "__main__":

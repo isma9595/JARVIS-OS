@@ -64,6 +64,21 @@ class DialogueManager:
             "но могу сохранить её как идею для будущего."
         )
 
+    def idea_saved_response(self, idea_title):
+        return f"{self.get_preferred_name()}, я сохранил идею: {idea_title}."
+
+    def ideas_list_response(self, ideas):
+        lines = [
+            f"{self.get_preferred_name()}, вот сохранённые идеи:",
+        ]
+        for index, idea in enumerate(ideas, start=1):
+            lines.append(f"{index}. {idea.get('title', '')}")
+
+        return "\n".join(lines)
+
+    def no_ideas_response(self):
+        return f"{self.get_preferred_name()}, пока нет сохранённых идей."
+
     def safe_action_response(self, action_description):
         return (
             f"{self.get_preferred_name()}, это безопасная команда: "

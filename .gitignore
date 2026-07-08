@@ -24,3 +24,6 @@ Thumbs.db
 # Local user profiles
 users/profiles/*.json
 !users/profiles/.gitkeep
+
+# Local user ideas
+ideas/ideas.json
