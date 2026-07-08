@@ -1,28 +1,34 @@
-import sys
+from core.event_bus import EventBus
+from core.logger import Logger
+from core.module_manager import ModuleManager
+
 
 class JARVISKernel:
-    def __init__(self):
-        self.running = True
+    def __init__(self, version="0.2"):
+        self.version = version
+        self.logger = Logger()
+        self.event_bus = EventBus()
+        self.module_manager = ModuleManager()
+        self.running = False
 
     def start(self):
-        print("JARVIS: Система запущена")
-        print("Напиши 'помощь'")
+        self.logger.info(f"JARVIS OS v{self.version}")
+        self.logger.info("Инициализация ядра...")
+        self.logger.info("Logger: OK")
+        self.logger.info("EventBus: OK")
+        self.logger.info("ModuleManager: OK")
 
-        while self.running:
-            cmd = input(">>> ").lower()
+        self.running = True
+        self.event_bus.publish("system.started", {"version": self.version})
 
-            if cmd == "помощь":
-                print("JARVIS: команды: помощь, выход")
+        self.logger.info("Система успешно запущена.")
+        self.logger.info("Добро пожаловать, Исмаил.")
 
-            elif cmd == "выход":
-                print("JARVIS: выключение")
-                self.running = False
-                sys.exit()
+    def shutdown(self):
+        if not self.running:
+            self.logger.warning("Система уже остановлена.")
+            return
 
-            else:
-                print("JARVIS: неизвестная команда")
-
-
-if __name__ == "__main__":
-    jarvis = JARVISKernel()
-    jarvis.start()
+        self.event_bus.publish("system.shutdown", {"version": self.version})
+        self.running = False
+        self.logger.info("Система остановлена.")
