@@ -80,6 +80,41 @@ def test_confirmation_request():
     )
 
 
+def test_action_requires_confirmation_response():
+    dialogue = DialogueManager(sample_profile())
+
+    assert dialogue.action_requires_confirmation_response("отправить письмо") == (
+        "Исмаил, это действие требует подтверждения: отправить письмо. "
+        "Я не буду выполнять его без вашего разрешения."
+    )
+
+
+def test_forbidden_action_response():
+    dialogue = DialogueManager(sample_profile())
+
+    assert dialogue.forbidden_action_response("удали system32") == (
+        "Исмаил, я не могу выполнить это действие, потому что оно может быть опасным."
+    )
+
+
+def test_future_idea_response():
+    dialogue = DialogueManager(sample_profile())
+
+    assert dialogue.future_idea_response("новая команда") == (
+        "Исмаил, я пока не умею выполнять эту команду, "
+        "но могу сохранить её как идею для будущего."
+    )
+
+
+def test_safe_action_response():
+    dialogue = DialogueManager(sample_profile())
+
+    assert dialogue.safe_action_response("подготовь черновик") == (
+        "Исмаил, это безопасная команда: подготовь черновик. "
+        "На этом этапе я только определяю действие и не выполняю его."
+    )
+
+
 def test_acknowledgement():
     dialogue = DialogueManager(sample_profile())
 
@@ -108,6 +143,10 @@ def run_tests():
     test_shutdown_message()
     test_already_stopped_message()
     test_confirmation_request()
+    test_action_requires_confirmation_response()
+    test_forbidden_action_response()
+    test_future_idea_response()
+    test_safe_action_response()
     test_acknowledgement()
     test_error_message()
 

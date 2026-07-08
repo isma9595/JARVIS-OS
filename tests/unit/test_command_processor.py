@@ -70,10 +70,12 @@ def test_exit_command():
 
 
 def test_unknown_command():
-    result = CommandProcessor(sample_profile()).process("открой браузер")
+    result = CommandProcessor(sample_profile()).process("запусти космический режим")
 
     assert result["intent"] == "unknown"
     assert result["should_exit"] is False
+    assert result["category"] == "idea"
+    assert result["risk_level"] == "unknown"
     assert "идею для будущего" in result["response"]
 
 
@@ -99,6 +101,45 @@ def test_normalizes_command():
     assert result["intent"] == "user.identity"
 
 
+def test_send_email_requires_confirmation():
+    result = CommandProcessor(sample_profile()).process("отправь письмо")
+
+    assert result["intent"] == "action.confirmation_required"
+    assert result["category"] == "confirmation_required"
+    assert result["requires_confirmation"] is True
+    assert result["risk_level"] == "medium"
+    assert "требует подтверждения" in result["response"]
+
+
+def test_delete_file_requires_confirmation():
+    result = CommandProcessor(sample_profile()).process("удали файл")
+
+    assert result["intent"] == "action.confirmation_required"
+    assert result["category"] == "confirmation_required"
+    assert result["requires_confirmation"] is True
+    assert result["risk_level"] == "medium"
+
+
+def test_delete_system32_is_forbidden():
+    result = CommandProcessor(sample_profile()).process("удали system32")
+
+    assert result["intent"] == "action.forbidden"
+    assert result["category"] == "forbidden"
+    assert result["allowed"] is False
+    assert result["risk_level"] == "high"
+    assert "не могу выполнить" in result["response"]
+
+
+def test_unknown_action_is_future_idea_without_execution():
+    result = CommandProcessor(sample_profile()).process("настрой утренний сценарий")
+
+    assert result["intent"] == "unknown"
+    assert result["category"] == "idea"
+    assert result["allowed"] is False
+    assert result["requires_confirmation"] is False
+    assert result["risk_level"] == "unknown"
+
+
 def run_tests():
     test_creation_without_profile()
     test_creation_with_profile()
@@ -111,6 +152,10 @@ def run_tests():
     test_empty_command()
     test_exit_command_should_exit()
     test_normalizes_command()
+    test_send_email_requires_confirmation()
+    test_delete_file_requires_confirmation()
+    test_delete_system32_is_forbidden()
+    test_unknown_action_is_future_idea_without_execution()
 
 
 if __name__ == "__main__":

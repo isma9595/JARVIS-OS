@@ -1,3 +1,4 @@
+from core.action_router import SafeActionRouter
 from dialogue import DialogueManager
 
 
@@ -36,6 +37,10 @@ class CommandProcessor:
     def __init__(self, user_profile=None, dialogue_manager=None):
         self.user_profile = user_profile or {}
         self.dialogue_manager = dialogue_manager or DialogueManager(self.user_profile)
+        self.action_router = SafeActionRouter(
+            user_profile=self.user_profile,
+            dialogue_manager=self.dialogue_manager,
+        )
 
     def process(self, command_text):
         command = self._normalize(command_text)
@@ -77,10 +82,8 @@ class CommandProcessor:
                 should_exit=True,
             )
 
-        return self._result(
-            "unknown",
-            self.dialogue_manager.unknown_command_response(),
-        )
+        route = self.action_router.route(command)
+        return self._route_result(route)
 
     def _normalize(self, command_text):
         if command_text is None:
@@ -93,4 +96,24 @@ class CommandProcessor:
             "intent": intent,
             "response": response,
             "should_exit": should_exit,
+        }
+
+    def _route_result(self, route):
+        intent_by_category = {
+            "confirmation_required": "action.confirmation_required",
+            "forbidden": "action.forbidden",
+            "safe_action": "action.safe_action",
+            "informational": "action.informational",
+            "idea": "unknown",
+            "empty": "empty",
+        }
+        return {
+            "intent": intent_by_category.get(route["category"], "unknown"),
+            "response": route["response"],
+            "should_exit": False,
+            "category": route["category"],
+            "risk_level": route["risk_level"],
+            "allowed": route["allowed"],
+            "requires_confirmation": route["requires_confirmation"],
+            "reason": route["reason"],
         }

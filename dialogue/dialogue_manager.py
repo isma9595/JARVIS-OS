@@ -46,6 +46,31 @@ class DialogueManager:
             f"{action_description}. Подтвердить?"
         )
 
+    def action_requires_confirmation_response(self, action_description):
+        return (
+            f"{self.get_preferred_name()}, это действие требует подтверждения: "
+            f"{action_description}. Я не буду выполнять его без вашего разрешения."
+        )
+
+    def forbidden_action_response(self, action_description):
+        return (
+            f"{self.get_preferred_name()}, я не могу выполнить это действие, "
+            "потому что оно может быть опасным."
+        )
+
+    def future_idea_response(self, action_description):
+        return (
+            f"{self.get_preferred_name()}, я пока не умею выполнять эту команду, "
+            "но могу сохранить её как идею для будущего."
+        )
+
+    def safe_action_response(self, action_description):
+        return (
+            f"{self.get_preferred_name()}, это безопасная команда: "
+            f"{action_description}. На этом этапе я только определяю действие "
+            "и не выполняю его."
+        )
+
     def acknowledgement(self, task_description):
         return f"Понял, {self.get_preferred_name()}. Подготовлю: {task_description}."
 
