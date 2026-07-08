@@ -68,7 +68,10 @@ def main():
     if not profile_manager.profile_exists():
         first_launch_setup(profile_manager)
 
-    user_profile = profile_manager.load_profile()
+    user_profile = None
+    if profile_manager.profile_exists():
+        user_profile = profile_manager.load_profile()
+
     kernel = JARVISKernel(user_profile=user_profile)
     kernel.start()
 

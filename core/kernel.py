@@ -2,6 +2,7 @@ from core.event_bus import EventBus
 from core.exceptions import KernelError
 from core.logger import Logger
 from core.module_manager import ModuleManager
+from dialogue import DialogueManager
 
 
 class JARVISKernel:
@@ -10,6 +11,7 @@ class JARVISKernel:
     def __init__(self, version="0.2", user_profile=None):
         self.version = version
         self.user_profile = user_profile or {}
+        self.dialogue = DialogueManager(self.user_profile)
         self.logger = Logger()
         self.event_bus = EventBus()
         self.module_manager = ModuleManager()
@@ -44,15 +46,15 @@ class JARVISKernel:
         self.event_bus.publish("kernel.started", {"version": self.version})
         self.event_bus.publish("system.started", {"version": self.version})
 
-        self.logger.info("Система успешно запущена.")
-        self.logger.info(f"Добро пожаловать, {self.get_user_display_name()}.")
+        self.logger.info(self.dialogue.startup_complete())
+        self.logger.info(self.dialogue.greeting())
 
     def get_user_display_name(self):
-        return self.user_profile.get("preferred_name") or "Пользователь"
+        return self.dialogue.get_preferred_name()
 
     def shutdown(self):
         if self.state == "stopped":
-            self.logger.warning("Ядро уже остановлено.")
+            self.logger.warning(self.dialogue.already_stopped_message())
             return
 
         self.event_bus.publish("kernel.stopping", {"version": self.version})
@@ -66,4 +68,4 @@ class JARVISKernel:
         self.state = "stopped"
         self.running = False
         self.event_bus.publish("kernel.stopped", {"version": self.version})
-        self.logger.info("Система остановлена.")
+        self.logger.info(self.dialogue.shutdown_message())

@@ -3,6 +3,7 @@ from core.exceptions import KernelError
 from core.kernel import JARVISKernel
 from core.logger import Logger
 from core.module_manager import ModuleManager
+from dialogue import DialogueManager
 
 
 def assert_raises(expected_exception, callback):
@@ -35,6 +36,7 @@ def test_kernel_services_exist():
     assert isinstance(kernel.logger, Logger)
     assert isinstance(kernel.event_bus, EventBus)
     assert isinstance(kernel.module_manager, ModuleManager)
+    assert isinstance(kernel.dialogue, DialogueManager)
 
 
 def test_get_service_logger():
