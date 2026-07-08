@@ -79,6 +79,42 @@ class DialogueManager:
     def no_ideas_response(self):
         return f"{self.get_preferred_name()}, пока нет сохранённых идей."
 
+    def memory_saved_response(self, memory_content):
+        return f"{self.get_preferred_name()}, я запомнил: {memory_content}."
+
+    def memory_list_response(self, memories):
+        if not memories:
+            return self.no_memory_response()
+
+        lines = [
+            f"{self.get_preferred_name()}, вот что я помню:",
+        ]
+        for index, memory in enumerate(memories, start=1):
+            lines.append(f"{index}. {memory.get('content', '')}")
+
+        return "\n".join(lines)
+
+    def no_memory_response(self):
+        return f"{self.get_preferred_name()}, пока в локальной памяти ничего нет."
+
+    def memory_search_response(self, memories, query):
+        if not memories:
+            return f"{self.get_preferred_name()}, я не нашёл в памяти ничего по запросу: {query}."
+
+        lines = [
+            f"{self.get_preferred_name()}, я нашёл в памяти:",
+        ]
+        for index, memory in enumerate(memories, start=1):
+            lines.append(f"{index}. {memory.get('content', '')}")
+
+        return "\n".join(lines)
+
+    def memory_delete_requires_future_confirmation_response(self):
+        return (
+            f"{self.get_preferred_name()}, удаление памяти требует отдельной "
+            "подтверждаемой функции в будущем. В TASK-009 я не удаляю память."
+        )
+
     def safe_action_response(self, action_description):
         return (
             f"{self.get_preferred_name()}, это безопасная команда: "

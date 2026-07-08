@@ -6,6 +6,7 @@ from core.logger import Logger
 from core.module_manager import ModuleManager
 from dialogue import DialogueManager
 from ideas import IdeaManager
+from memory import LocalMemoryManager
 
 
 class JARVISKernel:
@@ -16,6 +17,7 @@ class JARVISKernel:
         "command_processor",
         "action_router",
         "idea_manager",
+        "memory_manager",
     }
 
     def __init__(self, version="0.2", user_profile=None):
@@ -27,10 +29,12 @@ class JARVISKernel:
             dialogue_manager=self.dialogue,
         )
         self.idea_manager = IdeaManager()
+        self.memory_manager = LocalMemoryManager()
         self.command_processor = CommandProcessor(
             user_profile=self.user_profile,
             dialogue_manager=self.dialogue,
             idea_manager=self.idea_manager,
+            memory_manager=self.memory_manager,
         )
         self.command_processor.action_router = self.action_router
         self.logger = Logger()
@@ -43,6 +47,7 @@ class JARVISKernel:
             "command_processor": self.command_processor,
             "action_router": self.action_router,
             "idea_manager": self.idea_manager,
+            "memory_manager": self.memory_manager,
         }
         self.state = "created"
         self.running = False
@@ -67,6 +72,7 @@ class JARVISKernel:
         self.logger.info("CommandProcessor: OK")
         self.logger.info("SafeActionRouter: OK")
         self.logger.info("IdeaManager: OK")
+        self.logger.info("LocalMemoryManager: OK")
 
         self.state = "running"
         self.running = True

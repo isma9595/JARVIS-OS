@@ -27,3 +27,7 @@ users/profiles/*.json
 
 # Local user ideas
 ideas/ideas.json
+
+# Local user memory
+memory/local/*.json
+!memory/local/.gitkeep

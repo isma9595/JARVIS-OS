@@ -1,5 +1,6 @@
 from core.command_processor import CommandProcessor
 from ideas import IdeaManager
+from memory import LocalMemoryManager
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
@@ -182,6 +183,81 @@ def test_list_ideas_command():
         assert "1. научиться видеть экран" in result["response"]
 
 
+def test_add_memory_command_remember_that():
+    with TemporaryDirectory() as tmp_dir:
+        memory_manager = LocalMemoryManager(Path(tmp_dir) / "memory.json")
+        processor = CommandProcessor(sample_profile(), memory_manager=memory_manager)
+
+        result = processor.process("запомни что я работаю с документами")
+
+        assert result["intent"] == "memory.add"
+        assert result["should_exit"] is False
+        assert memory_manager.count_memories() == 1
+        assert memory_manager.list_memories()[0]["content"] == "я работаю с документами"
+
+
+def test_add_memory_command_save_to_memory():
+    with TemporaryDirectory() as tmp_dir:
+        memory_manager = LocalMemoryManager(Path(tmp_dir) / "memory.json")
+        processor = CommandProcessor(sample_profile(), memory_manager=memory_manager)
+
+        result = processor.process("сохрани в память что JARVIS должен быть расширяемым")
+
+        assert result["intent"] == "memory.add"
+        assert result["should_exit"] is False
+        assert memory_manager.list_memories()[0]["content"] == "JARVIS должен быть расширяемым".lower()
+
+
+def test_list_memory_command_show_memory():
+    with TemporaryDirectory() as tmp_dir:
+        memory_manager = LocalMemoryManager(Path(tmp_dir) / "memory.json")
+        memory_manager.add_memory("любишь зелёный цвет")
+        processor = CommandProcessor(sample_profile(), memory_manager=memory_manager)
+
+        result = processor.process("покажи память")
+
+        assert result["intent"] == "memory.list"
+        assert result["should_exit"] is False
+        assert "1. любишь зелёный цвет" in result["response"]
+
+
+def test_list_memory_command_what_do_you_remember():
+    with TemporaryDirectory() as tmp_dir:
+        memory_manager = LocalMemoryManager(Path(tmp_dir) / "memory.json")
+        processor = CommandProcessor(sample_profile(), memory_manager=memory_manager)
+
+        result = processor.process("что ты помнишь")
+
+        assert result["intent"] == "memory.list"
+        assert result["should_exit"] is False
+
+
+def test_search_memory_command():
+    with TemporaryDirectory() as tmp_dir:
+        memory_manager = LocalMemoryManager(Path(tmp_dir) / "memory.json")
+        memory_manager.add_memory("я работаю с документами")
+        processor = CommandProcessor(sample_profile(), memory_manager=memory_manager)
+
+        result = processor.process("найди в памяти документы")
+
+        assert result["intent"] == "memory.search"
+        assert result["should_exit"] is False
+        assert "1. я работаю с документами" in result["response"]
+
+
+def test_memory_delete_command_does_not_delete():
+    with TemporaryDirectory() as tmp_dir:
+        memory_manager = LocalMemoryManager(Path(tmp_dir) / "memory.json")
+        memory_manager.add_memory("локальный факт")
+        processor = CommandProcessor(sample_profile(), memory_manager=memory_manager)
+
+        result = processor.process("очисти память")
+
+        assert result["intent"] == "memory.delete.denied"
+        assert result["should_exit"] is False
+        assert memory_manager.count_memories() == 1
+
+
 def run_tests():
     test_creation_without_profile()
     test_creation_with_profile()
@@ -201,6 +277,12 @@ def run_tests():
     test_add_idea_command()
     test_remember_idea_command()
     test_list_ideas_command()
+    test_add_memory_command_remember_that()
+    test_add_memory_command_save_to_memory()
+    test_list_memory_command_show_memory()
+    test_list_memory_command_what_do_you_remember()
+    test_search_memory_command()
+    test_memory_delete_command_does_not_delete()
 
 
 if __name__ == "__main__":

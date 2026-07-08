@@ -131,6 +131,43 @@ def test_error_message():
     )
 
 
+def test_memory_saved_response():
+    dialogue = DialogueManager(sample_profile())
+
+    assert dialogue.memory_saved_response("любишь зелёный цвет") == (
+        "Исмаил, я запомнил: любишь зелёный цвет."
+    )
+
+
+def test_no_memory_response():
+    dialogue = DialogueManager(sample_profile())
+
+    assert dialogue.no_memory_response() == "Исмаил, пока в локальной памяти ничего нет."
+
+
+def test_memory_list_response():
+    dialogue = DialogueManager(sample_profile())
+
+    response = dialogue.memory_list_response(
+        [{"content": "любишь зелёный цвет"}, {"content": "работаешь с документами"}]
+    )
+
+    assert "Исмаил, вот что я помню:" in response
+    assert "1. любишь зелёный цвет" in response
+    assert "2. работаешь с документами" in response
+
+
+def test_memory_search_response():
+    dialogue = DialogueManager(sample_profile())
+
+    response = dialogue.memory_search_response(
+        [{"content": "работаешь с документами"}], "документы"
+    )
+
+    assert "Исмаил, я нашёл в памяти:" in response
+    assert "1. работаешь с документами" in response
+
+
 def run_tests():
     test_creation_without_profile()
     test_creation_with_profile()
@@ -149,6 +186,10 @@ def run_tests():
     test_safe_action_response()
     test_acknowledgement()
     test_error_message()
+    test_memory_saved_response()
+    test_no_memory_response()
+    test_memory_list_response()
+    test_memory_search_response()
 
 
 if __name__ == "__main__":
