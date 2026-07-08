@@ -1,5 +1,6 @@
 from core.command_processor import CommandProcessor
 from dialogue import DialogueManager
+from voice.microphone_input_adapter import MicrophoneInputAdapter
 
 
 class VoiceInputManager:
@@ -43,30 +44,150 @@ class VoiceInputManager:
         "стоп",
     }
 
-    def __init__(self, command_processor=None, dialogue_manager=None, user_profile=None):
+    def __init__(
+        self,
+        command_processor=None,
+        dialogue_manager=None,
+        user_profile=None,
+        microphone_adapter=None,
+    ):
         self.user_profile = user_profile or {}
         self.dialogue_manager = dialogue_manager or DialogueManager(self.user_profile)
         self.command_processor = command_processor or CommandProcessor(
             user_profile=self.user_profile,
             dialogue_manager=self.dialogue_manager,
         )
+        self.microphone_adapter = microphone_adapter or MicrophoneInputAdapter()
         self.state = self.DISABLED
         self._pending_confirmation = None
 
     def get_state(self):
         return self.state
 
-    def enable(self):
+    def get_microphone_status(self):
+        return self.microphone_adapter.get_status()
+
+    def microphone_status(self):
+        status = self.get_microphone_status()
+        return {
+            "state": self.state,
+            "microphone": status,
+            "message": self.dialogue_manager.microphone_status_response(status),
+        }
+
+    def request_microphone_permission(self):
+        status = self.microphone_adapter.request_permission()
+        return {
+            "state": self.state,
+            "microphone": status,
+            "message": self.dialogue_manager.microphone_permission_required_response(),
+        }
+
+    def grant_microphone_permission(self):
+        status = self.microphone_adapter.grant_permission()
         self.state = self.READY
         return {
             "state": self.state,
+            "microphone": status,
+            "message": self.dialogue_manager.microphone_permission_granted_response(),
+        }
+
+    def revoke_microphone_permission(self):
+        status = self.microphone_adapter.revoke_permission()
+        self.state = self.DISABLED
+        return {
+            "state": self.state,
+            "microphone": status,
+            "message": self.dialogue_manager.microphone_permission_revoked_response(),
+        }
+
+    def start_microphone_input(self):
+        status = self.microphone_adapter.start_listening()
+        if status["state"] == MicrophoneInputAdapter.PERMISSION_REQUIRED:
+            self.state = self.DISABLED
+            return {
+                "state": self.state,
+                "microphone": status,
+                "message": self.dialogue_manager.microphone_permission_required_response(),
+            }
+
+        if status["state"] == MicrophoneInputAdapter.UNAVAILABLE:
+            self.state = self.READY if status["permission_granted"] else self.DISABLED
+            return {
+                "state": self.state,
+                "microphone": status,
+                "message": self.dialogue_manager.microphone_unavailable_response(),
+            }
+
+        self.state = self.LISTENING
+        return {
+            "state": self.state,
+            "microphone": status,
+            "message": self.dialogue_manager.microphone_listening_started_response(),
+        }
+
+    def stop_microphone_input(self):
+        microphone_state = self.microphone_adapter.get_state()
+        if microphone_state == MicrophoneInputAdapter.UNAVAILABLE:
+            status = self.microphone_adapter.stop_listening()
+            self.state = self.READY if status["permission_granted"] else self.DISABLED
+            return {
+                "state": self.state,
+                "microphone": status,
+                "message": self.dialogue_manager.microphone_listening_stopped_response(),
+            }
+
+        if microphone_state != MicrophoneInputAdapter.LISTENING:
+            return {
+                "state": self.state,
+                "microphone": self.get_microphone_status(),
+                "message": self.dialogue_manager.microphone_not_listening_response(),
+            }
+
+        status = self.microphone_adapter.stop_listening()
+        self.state = self.READY if status["permission_granted"] else self.DISABLED
+        return {
+            "state": self.state,
+            "microphone": status,
+            "message": self.dialogue_manager.microphone_listening_stopped_response(),
+        }
+
+    def listen_once_from_microphone(self):
+        if not self.microphone_adapter.permission_granted:
+            status = self.microphone_adapter.request_permission()
+            self.state = self.DISABLED
+            return {
+                "state": self.state,
+                "microphone": status,
+                "text": None,
+                "message": self.dialogue_manager.microphone_permission_required_response(),
+            }
+
+        read_result = self.microphone_adapter.read_text()
+        self.state = self.STOPPED
+        return {
+            "state": self.state,
+            "microphone": self.get_microphone_status(),
+            "text": read_result["text"],
+            "message": self.dialogue_manager.microphone_unavailable_response(),
+        }
+
+    def enable(self):
+        self.microphone_adapter.request_permission()
+        self.microphone_adapter.grant_permission()
+        self.state = self.READY
+        return {
+            "state": self.state,
+            "microphone": self.get_microphone_status(),
             "message": self.dialogue_manager.voice_enabled_response(),
         }
 
     def disable(self):
+        self.microphone_adapter.disable()
         self.state = self.DISABLED
         return {
             "state": self.state,
+            "microphone": self.get_microphone_status(),
             "message": self.dialogue_manager.voice_disabled_response(),
         }
 
@@ -78,9 +199,18 @@ class VoiceInputManager:
             }
 
         if self.state == self.READY:
+            status = self.microphone_adapter.start_listening()
+            if status["state"] == MicrophoneInputAdapter.UNAVAILABLE:
+                return {
+                    "state": self.state,
+                    "microphone": status,
+                    "message": self.dialogue_manager.microphone_unavailable_response(),
+                }
+
             self.state = self.LISTENING
             return {
                 "state": self.state,
+                "microphone": status,
                 "message": self.dialogue_manager.voice_listening_started_response(),
             }
 
@@ -91,14 +221,17 @@ class VoiceInputManager:
 
     def stop_listening(self):
         if self.state == self.LISTENING:
+            self.microphone_adapter.stop_listening()
             self.state = self.READY
             return {
                 "state": self.state,
+                "microphone": self.get_microphone_status(),
                 "message": self.dialogue_manager.voice_listening_stopped_response(),
             }
 
         return {
             "state": self.state,
+            "microphone": self.get_microphone_status(),
             "message": self.dialogue_manager.voice_listening_stopped_response(),
         }
 

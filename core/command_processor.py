@@ -62,6 +62,40 @@ class CommandProcessor:
         "отключи голос",
         "отключить голосовой ввод",
     }
+    MICROPHONE_STATUS_COMMANDS = {
+        "микрофон",
+        "статус микрофона",
+    }
+    MICROPHONE_PERMISSION_REQUEST_COMMANDS = {
+        "разрешение микрофона",
+        "запросить микрофон",
+        "подготовить микрофон",
+    }
+    MICROPHONE_PERMISSION_GRANT_COMMANDS = {
+        "разрешаю микрофон",
+        "дать доступ к микрофону",
+        "включить доступ к микрофону",
+    }
+    MICROPHONE_PERMISSION_REVOKE_COMMANDS = {
+        "запретить микрофон",
+        "отключить доступ к микрофону",
+        "отозвать микрофон",
+    }
+    MICROPHONE_LISTEN_START_COMMANDS = {
+        "слушай меня",
+        "начать слушать",
+        "включи микрофон",
+    }
+    MICROPHONE_LISTEN_STOP_COMMANDS = {
+        "перестань слушать",
+        "остановить микрофон",
+        "выключи микрофон",
+    }
+    MICROPHONE_LISTEN_ONCE_COMMANDS = {
+        "послушай один раз",
+        "слушай команду",
+        "принять голосовую команду",
+    }
     VOICE_SIMULATION_PREFIXES = (
         "голосовая команда",
         "распознанный текст",
@@ -197,6 +231,48 @@ class CommandProcessor:
             return self._result(
                 "empty",
                 self.dialogue_manager.empty_command_response(),
+            )
+
+        if command in self.MICROPHONE_STATUS_COMMANDS:
+            return self._microphone_result(
+                "microphone.status",
+                "microphone_status",
+            )
+
+        if command in self.MICROPHONE_PERMISSION_REQUEST_COMMANDS:
+            return self._microphone_result(
+                "microphone.permission.requested",
+                "request_microphone_permission",
+            )
+
+        if command in self.MICROPHONE_PERMISSION_GRANT_COMMANDS:
+            return self._microphone_result(
+                "microphone.permission.granted",
+                "grant_microphone_permission",
+            )
+
+        if command in self.MICROPHONE_PERMISSION_REVOKE_COMMANDS:
+            return self._microphone_result(
+                "microphone.permission.revoked",
+                "revoke_microphone_permission",
+            )
+
+        if command in self.MICROPHONE_LISTEN_START_COMMANDS:
+            return self._microphone_result(
+                "microphone.listen.start",
+                "start_microphone_input",
+            )
+
+        if command in self.MICROPHONE_LISTEN_STOP_COMMANDS:
+            return self._microphone_result(
+                "microphone.listen.stop",
+                "stop_microphone_input",
+            )
+
+        if command in self.MICROPHONE_LISTEN_ONCE_COMMANDS:
+            return self._microphone_result(
+                "microphone.listen.once",
+                "listen_once_from_microphone",
             )
 
         if self._is_voice_simulation_command(command):
@@ -355,9 +431,21 @@ class CommandProcessor:
                 "action_router",
                 "idea_manager",
                 "memory_manager",
+                "microphone_input_adapter",
                 "voice_input_manager",
             ],
         }
+
+    def _microphone_result(self, intent, manager_method_name):
+        if self.voice_input_manager is None:
+            return self._result(
+                intent,
+                self.dialogue_manager.microphone_unavailable_response(),
+            )
+
+        manager_method = getattr(self.voice_input_manager, manager_method_name)
+        manager_result = manager_method()
+        return self._result(intent, manager_result["message"])
 
     def _is_voice_simulation_command(self, command):
         return any(

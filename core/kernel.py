@@ -7,7 +7,7 @@ from core.module_manager import ModuleManager
 from dialogue import DialogueManager
 from ideas import IdeaManager
 from memory import LocalMemoryManager
-from voice import VoiceInputManager
+from voice import MicrophoneInputAdapter, VoiceInputManager
 
 
 class JARVISKernel:
@@ -19,6 +19,7 @@ class JARVISKernel:
         "action_router",
         "idea_manager",
         "memory_manager",
+        "microphone_input_adapter",
         "voice_input_manager",
     }
 
@@ -32,6 +33,7 @@ class JARVISKernel:
         )
         self.idea_manager = IdeaManager()
         self.memory_manager = LocalMemoryManager()
+        self.microphone_input_adapter = MicrophoneInputAdapter()
         self.command_processor = CommandProcessor(
             user_profile=self.user_profile,
             dialogue_manager=self.dialogue,
@@ -44,6 +46,7 @@ class JARVISKernel:
             command_processor=self.command_processor,
             dialogue_manager=self.dialogue,
             user_profile=self.user_profile,
+            microphone_adapter=self.microphone_input_adapter,
         )
         self.command_processor.set_voice_input_manager(self.voice_input_manager)
         self.logger = Logger()
@@ -57,6 +60,7 @@ class JARVISKernel:
             "action_router": self.action_router,
             "idea_manager": self.idea_manager,
             "memory_manager": self.memory_manager,
+            "microphone_input_adapter": self.microphone_input_adapter,
             "voice_input_manager": self.voice_input_manager,
         }
         self.state = "created"
@@ -99,6 +103,7 @@ class JARVISKernel:
         self.logger.info("SafeActionRouter: OK")
         self.logger.info("IdeaManager: OK")
         self.logger.info("LocalMemoryManager: OK")
+        self.logger.info("MicrophoneInputAdapter: OK")
         self.logger.info("VoiceInputManager: OK")
 
         self.state = "running"

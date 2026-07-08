@@ -8,7 +8,7 @@ from core.module_manager import ModuleManager
 from dialogue import DialogueManager
 from ideas import IdeaManager
 from memory import LocalMemoryManager
-from voice import VoiceInputManager
+from voice import MicrophoneInputAdapter, VoiceInputManager
 
 
 def assert_raises(expected_exception, callback):
@@ -45,6 +45,7 @@ def test_kernel_services_exist():
     assert isinstance(kernel.action_router, SafeActionRouter)
     assert isinstance(kernel.idea_manager, IdeaManager)
     assert isinstance(kernel.memory_manager, LocalMemoryManager)
+    assert isinstance(kernel.microphone_input_adapter, MicrophoneInputAdapter)
     assert isinstance(kernel.voice_input_manager, VoiceInputManager)
     assert isinstance(kernel.dialogue, DialogueManager)
 
@@ -97,6 +98,15 @@ def test_get_service_voice_input_manager():
     assert kernel.get_service("voice_input_manager") is kernel.voice_input_manager
 
 
+def test_get_service_microphone_input_adapter():
+    kernel = JARVISKernel()
+
+    assert (
+        kernel.get_service("microphone_input_adapter")
+        is kernel.microphone_input_adapter
+    )
+
+
 def test_get_version():
     kernel = JARVISKernel()
 
@@ -120,6 +130,7 @@ def test_list_services():
         "action_router",
         "idea_manager",
         "memory_manager",
+        "microphone_input_adapter",
         "voice_input_manager",
     ]
 
@@ -138,6 +149,7 @@ def test_get_system_status():
             "action_router",
             "idea_manager",
             "memory_manager",
+            "microphone_input_adapter",
             "voice_input_manager",
         ],
     }
@@ -162,7 +174,7 @@ def test_command_processor_uses_kernel_system_status():
     result = kernel.command_processor.process("статус системы")
 
     assert result["intent"] == "system.status"
-    assert "Активных сервисов: 8" in result["response"]
+    assert "Активных сервисов: 9" in result["response"]
 
 
 def test_voice_input_manager_uses_kernel_services():
@@ -170,6 +182,10 @@ def test_voice_input_manager_uses_kernel_services():
 
     assert kernel.voice_input_manager.command_processor is kernel.command_processor
     assert kernel.voice_input_manager.dialogue_manager is kernel.dialogue
+    assert (
+        kernel.voice_input_manager.microphone_adapter
+        is kernel.microphone_input_adapter
+    )
 
 
 def test_command_processor_is_linked_to_voice_input_manager():
@@ -256,6 +272,7 @@ def run_tests():
     test_get_service_action_router()
     test_get_service_idea_manager()
     test_get_service_memory_manager()
+    test_get_service_microphone_input_adapter()
     test_get_service_voice_input_manager()
     test_get_version()
     test_get_state()

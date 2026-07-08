@@ -344,6 +344,55 @@ class DialogueManager:
             "Голосовые команды будут добавлены безопасно позже."
         )
 
+    def microphone_status_response(self, status):
+        state = status.get("state", "unknown")
+        backend_name = status.get("backend_name", "none")
+        permission_text = (
+            "разрешен"
+            if status.get("permission_granted")
+            else "не разрешен"
+        )
+        return (
+            f"{self.get_preferred_name()}, статус микрофона: {state}. "
+            f"Доступ: {permission_text}. Backend: {backend_name}."
+        )
+
+    def microphone_permission_required_response(self):
+        return (
+            f"{self.get_preferred_name()}, для микрофона нужно явное разрешение. "
+            "Микрофон не включается."
+        )
+
+    def microphone_permission_granted_response(self):
+        return (
+            f"{self.get_preferred_name()}, доступ к микрофону разрешён. "
+            "Реальная запись звука не запускается."
+        )
+
+    def microphone_permission_revoked_response(self):
+        return (
+            f"{self.get_preferred_name()}, доступ к микрофону отозван. "
+            "Я не слушаю микрофон."
+        )
+
+    def microphone_unavailable_response(self):
+        return (
+            f"{self.get_preferred_name()}, backend распознавания речи ещё не подключён. "
+            "Я не включаю микрофон."
+        )
+
+    def microphone_listening_started_response(self):
+        return (
+            f"{self.get_preferred_name()}, режим микрофона включён. "
+            "Реальное прослушивание не запускается."
+        )
+
+    def microphone_listening_stopped_response(self):
+        return f"{self.get_preferred_name()}, микрофон остановлен."
+
+    def microphone_not_listening_response(self):
+        return f"{self.get_preferred_name()}, микрофон сейчас не слушает."
+
     def profile_response(self):
         lines = [
             f"Имя пользователя: {self.get_user_name()}",

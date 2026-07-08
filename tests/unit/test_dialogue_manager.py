@@ -452,6 +452,26 @@ def test_voice_forbidden_response():
     assert "опасной" in response
 
 
+def test_microphone_responses():
+    dialogue = DialogueManager(sample_profile())
+
+    assert "статус микрофона" in dialogue.microphone_status_response(
+        {
+            "state": "disabled",
+            "permission_granted": False,
+            "backend_name": "none",
+        }
+    )
+    assert "явное разрешение" in dialogue.microphone_permission_required_response()
+    assert "доступ к микрофону разрешён" in dialogue.microphone_permission_granted_response()
+    assert "доступ к микрофону отозван" in dialogue.microphone_permission_revoked_response()
+    assert "backend распознавания речи ещё не подключён" in dialogue.microphone_unavailable_response()
+    assert "Я не включаю микрофон" in dialogue.microphone_unavailable_response()
+    assert "Реальное прослушивание не запускается" in dialogue.microphone_listening_started_response()
+    assert "микрофон остановлен" in dialogue.microphone_listening_stopped_response()
+    assert "микрофон сейчас не слушает" in dialogue.microphone_not_listening_response()
+
+
 def run_tests():
     test_creation_without_profile()
     test_creation_with_profile()
@@ -497,6 +517,7 @@ def run_tests():
     test_voice_confirmation_none_response()
     test_voice_cancellation_none_response()
     test_voice_forbidden_response()
+    test_microphone_responses()
 
 
 if __name__ == "__main__":

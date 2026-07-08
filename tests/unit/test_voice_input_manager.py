@@ -17,6 +17,7 @@ def test_creation_without_parameters():
     assert manager.command_processor is not None
     assert manager.dialogue_manager is not None
     assert manager.user_profile == {}
+    assert manager.microphone_adapter is not None
 
 
 def test_initial_state_is_disabled():
@@ -35,6 +36,9 @@ def test_enable():
     assert result["state"] == "ready"
     assert manager.get_state() == "ready"
     assert manager.is_enabled() is True
+    assert result["microphone"]["state"] == "ready"
+    assert result["microphone"]["permission_granted"] is True
+    assert result["microphone"]["backend_name"] == "none"
     assert "голосовой ввод подготовлен" in result["message"]
     assert "микрофон пока не включается" in result["message"]
 
@@ -67,9 +71,12 @@ def test_start_listening_when_ready():
 
     result = manager.start_listening()
 
-    assert result["state"] == "listening"
-    assert manager.get_state() == "listening"
-    assert "Микрофон в этой версии не включается" in result["message"]
+    assert result["state"] == "ready"
+    assert manager.get_state() == "ready"
+    assert result["microphone"]["state"] == "unavailable"
+    assert result["microphone"]["backend_name"] == "none"
+    assert "backend распознавания речи ещё не подключён" in result["message"]
+    assert "Я не включаю микрофон" in result["message"]
 
 
 def test_stop_listening():
@@ -81,6 +88,7 @@ def test_stop_listening():
 
     assert result["state"] == "ready"
     assert manager.get_state() == "ready"
+    assert result["microphone"]["state"] == "unavailable"
     assert "остановлен" in result["message"]
 
 
@@ -324,6 +332,117 @@ def test_forbidden_voice_command_does_not_create_pending_confirmation():
     assert "опасной" in result["response"]
 
 
+def test_microphone_status():
+    manager = VoiceInputManager(user_profile=sample_profile())
+
+    result = manager.microphone_status()
+
+    assert result["state"] == "disabled"
+    assert result["microphone"]["state"] == "disabled"
+    assert result["microphone"]["backend_name"] == "none"
+    assert "статус микрофона" in result["message"]
+
+
+def test_request_microphone_permission():
+    manager = VoiceInputManager(user_profile=sample_profile())
+
+    result = manager.request_microphone_permission()
+
+    assert result["state"] == "disabled"
+    assert result["microphone"]["state"] == "permission_required"
+    assert result["microphone"]["permission_granted"] is False
+    assert "явное разрешение" in result["message"]
+
+
+def test_grant_microphone_permission():
+    manager = VoiceInputManager(user_profile=sample_profile())
+
+    result = manager.grant_microphone_permission()
+
+    assert result["state"] == "ready"
+    assert result["microphone"]["state"] == "ready"
+    assert result["microphone"]["permission_granted"] is True
+
+
+def test_revoke_microphone_permission():
+    manager = VoiceInputManager(user_profile=sample_profile())
+    manager.grant_microphone_permission()
+
+    result = manager.revoke_microphone_permission()
+
+    assert result["state"] == "disabled"
+    assert result["microphone"]["state"] == "disabled"
+    assert result["microphone"]["permission_granted"] is False
+
+
+def test_start_microphone_input_requires_permission():
+    manager = VoiceInputManager(user_profile=sample_profile())
+
+    result = manager.start_microphone_input()
+
+    assert result["state"] == "disabled"
+    assert result["microphone"]["state"] == "permission_required"
+    assert result["microphone"]["last_error"] == "microphone permission is required"
+
+
+def test_start_microphone_input():
+    manager = VoiceInputManager(user_profile=sample_profile())
+    manager.grant_microphone_permission()
+
+    result = manager.start_microphone_input()
+
+    assert result["state"] == "ready"
+    assert result["microphone"]["state"] == "unavailable"
+    assert result["microphone"]["backend_name"] == "none"
+    assert "backend распознавания речи ещё не подключён" in result["message"]
+    assert "Я не включаю микрофон" in result["message"]
+
+
+def test_stop_microphone_input():
+    manager = VoiceInputManager(user_profile=sample_profile())
+    manager.grant_microphone_permission()
+    manager.start_microphone_input()
+
+    result = manager.stop_microphone_input()
+
+    assert result["state"] == "ready"
+    assert result["microphone"]["state"] == "ready"
+    assert "микрофон остановлен" in result["message"]
+
+
+def test_stop_microphone_input_when_not_listening():
+    manager = VoiceInputManager(user_profile=sample_profile())
+
+    result = manager.stop_microphone_input()
+
+    assert result["state"] == "disabled"
+    assert result["microphone"]["state"] == "disabled"
+    assert "микрофон сейчас не слушает" in result["message"]
+
+
+def test_listen_once_from_microphone_requires_permission():
+    manager = VoiceInputManager(user_profile=sample_profile())
+
+    result = manager.listen_once_from_microphone()
+
+    assert result["state"] == "disabled"
+    assert result["microphone"]["state"] == "permission_required"
+    assert result["text"] is None
+
+
+def test_listen_once_from_microphone():
+    manager = VoiceInputManager(user_profile=sample_profile())
+    manager.grant_microphone_permission()
+
+    result = manager.listen_once_from_microphone()
+
+    assert result["state"] == "stopped"
+    assert result["microphone"]["state"] == "unavailable"
+    assert result["text"] is None
+    assert "backend распознавания речи ещё не подключён" in result["message"]
+    assert "Я не включаю микрофон" in result["message"]
+
+
 def run_tests():
     test_creation_without_parameters()
     test_initial_state_is_disabled()
@@ -356,6 +475,16 @@ def run_tests():
     test_cancel_pending_action()
     test_cancel_pending_action_without_pending()
     test_forbidden_voice_command_does_not_create_pending_confirmation()
+    test_microphone_status()
+    test_request_microphone_permission()
+    test_grant_microphone_permission()
+    test_revoke_microphone_permission()
+    test_start_microphone_input_requires_permission()
+    test_start_microphone_input()
+    test_stop_microphone_input()
+    test_stop_microphone_input_when_not_listening()
+    test_listen_once_from_microphone_requires_permission()
+    test_listen_once_from_microphone()
 
 
 if __name__ == "__main__":

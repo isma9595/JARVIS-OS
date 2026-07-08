@@ -96,7 +96,7 @@ def test_system_status_command():
     assert result["intent"] == "system.status"
     assert result["should_exit"] is False
     assert "система работает" in result["response"]
-    assert "Активных сервисов: 8" in result["response"]
+    assert "Активных сервисов: 9" in result["response"]
 
 
 def test_services_command():
@@ -106,7 +106,8 @@ def test_services_command():
     assert result["should_exit"] is False
     assert "активные системные сервисы" in result["response"]
     assert "1. logger" in result["response"]
-    assert "8. voice_input_manager" in result["response"]
+    assert "8. microphone_input_adapter" in result["response"]
+    assert "9. voice_input_manager" in result["response"]
 
 
 def test_voice_status_command():
@@ -461,6 +462,111 @@ def create_voice_enabled_processor():
     return processor, manager
 
 
+def test_microphone_status_commands():
+    for command in ("микрофон", "статус микрофона"):
+        processor, _manager = create_voice_enabled_processor()
+
+        result = processor.process(command)
+
+        assert result["intent"] == "microphone.status"
+        assert result["should_exit"] is False
+        assert "статус микрофона" in result["response"]
+
+
+def test_microphone_permission_request_commands():
+    for command in (
+        "разрешение микрофона",
+        "запросить микрофон",
+        "подготовить микрофон",
+    ):
+        processor, manager = create_voice_enabled_processor()
+
+        result = processor.process(command)
+
+        assert result["intent"] == "microphone.permission.requested"
+        assert manager.microphone_adapter.get_state() == "permission_required"
+        assert "явное разрешение" in result["response"]
+
+
+def test_microphone_permission_grant_commands():
+    for command in (
+        "разрешаю микрофон",
+        "дать доступ к микрофону",
+        "включить доступ к микрофону",
+    ):
+        processor, manager = create_voice_enabled_processor()
+
+        result = processor.process(command)
+
+        assert result["intent"] == "microphone.permission.granted"
+        assert manager.microphone_adapter.permission_granted is True
+        assert manager.microphone_adapter.get_state() == "ready"
+
+
+def test_microphone_permission_revoke_commands():
+    for command in (
+        "запретить микрофон",
+        "отключить доступ к микрофону",
+        "отозвать микрофон",
+    ):
+        processor, manager = create_voice_enabled_processor()
+        manager.grant_microphone_permission()
+
+        result = processor.process(command)
+
+        assert result["intent"] == "microphone.permission.revoked"
+        assert manager.microphone_adapter.permission_granted is False
+        assert manager.microphone_adapter.get_state() == "disabled"
+
+
+def test_microphone_listen_start_commands():
+    for command in ("слушай меня", "начать слушать", "включи микрофон"):
+        processor, manager = create_voice_enabled_processor()
+        manager.grant_microphone_permission()
+
+        result = processor.process(command)
+
+        assert result["intent"] == "microphone.listen.start"
+        assert manager.microphone_adapter.get_state() == "unavailable"
+        assert manager.get_state() == "ready"
+        assert "backend распознавания речи ещё не подключён" in result["response"]
+        assert "Я не включаю микрофон" in result["response"]
+
+
+def test_microphone_listen_stop_commands():
+    for command in (
+        "перестань слушать",
+        "остановить микрофон",
+        "выключи микрофон",
+    ):
+        processor, manager = create_voice_enabled_processor()
+        manager.grant_microphone_permission()
+        manager.start_microphone_input()
+
+        result = processor.process(command)
+
+        assert result["intent"] == "microphone.listen.stop"
+        assert manager.microphone_adapter.get_state() == "ready"
+        assert "микрофон остановлен" in result["response"]
+
+
+def test_microphone_listen_once_commands():
+    for command in (
+        "послушай один раз",
+        "слушай команду",
+        "принять голосовую команду",
+    ):
+        processor, manager = create_voice_enabled_processor()
+        manager.grant_microphone_permission()
+
+        result = processor.process(command)
+
+        assert result["intent"] == "microphone.listen.once"
+        assert manager.microphone_adapter.get_state() == "unavailable"
+        assert "backend распознавания речи ещё не подключён" in result["response"]
+        assert "Я не включаю микрофон" in result["response"]
+
+
 def test_voice_simulation_identity_command():
     processor, manager = create_voice_enabled_processor()
 
@@ -790,6 +896,13 @@ def run_tests():
     test_memory_delete_command_does_not_delete()
     test_memory_delete_command_delete_memory_does_not_delete()
     test_memory_delete_command_forget_all_does_not_delete()
+    test_microphone_status_commands()
+    test_microphone_permission_request_commands()
+    test_microphone_permission_grant_commands()
+    test_microphone_permission_revoke_commands()
+    test_microphone_listen_start_commands()
+    test_microphone_listen_stop_commands()
+    test_microphone_listen_once_commands()
     test_voice_simulation_identity_command()
     test_voice_simulation_jarvis_identity_command()
     test_voice_simulation_jarvis_status_command()
