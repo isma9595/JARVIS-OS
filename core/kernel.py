@@ -35,6 +35,7 @@ class JARVISKernel:
             dialogue_manager=self.dialogue,
             idea_manager=self.idea_manager,
             memory_manager=self.memory_manager,
+            system_status_provider=self.get_system_status,
         )
         self.command_processor.action_router = self.action_router
         self.logger = Logger()
@@ -51,6 +52,22 @@ class JARVISKernel:
         }
         self.state = "created"
         self.running = False
+
+    def get_version(self):
+        return self.version
+
+    def get_state(self):
+        return self.state
+
+    def list_services(self):
+        return list(self.services.keys())
+
+    def get_system_status(self):
+        return {
+            "version": self.get_version(),
+            "state": self.get_state(),
+            "services": self.list_services(),
+        }
 
     def get_service(self, name):
         if name not in self.ALLOWED_SERVICES:

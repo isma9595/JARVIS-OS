@@ -27,6 +27,31 @@ class CommandProcessor:
         "помощь",
         "команды",
         "help",
+        "покажи возможности",
+    }
+    VERSION_COMMANDS = {
+        "версия",
+        "покажи версию",
+        "какая версия",
+        "версия системы",
+    }
+    SYSTEM_STATUS_COMMANDS = {
+        "статус",
+        "статус системы",
+        "как система",
+        "состояние системы",
+    }
+    SYSTEM_SERVICES_COMMANDS = {
+        "покажи сервисы",
+        "список сервисов",
+        "какие сервисы работают",
+        "системные сервисы",
+    }
+    COMMANDS_LIST_COMMANDS = {
+        "покажи команды",
+        "список команд",
+        "какие команды есть",
+        "все команды",
     }
     EXIT_COMMANDS = {
         "выход",
@@ -98,11 +123,15 @@ class CommandProcessor:
         dialogue_manager=None,
         idea_manager=None,
         memory_manager=None,
+        system_status_provider=None,
     ):
         self.user_profile = user_profile or {}
         self.dialogue_manager = dialogue_manager or DialogueManager(self.user_profile)
         self.idea_manager = idea_manager or IdeaManager()
         self.memory_manager = memory_manager or LocalMemoryManager()
+        self.system_status_provider = (
+            system_status_provider or self._default_system_status
+        )
         self.action_router = SafeActionRouter(
             user_profile=self.user_profile,
             dialogue_manager=self.dialogue_manager,
@@ -135,10 +164,38 @@ class CommandProcessor:
                 self.dialogue_manager.profile_response(),
             )
 
+        if command in self.VERSION_COMMANDS:
+            status = self.system_status_provider()
+            return self._result(
+                "system.version",
+                self.dialogue_manager.version_response(status["version"]),
+            )
+
+        if command in self.SYSTEM_STATUS_COMMANDS:
+            return self._result(
+                "system.status",
+                self.dialogue_manager.system_status_response(
+                    self.system_status_provider()
+                ),
+            )
+
+        if command in self.SYSTEM_SERVICES_COMMANDS:
+            status = self.system_status_provider()
+            return self._result(
+                "system.services",
+                self.dialogue_manager.services_response(status["services"]),
+            )
+
+        if command in self.COMMANDS_LIST_COMMANDS:
+            return self._result(
+                "assistant.commands",
+                self.dialogue_manager.commands_response(),
+            )
+
         if command in self.CAPABILITIES_COMMANDS:
             return self._result(
-                "assistant.capabilities",
-                self.dialogue_manager.capabilities_response(),
+                "assistant.help",
+                self.dialogue_manager.help_response(),
             )
 
         if command in self.EXIT_COMMANDS:
@@ -192,6 +249,21 @@ class CommandProcessor:
             "intent": intent,
             "response": response,
             "should_exit": should_exit,
+        }
+
+    def _default_system_status(self):
+        return {
+            "version": "0.2",
+            "state": "running",
+            "services": [
+                "logger",
+                "event_bus",
+                "module_manager",
+                "command_processor",
+                "action_router",
+                "idea_manager",
+                "memory_manager",
+            ],
         }
 
     def _is_idea_add_command(self, command):

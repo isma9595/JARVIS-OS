@@ -89,10 +89,70 @@ def test_get_service_memory_manager():
     assert kernel.get_service("memory_manager") is kernel.memory_manager
 
 
+def test_get_version():
+    kernel = JARVISKernel()
+
+    assert kernel.get_version() == "0.2"
+
+
+def test_get_state():
+    kernel = JARVISKernel()
+
+    assert kernel.get_state() == "created"
+
+
+def test_list_services():
+    kernel = JARVISKernel()
+
+    assert kernel.list_services() == [
+        "logger",
+        "event_bus",
+        "module_manager",
+        "command_processor",
+        "action_router",
+        "idea_manager",
+        "memory_manager",
+    ]
+
+
+def test_get_system_status():
+    kernel = JARVISKernel()
+
+    assert kernel.get_system_status() == {
+        "version": "0.2",
+        "state": "created",
+        "services": [
+            "logger",
+            "event_bus",
+            "module_manager",
+            "command_processor",
+            "action_router",
+            "idea_manager",
+            "memory_manager",
+        ],
+    }
+
+
+def test_existing_services_are_available_through_get_service():
+    kernel = JARVISKernel()
+
+    for service_name in kernel.list_services():
+        assert kernel.get_service(service_name) is kernel.services[service_name]
+
+
 def test_command_processor_uses_kernel_memory_manager():
     kernel = JARVISKernel()
 
     assert kernel.command_processor.memory_manager is kernel.memory_manager
+
+
+def test_command_processor_uses_kernel_system_status():
+    kernel = JARVISKernel()
+
+    result = kernel.command_processor.process("статус системы")
+
+    assert result["intent"] == "system.status"
+    assert "Активных сервисов: 7" in result["response"]
 
 
 def test_get_unknown_service_error():
@@ -173,7 +233,13 @@ def run_tests():
     test_get_service_action_router()
     test_get_service_idea_manager()
     test_get_service_memory_manager()
+    test_get_version()
+    test_get_state()
+    test_list_services()
+    test_get_system_status()
+    test_existing_services_are_available_through_get_service()
     test_command_processor_uses_kernel_memory_manager()
+    test_command_processor_uses_kernel_system_status()
     test_get_unknown_service_error()
     test_start()
     test_repeated_start_error()

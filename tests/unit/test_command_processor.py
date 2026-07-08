@@ -56,13 +56,74 @@ def test_profile_command():
     assert "работа, обучение" in result["response"]
 
 
-def test_capabilities_command():
+def test_help_command():
     result = CommandProcessor(sample_profile()).process("что ты умеешь")
 
-    assert result["intent"] == "assistant.capabilities"
+    assert result["intent"] == "assistant.help"
     assert result["should_exit"] is False
-    assert "простые текстовые команды" in result["response"]
+    assert "работать с профилем" in result["response"]
     assert "Голос, зрение экрана и автоматизация" in result["response"]
+
+
+def test_help_alias_command():
+    result = CommandProcessor(sample_profile()).process("помощь")
+
+    assert result["intent"] == "assistant.help"
+    assert result["should_exit"] is False
+    assert "Для выхода напишите: выход" in result["response"]
+
+
+def test_version_command():
+    result = CommandProcessor(sample_profile()).process("версия")
+
+    assert result["intent"] == "system.version"
+    assert result["should_exit"] is False
+    assert "v0.2" in result["response"]
+
+
+def test_show_version_command():
+    result = CommandProcessor(sample_profile()).process("покажи версию")
+
+    assert result["intent"] == "system.version"
+    assert result["should_exit"] is False
+    assert "текущая версия JARVIS OS" in result["response"]
+
+
+def test_system_status_command():
+    result = CommandProcessor(sample_profile()).process("статус системы")
+
+    assert result["intent"] == "system.status"
+    assert result["should_exit"] is False
+    assert "система работает" in result["response"]
+    assert "Активных сервисов: 7" in result["response"]
+
+
+def test_services_command():
+    result = CommandProcessor(sample_profile()).process("покажи сервисы")
+
+    assert result["intent"] == "system.services"
+    assert result["should_exit"] is False
+    assert "активные системные сервисы" in result["response"]
+    assert "1. logger" in result["response"]
+    assert "7. memory_manager" in result["response"]
+
+
+def test_show_commands_command():
+    result = CommandProcessor(sample_profile()).process("покажи команды")
+
+    assert result["intent"] == "assistant.commands"
+    assert result["should_exit"] is False
+    assert "Профиль:" in result["response"]
+    assert "Память:" in result["response"]
+    assert "Система:" in result["response"]
+
+
+def test_commands_list_command():
+    result = CommandProcessor(sample_profile()).process("список команд")
+
+    assert result["intent"] == "assistant.commands"
+    assert result["should_exit"] is False
+    assert "- покажи сервисы" in result["response"]
 
 
 def test_exit_command():
@@ -358,7 +419,14 @@ def run_tests():
     test_user_identity_command()
     test_assistant_identity_command()
     test_profile_command()
-    test_capabilities_command()
+    test_help_command()
+    test_help_alias_command()
+    test_version_command()
+    test_show_version_command()
+    test_system_status_command()
+    test_services_command()
+    test_show_commands_command()
+    test_commands_list_command()
     test_exit_command()
     test_unknown_command()
     test_empty_command()

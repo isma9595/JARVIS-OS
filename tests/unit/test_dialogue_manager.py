@@ -218,6 +218,63 @@ def test_memory_not_found_response():
     )
 
 
+def test_version_response():
+    dialogue = DialogueManager(sample_profile())
+
+    assert dialogue.version_response("0.2") == (
+        "Исмаил, текущая версия JARVIS OS: v0.2."
+    )
+
+
+def test_system_status_response():
+    dialogue = DialogueManager(sample_profile())
+
+    response = dialogue.system_status_response(
+        {
+            "version": "0.2",
+            "state": "running",
+            "services": ["logger", "event_bus"],
+        }
+    )
+
+    assert response == (
+        "Исмаил, система работает. Версия: v0.2. Активных сервисов: 2."
+    )
+
+
+def test_services_response():
+    dialogue = DialogueManager(sample_profile())
+
+    response = dialogue.services_response(["logger", "event_bus"])
+
+    assert "Исмаил, активные системные сервисы:" in response
+    assert "1. logger" in response
+    assert "2. event_bus" in response
+
+
+def test_commands_response():
+    dialogue = DialogueManager(sample_profile())
+
+    response = dialogue.commands_response()
+
+    assert "Исмаил, сейчас доступны такие команды:" in response
+    assert "Профиль:" in response
+    assert "Память:" in response
+    assert "Идеи:" in response
+    assert "Система:" in response
+    assert "Выход:" in response
+
+
+def test_help_response():
+    dialogue = DialogueManager(sample_profile())
+
+    response = dialogue.help_response()
+
+    assert "работать с профилем" in response
+    assert "Голос, зрение экрана и автоматизация" in response
+    assert "Для выхода напишите: выход" in response
+
+
 def run_tests():
     test_creation_without_profile()
     test_creation_with_profile()
@@ -245,6 +302,11 @@ def run_tests():
     test_about_user_response()
     test_memory_recall_response()
     test_memory_not_found_response()
+    test_version_response()
+    test_system_status_response()
+    test_services_response()
+    test_commands_response()
+    test_help_response()
 
 
 if __name__ == "__main__":

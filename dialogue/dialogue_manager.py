@@ -196,10 +196,72 @@ class DialogueManager:
         return f"Хорошо, {self.get_preferred_name()}. Завершаю работу."
 
     def capabilities_response(self):
+        return self.help_response()
+
+    def version_response(self, version):
         return (
-            "Сейчас я умею запускать ядро, показывать профиль пользователя, "
-            "вести естественный диалог и понимать простые текстовые команды. "
-            "Голос, зрение экрана и автоматизация будут добавлены позже."
+            f"{self.get_preferred_name()}, текущая версия JARVIS OS: "
+            f"v{version}."
+        )
+
+    def system_status_response(self, status):
+        services = status.get("services") or []
+        state = status.get("state") or "unknown"
+        state_text = "работает" if state == "running" else state
+        return (
+            f"{self.get_preferred_name()}, система {state_text}. "
+            f"Версия: v{status.get('version')}. "
+            f"Активных сервисов: {len(services)}."
+        )
+
+    def services_response(self, services):
+        lines = [
+            f"{self.get_preferred_name()}, активные системные сервисы:",
+        ]
+        for index, service_name in enumerate(services, start=1):
+            lines.append(f"{index}. {service_name}")
+
+        return "\n".join(lines)
+
+    def commands_response(self):
+        return "\n".join(
+            [
+                f"{self.get_preferred_name()}, сейчас доступны такие команды:",
+                "",
+                "Профиль:",
+                "- кто я",
+                "- покажи профиль",
+                "",
+                "Память:",
+                "- запомни что ...",
+                "- что ты помнишь",
+                "- вспомни про ...",
+                "",
+                "Идеи:",
+                "- добавь идею ...",
+                "- покажи идеи",
+                "",
+                "Система:",
+                "- статус системы",
+                "- покажи версию",
+                "- покажи сервисы",
+                "- покажи команды",
+                "",
+                "Безопасность:",
+                "- команды с риском требуют подтверждения",
+                "- опасные действия блокируются",
+                "",
+                "Выход:",
+                "- выход",
+            ]
+        )
+
+    def help_response(self):
+        return (
+            f"{self.get_preferred_name()}, сейчас я умею работать с профилем, "
+            "сохранять идеи, запоминать факты, искать по памяти, показывать "
+            "статус системы и различать риск действий. Голос, зрение экрана "
+            "и автоматизация будут добавлены позже. Для выхода напишите: выход."
         )
 
     def profile_response(self):
