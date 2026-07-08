@@ -22,6 +22,22 @@ class BaseModule:
     - получение информации о модуле.
     """
 
+    VALID_STATUSES = {
+        "created",
+        "initialized",
+        "running",
+        "stopped",
+        "unloaded",
+    }
+
+    ALLOWED_TRANSITIONS = {
+        "created": {"initialized", "unloaded"},
+        "initialized": {"running", "unloaded"},
+        "running": {"stopped"},
+        "stopped": {"running", "unloaded"},
+        "unloaded": set(),
+    }
+
     def __init__(
         self,
         module_id,
@@ -34,6 +50,9 @@ class BaseModule:
         dependencies=None,
         supported_languages=None
     ):
+        self._validate_text("module_id", module_id)
+        self._validate_text("name", name)
+
         self.module_id = module_id
         self.name = name
         self.version = version
@@ -50,24 +69,38 @@ class BaseModule:
         self.updated_at = self.created_at
 
     def initialize(self):
-        self.status = "initialized"
-        self._touch()
+        self._set_status("initialized")
 
     def start(self):
-        self.status = "running"
-        self._touch()
+        self._set_status("running")
 
     def stop(self):
-        self.status = "stopped"
-        self._touch()
+        self._set_status("stopped")
 
     def unload(self):
-        self.status = "unloaded"
-        self._touch()
+        self._set_status("unloaded")
 
     def restart(self):
         self.stop()
         self.start()
+
+    def _set_status(self, next_status):
+        if next_status not in self.VALID_STATUSES:
+            raise ValueError(f"Invalid module status: {next_status}")
+
+        if next_status not in self.ALLOWED_TRANSITIONS[self.status]:
+            raise ValueError(
+                f"Invalid status transition for {self.module_id}: "
+                f"{self.status} -> {next_status}"
+            )
+
+        self.status = next_status
+        self._touch()
+
+    @staticmethod
+    def _validate_text(field_name, value):
+        if not isinstance(value, str) or not value.strip():
+            raise ValueError(f"{field_name} must be a non-empty string")
 
     def _touch(self):
         self.updated_at = datetime.now().isoformat()

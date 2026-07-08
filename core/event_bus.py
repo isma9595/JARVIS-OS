@@ -11,6 +11,9 @@ class EventBus:
         self.subscribers = {}
 
     def subscribe(self, event_name, callback):
+        if not callable(callback):
+            raise TypeError("callback must be callable")
+
         if event_name not in self.subscribers:
             self.subscribers[event_name] = []
 
@@ -21,7 +24,10 @@ class EventBus:
             return
 
         for callback in self.subscribers[event_name]:
-            callback(data)
+            try:
+                callback(data)
+            except Exception:
+                continue
 
     def list_events(self):
         return list(self.subscribers.keys())

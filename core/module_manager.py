@@ -5,11 +5,17 @@ JARVIS OS Module Manager
 """
 
 
+from core.base_module import BaseModule
+
+
 class ModuleManager:
     def __init__(self):
         self.modules = {}
 
     def register(self, module):
+        if not isinstance(module, BaseModule):
+            raise TypeError("module must be an instance of BaseModule")
+
         module_id = module.module_id
 
         if module_id in self.modules:
@@ -34,7 +40,10 @@ class ModuleManager:
             module.unload()
 
     def get_module(self, module_id):
-        return self.modules.get(module_id)
+        if module_id not in self.modules:
+            raise KeyError(f"Unknown module: {module_id}")
+
+        return self.modules[module_id]
 
     def list_modules(self):
         return [module.get_info() for module in self.modules.values()]
