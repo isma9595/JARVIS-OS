@@ -1,3 +1,4 @@
+from core.command_processor import CommandProcessor
 from core.event_bus import EventBus
 from core.exceptions import KernelError
 from core.kernel import JARVISKernel
@@ -36,6 +37,7 @@ def test_kernel_services_exist():
     assert isinstance(kernel.logger, Logger)
     assert isinstance(kernel.event_bus, EventBus)
     assert isinstance(kernel.module_manager, ModuleManager)
+    assert isinstance(kernel.command_processor, CommandProcessor)
     assert isinstance(kernel.dialogue, DialogueManager)
 
 
@@ -55,6 +57,12 @@ def test_get_service_module_manager():
     kernel = JARVISKernel()
 
     assert kernel.get_service("module_manager") is kernel.module_manager
+
+
+def test_get_service_command_processor():
+    kernel = JARVISKernel()
+
+    assert kernel.get_service("command_processor") is kernel.command_processor
 
 
 def test_get_unknown_service_error():
@@ -131,6 +139,7 @@ def run_tests():
     test_get_service_logger()
     test_get_service_event_bus()
     test_get_service_module_manager()
+    test_get_service_command_processor()
     test_get_unknown_service_error()
     test_start()
     test_repeated_start_error()

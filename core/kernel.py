@@ -1,3 +1,4 @@
+from core.command_processor import CommandProcessor
 from core.event_bus import EventBus
 from core.exceptions import KernelError
 from core.logger import Logger
@@ -6,12 +7,21 @@ from dialogue import DialogueManager
 
 
 class JARVISKernel:
-    ALLOWED_SERVICES = {"logger", "event_bus", "module_manager"}
+    ALLOWED_SERVICES = {
+        "logger",
+        "event_bus",
+        "module_manager",
+        "command_processor",
+    }
 
     def __init__(self, version="0.2", user_profile=None):
         self.version = version
         self.user_profile = user_profile or {}
         self.dialogue = DialogueManager(self.user_profile)
+        self.command_processor = CommandProcessor(
+            user_profile=self.user_profile,
+            dialogue_manager=self.dialogue,
+        )
         self.logger = Logger()
         self.event_bus = EventBus()
         self.module_manager = ModuleManager()
@@ -19,6 +29,7 @@ class JARVISKernel:
             "logger": self.logger,
             "event_bus": self.event_bus,
             "module_manager": self.module_manager,
+            "command_processor": self.command_processor,
         }
         self.state = "created"
         self.running = False
@@ -40,6 +51,7 @@ class JARVISKernel:
         self.logger.info("Logger: OK")
         self.logger.info("EventBus: OK")
         self.logger.info("ModuleManager: OK")
+        self.logger.info("CommandProcessor: OK")
 
         self.state = "running"
         self.running = True

@@ -52,5 +52,61 @@ class DialogueManager:
     def error_message(self, message):
         return f"{self.get_preferred_name()}, возникла ошибка: {message}."
 
+    def identity_response(self):
+        preferred_name = self.get_preferred_name()
+        return (
+            f"{preferred_name}, вы сохранены в профиле как "
+            f"{preferred_name}."
+        )
+
+    def assistant_identity_response(self):
+        return (
+            f"Меня зовут {self.get_assistant_name()}. "
+            "Я ваш персональный ассистент."
+        )
+
+    def unknown_command_response(self):
+        return (
+            f"{self.get_preferred_name()}, я пока не умею выполнять "
+            "эту команду, но могу запомнить её как идею для будущего."
+        )
+
+    def empty_command_response(self):
+        return (
+            f"{self.get_preferred_name()}, я не услышал команду. "
+            "Повторите, пожалуйста."
+        )
+
+    def exit_response(self):
+        return f"Хорошо, {self.get_preferred_name()}. Завершаю работу."
+
+    def capabilities_response(self):
+        return (
+            "Сейчас я умею запускать ядро, показывать профиль пользователя, "
+            "вести естественный диалог и понимать простые текстовые команды. "
+            "Голос, зрение экрана и автоматизация будут добавлены позже."
+        )
+
+    def profile_response(self):
+        lines = [
+            f"Имя пользователя: {self.get_user_name()}",
+            f"Имя ассистента: {self.get_assistant_name()}",
+            f"Язык: {self.get_language()}",
+            f"Стиль общения: {self.get_communication_style()}",
+        ]
+
+        age = self.user_profile.get("age")
+        if age:
+            lines.append(f"Возраст: {age}")
+
+        main_use_cases = self.user_profile.get("main_use_cases") or []
+        if main_use_cases:
+            lines.append(
+                "Основные сферы использования: "
+                + ", ".join(str(item) for item in main_use_cases)
+            )
+
+        return "\n".join(lines)
+
     def _get_value(self, key):
         return self.user_profile.get(key) or self.DEFAULT_PROFILE[key]

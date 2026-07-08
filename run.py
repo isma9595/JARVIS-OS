@@ -75,6 +75,25 @@ def main():
     kernel = JARVISKernel(user_profile=user_profile)
     kernel.start()
 
+    command_processor = kernel.get_service("command_processor")
+    print(
+        "Введите команду для JARVIS. "
+        "Для выхода напишите: выход"
+    )
+
+    while kernel.running:
+        try:
+            command_text = input("> ")
+        except EOFError:
+            command_text = "выход"
+
+        result = command_processor.process(command_text)
+        print(result["response"])
+
+        if result["should_exit"]:
+            kernel.shutdown()
+            break
+
 
 if __name__ == "__main__":
     main()
