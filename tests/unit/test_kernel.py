@@ -89,6 +89,12 @@ def test_get_service_memory_manager():
     assert kernel.get_service("memory_manager") is kernel.memory_manager
 
 
+def test_command_processor_uses_kernel_memory_manager():
+    kernel = JARVISKernel()
+
+    assert kernel.command_processor.memory_manager is kernel.memory_manager
+
+
 def test_get_unknown_service_error():
     kernel = JARVISKernel()
 
@@ -167,6 +173,7 @@ def run_tests():
     test_get_service_action_router()
     test_get_service_idea_manager()
     test_get_service_memory_manager()
+    test_command_processor_uses_kernel_memory_manager()
     test_get_unknown_service_error()
     test_start()
     test_repeated_start_error()

@@ -61,7 +61,26 @@ class CommandProcessor:
         "моя память",
         "память",
     }
+    MEMORY_COUNT_COMMANDS = {
+        "сколько ты помнишь",
+        "сколько записей в памяти",
+        "сколько у тебя памяти",
+    }
+    MEMORY_RECENT_COMMANDS = {
+        "покажи последние записи памяти",
+        "последние записи памяти",
+        "последняя память",
+        "последние воспоминания",
+    }
+    MEMORY_ABOUT_USER_COMMANDS = {
+        "что ты знаешь обо мне",
+        "что ты помнишь обо мне",
+        "что ты знаешь про меня",
+        "что ты помнишь про меня",
+    }
     MEMORY_SEARCH_PREFIXES = (
+        "вспомни про",
+        "что ты помнишь про",
         "найди в памяти",
         "поиск в памяти",
         "вспомни",
@@ -131,7 +150,7 @@ class CommandProcessor:
 
         if command in self.MEMORY_DELETE_COMMANDS:
             return self._result(
-                "memory.delete.denied",
+                "memory.delete.requested",
                 self.dialogue_manager.memory_delete_requires_future_confirmation_response(),
             )
 
@@ -140,6 +159,15 @@ class CommandProcessor:
 
         if self._is_memory_add_command(command):
             return self._add_memory(command)
+
+        if command in self.MEMORY_COUNT_COMMANDS:
+            return self._count_memories()
+
+        if command in self.MEMORY_RECENT_COMMANDS:
+            return self._recent_memories()
+
+        if command in self.MEMORY_ABOUT_USER_COMMANDS:
+            return self._about_user_memories()
 
         if command in self.MEMORY_LIST_COMMANDS:
             return self._list_memories()
@@ -221,6 +249,27 @@ class CommandProcessor:
 
         return self._result("memory.list", response)
 
+    def _count_memories(self):
+        count = self.memory_manager.count_memories()
+        return self._result(
+            "memory.count",
+            self.dialogue_manager.memory_count_response(count),
+        )
+
+    def _recent_memories(self):
+        memories = self.memory_manager.get_recent_memories(limit=5)
+        return self._result(
+            "memory.recent",
+            self.dialogue_manager.recent_memory_response(memories),
+        )
+
+    def _about_user_memories(self):
+        memories = self.memory_manager.list_memories()
+        return self._result(
+            "memory.about_user",
+            self.dialogue_manager.about_user_response(memories),
+        )
+
     def _is_memory_search_command(self, command):
         return any(
             command == prefix or command.startswith(prefix + " ")
@@ -232,7 +281,7 @@ class CommandProcessor:
         memories = self.memory_manager.search_memories(query)
         return self._result(
             "memory.search",
-            self.dialogue_manager.memory_search_response(memories, query),
+            self.dialogue_manager.memory_recall_response(memories, query),
         )
 
     def _extract_prefixed_text(self, command, prefixes):

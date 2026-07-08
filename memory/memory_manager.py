@@ -73,6 +73,30 @@ class LocalMemoryManager:
     def count_memories(self):
         return len(self.list_memories())
 
+    def get_recent_memories(self, limit=5):
+        try:
+            normalized_limit = int(limit)
+        except (TypeError, ValueError):
+            normalized_limit = 5
+
+        if normalized_limit < 1:
+            normalized_limit = 1
+
+        return list(reversed(self.list_memories()))[:normalized_limit]
+
+    def has_memories(self):
+        return self.count_memories() > 0
+
+    def summarize_memory_count(self):
+        return self.count_memories()
+
+    def get_all_memory_text(self):
+        return "\n".join(
+            str(item.get("content", ""))
+            for item in self.list_memories()
+            if item.get("content")
+        )
+
     def search_memories(self, query):
         normalized_query = str(query or "").strip().lower()
         if not normalized_query:
@@ -81,7 +105,10 @@ class LocalMemoryManager:
         return [
             item
             for item in self.list_memories()
-            if self._matches_query(str(item.get("content", "")).lower(), normalized_query)
+            if self._matches_query(
+                self._searchable_memory_text(item),
+                normalized_query,
+            )
         ]
 
     def _save_data(self, data):
@@ -111,3 +138,12 @@ class LocalMemoryManager:
 
         prefix_length = min(6, len(left), len(right))
         return left[:prefix_length] == right[:prefix_length]
+
+    def _searchable_memory_text(self, item):
+        tags = item.get("tags", [])
+        if not isinstance(tags, list):
+            tags = []
+
+        parts = [str(item.get("content", ""))]
+        parts.extend(str(tag) for tag in tags)
+        return " ".join(parts).lower()

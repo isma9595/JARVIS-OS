@@ -168,6 +168,56 @@ def test_memory_search_response():
     assert "1. работаешь с документами" in response
 
 
+def test_memory_count_response():
+    dialogue = DialogueManager(sample_profile())
+
+    assert dialogue.memory_count_response(3) == (
+        "Исмаил, в локальной памяти сохранено записей: 3."
+    )
+
+
+def test_recent_memory_response():
+    dialogue = DialogueManager(sample_profile())
+
+    response = dialogue.recent_memory_response(
+        [{"content": "вторая запись"}, {"content": "первая запись"}]
+    )
+
+    assert "Исмаил, вот последние записи памяти:" in response
+    assert "1. вторая запись" in response
+    assert "2. первая запись" in response
+
+
+def test_about_user_response():
+    dialogue = DialogueManager(sample_profile())
+
+    response = dialogue.about_user_response(
+        [{"content": "вы работаете с муниципальными письмами"}]
+    )
+
+    assert "Исмаил, вот что я знаю из локальной памяти:" in response
+    assert "1. вы работаете с муниципальными письмами" in response
+
+
+def test_memory_recall_response():
+    dialogue = DialogueManager(sample_profile())
+
+    response = dialogue.memory_recall_response(
+        [{"content": "JARVIS должен быть расширяемым"}], "JARVIS"
+    )
+
+    assert "Исмаил, я нашёл в памяти:" in response
+    assert "1. JARVIS должен быть расширяемым" in response
+
+
+def test_memory_not_found_response():
+    dialogue = DialogueManager(sample_profile())
+
+    assert dialogue.memory_not_found_response("проект") == (
+        "Исмаил, я не нашёл в памяти записей по запросу: проект."
+    )
+
+
 def run_tests():
     test_creation_without_profile()
     test_creation_with_profile()
@@ -190,6 +240,11 @@ def run_tests():
     test_no_memory_response()
     test_memory_list_response()
     test_memory_search_response()
+    test_memory_count_response()
+    test_recent_memory_response()
+    test_about_user_response()
+    test_memory_recall_response()
+    test_memory_not_found_response()
 
 
 if __name__ == "__main__":

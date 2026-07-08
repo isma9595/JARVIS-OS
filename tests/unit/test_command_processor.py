@@ -245,6 +245,74 @@ def test_search_memory_command():
         assert "1. я работаю с документами" in result["response"]
 
 
+def test_memory_count_command():
+    with TemporaryDirectory() as tmp_dir:
+        memory_manager = LocalMemoryManager(Path(tmp_dir) / "memory.json")
+        memory_manager.add_memory("локальный факт")
+        processor = CommandProcessor(sample_profile(), memory_manager=memory_manager)
+
+        result = processor.process("сколько ты помнишь")
+
+        assert result["intent"] == "memory.count"
+        assert result["should_exit"] is False
+        assert "сохранено записей: 1" in result["response"]
+
+
+def test_recent_memory_command():
+    with TemporaryDirectory() as tmp_dir:
+        memory_manager = LocalMemoryManager(Path(tmp_dir) / "memory.json")
+        memory_manager.add_memory("первая запись")
+        memory_manager.add_memory("вторая запись")
+        processor = CommandProcessor(sample_profile(), memory_manager=memory_manager)
+
+        result = processor.process("покажи последние записи памяти")
+
+        assert result["intent"] == "memory.recent"
+        assert result["should_exit"] is False
+        assert "1. вторая запись" in result["response"]
+        assert "2. первая запись" in result["response"]
+
+
+def test_about_user_memory_command():
+    with TemporaryDirectory() as tmp_dir:
+        memory_manager = LocalMemoryManager(Path(tmp_dir) / "memory.json")
+        memory_manager.add_memory("вы работаете с муниципальными письмами")
+        processor = CommandProcessor(sample_profile(), memory_manager=memory_manager)
+
+        result = processor.process("что ты знаешь обо мне")
+
+        assert result["intent"] == "memory.about_user"
+        assert result["should_exit"] is False
+        assert "вот что я знаю из локальной памяти" in result["response"]
+        assert "1. вы работаете с муниципальными письмами" in result["response"]
+
+
+def test_recall_memory_command_remember_about():
+    with TemporaryDirectory() as tmp_dir:
+        memory_manager = LocalMemoryManager(Path(tmp_dir) / "memory.json")
+        memory_manager.add_memory("JARVIS должен быть расширяемым")
+        processor = CommandProcessor(sample_profile(), memory_manager=memory_manager)
+
+        result = processor.process("что ты помнишь про JARVIS")
+
+        assert result["intent"] == "memory.search"
+        assert result["should_exit"] is False
+        assert "1. JARVIS должен быть расширяемым" in result["response"]
+
+
+def test_recall_memory_command_not_found():
+    with TemporaryDirectory() as tmp_dir:
+        memory_manager = LocalMemoryManager(Path(tmp_dir) / "memory.json")
+        memory_manager.add_memory("локальный факт")
+        processor = CommandProcessor(sample_profile(), memory_manager=memory_manager)
+
+        result = processor.process("вспомни про документы")
+
+        assert result["intent"] == "memory.search"
+        assert result["should_exit"] is False
+        assert "записей по запросу: документы" in result["response"]
+
+
 def test_memory_delete_command_does_not_delete():
     with TemporaryDirectory() as tmp_dir:
         memory_manager = LocalMemoryManager(Path(tmp_dir) / "memory.json")
@@ -253,7 +321,33 @@ def test_memory_delete_command_does_not_delete():
 
         result = processor.process("очисти память")
 
-        assert result["intent"] == "memory.delete.denied"
+        assert result["intent"] == "memory.delete.requested"
+        assert result["should_exit"] is False
+        assert memory_manager.count_memories() == 1
+
+
+def test_memory_delete_command_delete_memory_does_not_delete():
+    with TemporaryDirectory() as tmp_dir:
+        memory_manager = LocalMemoryManager(Path(tmp_dir) / "memory.json")
+        memory_manager.add_memory("локальный факт")
+        processor = CommandProcessor(sample_profile(), memory_manager=memory_manager)
+
+        result = processor.process("удали память")
+
+        assert result["intent"] == "memory.delete.requested"
+        assert result["should_exit"] is False
+        assert memory_manager.count_memories() == 1
+
+
+def test_memory_delete_command_forget_all_does_not_delete():
+    with TemporaryDirectory() as tmp_dir:
+        memory_manager = LocalMemoryManager(Path(tmp_dir) / "memory.json")
+        memory_manager.add_memory("локальный факт")
+        processor = CommandProcessor(sample_profile(), memory_manager=memory_manager)
+
+        result = processor.process("забудь всё")
+
+        assert result["intent"] == "memory.delete.requested"
         assert result["should_exit"] is False
         assert memory_manager.count_memories() == 1
 
@@ -282,7 +376,14 @@ def run_tests():
     test_list_memory_command_show_memory()
     test_list_memory_command_what_do_you_remember()
     test_search_memory_command()
+    test_memory_count_command()
+    test_recent_memory_command()
+    test_about_user_memory_command()
+    test_recall_memory_command_remember_about()
+    test_recall_memory_command_not_found()
     test_memory_delete_command_does_not_delete()
+    test_memory_delete_command_delete_memory_does_not_delete()
+    test_memory_delete_command_forget_all_does_not_delete()
 
 
 if __name__ == "__main__":

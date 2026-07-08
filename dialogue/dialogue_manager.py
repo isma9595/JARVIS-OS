@@ -94,12 +94,39 @@ class DialogueManager:
 
         return "\n".join(lines)
 
-    def no_memory_response(self):
-        return f"{self.get_preferred_name()}, пока в локальной памяти ничего нет."
+    def memory_count_response(self, count):
+        return (
+            f"{self.get_preferred_name()}, в локальной памяти "
+            f"сохранено записей: {count}."
+        )
 
-    def memory_search_response(self, memories, query):
+    def recent_memory_response(self, memories):
         if not memories:
-            return f"{self.get_preferred_name()}, я не нашёл в памяти ничего по запросу: {query}."
+            return self.no_memory_response()
+
+        lines = [
+            f"{self.get_preferred_name()}, вот последние записи памяти:",
+        ]
+        for index, memory in enumerate(memories, start=1):
+            lines.append(f"{index}. {memory.get('content', '')}")
+
+        return "\n".join(lines)
+
+    def about_user_response(self, memories):
+        if not memories:
+            return self.no_memory_response()
+
+        lines = [
+            f"{self.get_preferred_name()}, вот что я знаю из локальной памяти:",
+        ]
+        for index, memory in enumerate(memories, start=1):
+            lines.append(f"{index}. {memory.get('content', '')}")
+
+        return "\n".join(lines)
+
+    def memory_recall_response(self, memories, query):
+        if not memories:
+            return self.memory_not_found_response(query)
 
         lines = [
             f"{self.get_preferred_name()}, я нашёл в памяти:",
@@ -109,10 +136,22 @@ class DialogueManager:
 
         return "\n".join(lines)
 
+    def memory_not_found_response(self, query):
+        return (
+            f"{self.get_preferred_name()}, я не нашёл в памяти "
+            f"записей по запросу: {query}."
+        )
+
+    def no_memory_response(self):
+        return f"{self.get_preferred_name()}, пока в локальной памяти ничего нет."
+
+    def memory_search_response(self, memories, query):
+        return self.memory_recall_response(memories, query)
+
     def memory_delete_requires_future_confirmation_response(self):
         return (
             f"{self.get_preferred_name()}, удаление памяти требует отдельной "
-            "подтверждаемой функции в будущем. В TASK-009 я не удаляю память."
+            "подтверждаемой функции в будущем. В этой версии я не удаляю память."
         )
 
     def safe_action_response(self, action_description):
