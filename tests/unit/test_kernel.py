@@ -20,6 +20,13 @@ def test_kernel_creation():
     assert kernel.version == "0.2"
     assert kernel.state == "created"
     assert kernel.running is False
+    assert kernel.get_user_display_name() == "Пользователь"
+
+
+def test_kernel_user_profile():
+    kernel = JARVISKernel(user_profile={"preferred_name": "Исмаил"})
+
+    assert kernel.get_user_display_name() == "Исмаил"
 
 
 def test_kernel_services_exist():
@@ -117,6 +124,7 @@ def test_kernel_stopped_event():
 
 def run_tests():
     test_kernel_creation()
+    test_kernel_user_profile()
     test_kernel_services_exist()
     test_get_service_logger()
     test_get_service_event_bus()

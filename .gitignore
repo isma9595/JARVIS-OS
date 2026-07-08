@@ -20,3 +20,7 @@ env/
 
 .DS_Store
 Thumbs.db
+
+# Local user profiles
+users/profiles/*.json
+!users/profiles/.gitkeep

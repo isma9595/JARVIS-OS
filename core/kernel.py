@@ -7,8 +7,9 @@ from core.module_manager import ModuleManager
 class JARVISKernel:
     ALLOWED_SERVICES = {"logger", "event_bus", "module_manager"}
 
-    def __init__(self, version="0.2"):
+    def __init__(self, version="0.2", user_profile=None):
         self.version = version
+        self.user_profile = user_profile or {}
         self.logger = Logger()
         self.event_bus = EventBus()
         self.module_manager = ModuleManager()
@@ -44,7 +45,10 @@ class JARVISKernel:
         self.event_bus.publish("system.started", {"version": self.version})
 
         self.logger.info("Система успешно запущена.")
-        self.logger.info("Добро пожаловать, Исмаил.")
+        self.logger.info(f"Добро пожаловать, {self.get_user_display_name()}.")
+
+    def get_user_display_name(self):
+        return self.user_profile.get("preferred_name") or "Пользователь"
 
     def shutdown(self):
         if self.state == "stopped":
