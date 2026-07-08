@@ -16,6 +16,7 @@ class VoiceInputManager:
             dialogue_manager=self.dialogue_manager,
         )
         self.state = self.DISABLED
+        self._pending_confirmation = None
 
     def get_state(self):
         return self.state
@@ -75,7 +76,101 @@ class VoiceInputManager:
                 "should_exit": False,
             }
 
-        return self.command_processor.process(recognized_text)
+        result = self.command_processor.process(recognized_text)
+        category = result.get("category")
+
+        if category == "confirmation_required" or result.get("requires_confirmation"):
+            self._pending_confirmation = {
+                "text": recognized_text,
+                "channel": "voice",
+                "risk": "confirmation_required",
+            }
+            return {
+                "intent": "voice.confirmation_required",
+                "response": self.dialogue_manager.voice_confirmation_required_response(
+                    recognized_text
+                ),
+                "should_exit": False,
+                "channel": "voice",
+                "source": "recognized_text",
+                "pending_confirmation": self.get_pending_confirmation(),
+            }
+
+        if category == "forbidden" or (
+            result.get("allowed") is False and result.get("risk_level") == "high"
+        ):
+            self.clear_pending_confirmation()
+            return {
+                "intent": "voice.forbidden",
+                "response": self.dialogue_manager.voice_forbidden_response(
+                    recognized_text
+                ),
+                "should_exit": False,
+                "channel": "voice",
+                "source": "recognized_text",
+            }
+
+        result = dict(result)
+        result["channel"] = "voice"
+        result["source"] = "recognized_text"
+        result["response"] = (
+            self.dialogue_manager.voice_command_received_response(recognized_text)
+            + "\n"
+            + result["response"]
+        )
+        return result
+
+    def has_pending_confirmation(self):
+        return self._pending_confirmation is not None
+
+    def get_pending_confirmation(self):
+        if self._pending_confirmation is None:
+            return None
+
+        return dict(self._pending_confirmation)
+
+    def clear_pending_confirmation(self):
+        self._pending_confirmation = None
+
+    def confirm_pending_action(self):
+        pending = self.get_pending_confirmation()
+        if pending is None:
+            return {
+                "intent": "voice.confirmation.none",
+                "response": self.dialogue_manager.voice_confirmation_none_response(),
+                "should_exit": False,
+            }
+
+        self.clear_pending_confirmation()
+        return {
+            "intent": "voice.confirmation.confirmed",
+            "response": self.dialogue_manager.voice_confirmation_confirmed_response(
+                pending["text"]
+            ),
+            "should_exit": False,
+            "channel": "voice",
+            "source": "confirmation_simulation",
+        }
+
+    def cancel_pending_action(self):
+        pending = self.get_pending_confirmation()
+        if pending is None:
+            return {
+                "intent": "voice.confirmation.none",
+                "response": self.dialogue_manager.voice_cancellation_none_response(),
+                "should_exit": False,
+            }
+
+        self.clear_pending_confirmation()
+        return {
+            "intent": "voice.confirmation.cancelled",
+            "response": self.dialogue_manager.voice_confirmation_cancelled_response(
+                pending["text"]
+            ),
+            "should_exit": False,
+            "channel": "voice",
+            "source": "confirmation_simulation",
+        }
 
     def is_enabled(self):
         return self.state != self.DISABLED

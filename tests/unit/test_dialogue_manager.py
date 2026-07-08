@@ -328,6 +328,130 @@ def test_voice_not_real_microphone_response():
     assert "микрофон пока не включается" in response
 
 
+def test_voice_command_received_response():
+    dialogue = DialogueManager(sample_profile())
+
+    response = dialogue.voice_command_received_response("РєС‚Рѕ СЏ")
+
+    assert "РїСЂРёРЅСЏР» РіРѕР»РѕСЃРѕРІСѓСЋ РєРѕРјР°РЅРґСѓ" in response
+    assert "РєС‚Рѕ СЏ" in response
+
+
+def test_voice_confirmation_required_response():
+    dialogue = DialogueManager(sample_profile())
+
+    response = dialogue.voice_confirmation_required_response("РѕС‚РїСЂР°РІСЊ РїРёСЃСЊРјРѕ")
+
+    assert "С‚СЂРµР±СѓРµС‚ РїРѕРґС‚РІРµСЂР¶РґРµРЅРёСЏ" in response
+    assert "РѕС‚РїСЂР°РІСЊ РїРёСЃСЊРјРѕ" in response
+
+
+def test_voice_confirmation_confirmed_response():
+    dialogue = DialogueManager(sample_profile())
+
+    response = dialogue.voice_confirmation_confirmed_response("РѕС‚РїСЂР°РІСЊ РїРёСЃСЊРјРѕ")
+
+    assert "РїРѕРґС‚РІРµСЂР¶РґРµРЅРёРµ РїСЂРёРЅСЏС‚Рѕ" in response
+    assert "Р РµР°Р»СЊРЅРѕРµ РІС‹РїРѕР»РЅРµРЅРёРµ РґРµР№СЃС‚РІРёР№" in response
+
+
+def test_voice_confirmation_cancelled_response():
+    dialogue = DialogueManager(sample_profile())
+
+    response = dialogue.voice_confirmation_cancelled_response("РѕС‚РїСЂР°РІСЊ РїРёСЃСЊРјРѕ")
+
+    assert "РіРѕР»РѕСЃРѕРІРѕРµ РґРµР№СЃС‚РІРёРµ РѕС‚РјРµРЅРµРЅРѕ" in response
+
+
+def test_voice_confirmation_none_response():
+    dialogue = DialogueManager(sample_profile())
+
+    response = dialogue.voice_confirmation_none_response()
+
+    assert "РЅРµС‚ РіРѕР»РѕСЃРѕРІРѕРіРѕ РґРµР№СЃС‚РІРёСЏ" in response
+    assert "РґР»СЏ РїРѕРґС‚РІРµСЂР¶РґРµРЅРёСЏ" in response
+
+
+def test_voice_cancellation_none_response():
+    dialogue = DialogueManager(sample_profile())
+
+    response = dialogue.voice_cancellation_none_response()
+
+    assert "РЅРµС‚ РіРѕР»РѕСЃРѕРІРѕРіРѕ РґРµР№СЃС‚РІРёСЏ" in response
+    assert "РґР»СЏ РѕС‚РјРµРЅС‹" in response
+
+
+def test_voice_forbidden_response():
+    dialogue = DialogueManager(sample_profile())
+
+    response = dialogue.voice_forbidden_response("СѓРґР°Р»Рё system32")
+
+    assert "РЅРµ РјРѕРіСѓ РІС‹РїРѕР»РЅРёС‚СЊ СЌС‚Сѓ РіРѕР»РѕСЃРѕРІСѓСЋ РєРѕРјР°РЅРґСѓ" in response
+    assert "РѕРїР°СЃРЅРѕР№" in response
+
+
+def test_voice_command_received_response():
+    dialogue = DialogueManager(sample_profile())
+
+    response = dialogue.voice_command_received_response("кто я")
+
+    assert "принял голосовую команду" in response
+    assert "кто я" in response
+
+
+def test_voice_confirmation_required_response():
+    dialogue = DialogueManager(sample_profile())
+
+    response = dialogue.voice_confirmation_required_response("отправь письмо")
+
+    assert "требует подтверждения" in response
+    assert "отправь письмо" in response
+
+
+def test_voice_confirmation_confirmed_response():
+    dialogue = DialogueManager(sample_profile())
+
+    response = dialogue.voice_confirmation_confirmed_response("отправь письмо")
+
+    assert "подтверждение принято" in response
+    assert "Реальное выполнение действий" in response
+
+
+def test_voice_confirmation_cancelled_response():
+    dialogue = DialogueManager(sample_profile())
+
+    response = dialogue.voice_confirmation_cancelled_response("отправь письмо")
+
+    assert "голосовое действие отменено" in response
+
+
+def test_voice_confirmation_none_response():
+    dialogue = DialogueManager(sample_profile())
+
+    response = dialogue.voice_confirmation_none_response()
+
+    assert "нет голосового действия" in response
+    assert "для подтверждения" in response
+
+
+def test_voice_cancellation_none_response():
+    dialogue = DialogueManager(sample_profile())
+
+    response = dialogue.voice_cancellation_none_response()
+
+    assert "нет голосового действия" in response
+    assert "для отмены" in response
+
+
+def test_voice_forbidden_response():
+    dialogue = DialogueManager(sample_profile())
+
+    response = dialogue.voice_forbidden_response("удали system32")
+
+    assert "не могу выполнить эту голосовую команду" in response
+    assert "опасной" in response
+
+
 def run_tests():
     test_creation_without_profile()
     test_creation_with_profile()
@@ -366,6 +490,13 @@ def run_tests():
     test_voice_listening_stopped_response()
     test_voice_empty_input_response()
     test_voice_not_real_microphone_response()
+    test_voice_command_received_response()
+    test_voice_confirmation_required_response()
+    test_voice_confirmation_confirmed_response()
+    test_voice_confirmation_cancelled_response()
+    test_voice_confirmation_none_response()
+    test_voice_cancellation_none_response()
+    test_voice_forbidden_response()
 
 
 if __name__ == "__main__":

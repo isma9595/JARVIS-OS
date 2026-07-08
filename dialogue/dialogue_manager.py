@@ -298,6 +298,45 @@ class DialogueManager:
             "для голосовой команды."
         )
 
+    def voice_command_received_response(self, text):
+        return (
+            f"{self.get_preferred_name()}, я принял голосовую команду: "
+            f"{text}."
+        )
+
+    def voice_confirmation_required_response(self, text):
+        return (
+            f"{self.get_preferred_name()}, эта голосовая команда требует "
+            f"подтверждения: {text}."
+        )
+
+    def voice_confirmation_confirmed_response(self, text):
+        return (
+            f"{self.get_preferred_name()}, подтверждение принято. "
+            "Реальное выполнение действий будет добавлено позже безопасно."
+        )
+
+    def voice_confirmation_cancelled_response(self, text):
+        return f"{self.get_preferred_name()}, голосовое действие отменено."
+
+    def voice_confirmation_none_response(self):
+        return (
+            f"{self.get_preferred_name()}, сейчас нет голосового действия "
+            "для подтверждения."
+        )
+
+    def voice_cancellation_none_response(self):
+        return (
+            f"{self.get_preferred_name()}, сейчас нет голосового действия "
+            "для отмены."
+        )
+
+    def voice_forbidden_response(self, text):
+        return (
+            f"{self.get_preferred_name()}, я не могу выполнить эту "
+            "голосовую команду, потому что она может быть опасной."
+        )
+
     def voice_not_real_microphone_response(self):
         return (
             f"{self.get_preferred_name()}, голосовой фундамент есть, "

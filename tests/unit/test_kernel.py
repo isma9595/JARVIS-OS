@@ -172,6 +172,12 @@ def test_voice_input_manager_uses_kernel_services():
     assert kernel.voice_input_manager.dialogue_manager is kernel.dialogue
 
 
+def test_command_processor_is_linked_to_voice_input_manager():
+    kernel = JARVISKernel()
+
+    assert kernel.command_processor.voice_input_manager is kernel.voice_input_manager
+
+
 def test_get_unknown_service_error():
     kernel = JARVISKernel()
 
@@ -259,6 +265,7 @@ def run_tests():
     test_command_processor_uses_kernel_memory_manager()
     test_command_processor_uses_kernel_system_status()
     test_voice_input_manager_uses_kernel_services()
+    test_command_processor_is_linked_to_voice_input_manager()
     test_get_unknown_service_error()
     test_start()
     test_repeated_start_error()

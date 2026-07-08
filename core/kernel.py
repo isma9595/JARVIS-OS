@@ -45,6 +45,7 @@ class JARVISKernel:
             dialogue_manager=self.dialogue,
             user_profile=self.user_profile,
         )
+        self.command_processor.set_voice_input_manager(self.voice_input_manager)
         self.logger = Logger()
         self.event_bus = EventBus()
         self.module_manager = ModuleManager()

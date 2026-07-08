@@ -62,6 +62,24 @@ class CommandProcessor:
         "отключи голос",
         "отключить голосовой ввод",
     }
+    VOICE_SIMULATION_PREFIXES = (
+        "голосовая команда",
+        "голосом",
+        "как голос",
+        "распознанный текст",
+    )
+    VOICE_CONFIRMATION_COMMANDS = {
+        "подтвердить голосовую команду",
+        "подтверждаю голосовую команду",
+        "голос подтверждаю",
+        "подтвердить голосом",
+    }
+    VOICE_CANCELLATION_COMMANDS = {
+        "отменить голосовую команду",
+        "отмени голосовую команду",
+        "голос отмена",
+        "отменить голосом",
+    }
     COMMANDS_LIST_COMMANDS = {
         "покажи команды",
         "список команд",
@@ -151,6 +169,10 @@ class CommandProcessor:
             user_profile=self.user_profile,
             dialogue_manager=self.dialogue_manager,
         )
+        self.voice_input_manager = None
+
+    def set_voice_input_manager(self, voice_input_manager):
+        self.voice_input_manager = voice_input_manager
 
     def process(self, command_text):
         command = self._normalize(command_text)
@@ -160,6 +182,27 @@ class CommandProcessor:
                 "empty",
                 self.dialogue_manager.empty_command_response(),
             )
+
+        if self._is_voice_simulation_command(command):
+            return self._process_voice_simulation(command)
+
+        if command in self.VOICE_CONFIRMATION_COMMANDS:
+            if self.voice_input_manager is None:
+                return self._result(
+                    "voice.confirmation.none",
+                    self.dialogue_manager.voice_confirmation_none_response(),
+                )
+
+            return self.voice_input_manager.confirm_pending_action()
+
+        if command in self.VOICE_CANCELLATION_COMMANDS:
+            if self.voice_input_manager is None:
+                return self._result(
+                    "voice.confirmation.none",
+                    self.dialogue_manager.voice_cancellation_none_response(),
+                )
+
+            return self.voice_input_manager.cancel_pending_action()
 
         if command in self.USER_IDENTITY_COMMANDS:
             return self._result(
@@ -299,6 +342,35 @@ class CommandProcessor:
                 "voice_input_manager",
             ],
         }
+
+    def _is_voice_simulation_command(self, command):
+        return any(
+            command == prefix or command.startswith(prefix + " ")
+            for prefix in self.VOICE_SIMULATION_PREFIXES
+        )
+
+    def _process_voice_simulation(self, command):
+        recognized_text = self._extract_prefixed_text(
+            command,
+            self.VOICE_SIMULATION_PREFIXES,
+        )
+
+        if self.voice_input_manager is None:
+            return self._result(
+                "voice.empty",
+                self.dialogue_manager.voice_empty_input_response(),
+            )
+
+        result = self.voice_input_manager.process_recognized_text(recognized_text)
+        result = dict(result)
+        if result["intent"] not in {
+            "voice.empty",
+            "voice.confirmation_required",
+            "voice.forbidden",
+        }:
+            result["intent"] = "voice.command.simulated"
+
+        return result
 
     def _is_idea_add_command(self, command):
         return any(

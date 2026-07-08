@@ -3,6 +3,7 @@ from ideas import IdeaManager
 from memory import LocalMemoryManager
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from voice import VoiceInputManager
 
 
 def sample_profile():
@@ -447,6 +448,197 @@ def test_memory_delete_command_forget_all_does_not_delete():
         assert memory_manager.count_memories() == 1
 
 
+def create_voice_enabled_processor():
+    processor = CommandProcessor(sample_profile())
+    manager = VoiceInputManager(
+        command_processor=processor,
+        dialogue_manager=processor.dialogue_manager,
+        user_profile=sample_profile(),
+    )
+    processor.set_voice_input_manager(manager)
+    return processor, manager
+
+
+def test_voice_simulation_identity_command():
+    processor, manager = create_voice_enabled_processor()
+
+    result = processor.process("РіРѕР»РѕСЃРѕРІР°СЏ РєРѕРјР°РЅРґР° РєС‚Рѕ СЏ")
+
+    assert result["intent"] == "voice.command.simulated"
+    assert result["should_exit"] is False
+    assert result["channel"] == "voice"
+    assert result["source"] == "recognized_text"
+    assert manager.has_pending_confirmation() is False
+
+
+def test_voice_simulation_profile_alias_command():
+    processor, manager = create_voice_enabled_processor()
+
+    result = processor.process("РіРѕР»РѕСЃРѕРј РїРѕРєР°Р¶Рё РїСЂРѕС„РёР»СЊ")
+
+    assert result["intent"] == "voice.command.simulated"
+    assert result["channel"] == "voice"
+    assert manager.has_pending_confirmation() is False
+
+
+def test_voice_simulation_system_status_alias_command():
+    processor, _manager = create_voice_enabled_processor()
+
+    result = processor.process("РєР°Рє РіРѕР»РѕСЃ СЃС‚Р°С‚СѓСЃ СЃРёСЃС‚РµРјС‹")
+
+    assert result["intent"] == "voice.command.simulated"
+    assert result["should_exit"] is False
+    assert "РђРєС‚РёРІРЅС‹С… СЃРµСЂРІРёСЃРѕРІ" in result["response"]
+
+
+def test_voice_simulation_recognized_text_alias_command():
+    processor, _manager = create_voice_enabled_processor()
+
+    result = processor.process(
+        "СЂР°СЃРїРѕР·РЅР°РЅРЅС‹Р№ С‚РµРєСЃС‚ РІСЃРїРѕРјРЅРё РїСЂРѕ РјСѓРЅРёС†РёРїР°Р»СЊРЅС‹Рµ РїРёСЃСЊРјР°"
+    )
+
+    assert result["intent"] == "voice.command.simulated"
+    assert result["channel"] == "voice"
+
+
+def test_voice_simulation_empty_text():
+    processor, _manager = create_voice_enabled_processor()
+
+    result = processor.process("РіРѕР»РѕСЃРѕРІР°СЏ РєРѕРјР°РЅРґР°")
+
+    assert result["intent"] == "voice.empty"
+    assert result["should_exit"] is False
+
+
+def test_voice_simulation_requires_confirmation():
+    processor, manager = create_voice_enabled_processor()
+
+    result = processor.process("РіРѕР»РѕСЃРѕРІР°СЏ РєРѕРјР°РЅРґР° РѕС‚РїСЂР°РІСЊ РїРёСЃСЊРјРѕ")
+
+    assert result["intent"] == "voice.confirmation_required"
+    assert manager.has_pending_confirmation() is True
+    assert manager.get_pending_confirmation()["text"] == "РѕС‚РїСЂР°РІСЊ РїРёСЃСЊРјРѕ"
+
+
+def test_voice_confirmation_command_confirms_pending_action():
+    processor, manager = create_voice_enabled_processor()
+    processor.process("РіРѕР»РѕСЃРѕРІР°СЏ РєРѕРјР°РЅРґР° РѕС‚РїСЂР°РІСЊ РїРёСЃСЊРјРѕ")
+
+    result = processor.process("РїРѕРґС‚РІРµСЂРґРёС‚СЊ РіРѕР»РѕСЃРѕРІСѓСЋ РєРѕРјР°РЅРґСѓ")
+
+    assert result["intent"] == "voice.confirmation.confirmed"
+    assert manager.has_pending_confirmation() is False
+
+
+def test_voice_cancellation_command_cancels_pending_action():
+    processor, manager = create_voice_enabled_processor()
+    processor.process("РіРѕР»РѕСЃРѕРІР°СЏ РєРѕРјР°РЅРґР° РѕС‚РїСЂР°РІСЊ РїРёСЃСЊРјРѕ")
+
+    result = processor.process("РѕС‚РјРµРЅРёС‚СЊ РіРѕР»РѕСЃРѕРІСѓСЋ РєРѕРјР°РЅРґСѓ")
+
+    assert result["intent"] == "voice.confirmation.cancelled"
+    assert manager.has_pending_confirmation() is False
+
+
+def test_voice_confirmation_command_without_pending():
+    processor, _manager = create_voice_enabled_processor()
+
+    result = processor.process("РїРѕРґС‚РІРµСЂРґРёС‚СЊ РіРѕР»РѕСЃРѕРІСѓСЋ РєРѕРјР°РЅРґСѓ")
+
+    assert result["intent"] == "voice.confirmation.none"
+
+
+def test_voice_simulation_identity_command():
+    processor, manager = create_voice_enabled_processor()
+
+    result = processor.process("голосовая команда кто я")
+
+    assert result["intent"] == "voice.command.simulated"
+    assert result["should_exit"] is False
+    assert result["channel"] == "voice"
+    assert result["source"] == "recognized_text"
+    assert manager.has_pending_confirmation() is False
+
+
+def test_voice_simulation_profile_alias_command():
+    processor, manager = create_voice_enabled_processor()
+
+    result = processor.process("голосом покажи профиль")
+
+    assert result["intent"] == "voice.command.simulated"
+    assert result["channel"] == "voice"
+    assert manager.has_pending_confirmation() is False
+
+
+def test_voice_simulation_system_status_alias_command():
+    processor, _manager = create_voice_enabled_processor()
+
+    result = processor.process("как голос статус системы")
+
+    assert result["intent"] == "voice.command.simulated"
+    assert result["should_exit"] is False
+    assert "Активных сервисов" in result["response"]
+
+
+def test_voice_simulation_recognized_text_alias_command():
+    processor, _manager = create_voice_enabled_processor()
+
+    result = processor.process(
+        "распознанный текст вспомни про муниципальные письма"
+    )
+
+    assert result["intent"] == "voice.command.simulated"
+    assert result["channel"] == "voice"
+
+
+def test_voice_simulation_empty_text():
+    processor, _manager = create_voice_enabled_processor()
+
+    result = processor.process("голосовая команда")
+
+    assert result["intent"] == "voice.empty"
+    assert result["should_exit"] is False
+
+
+def test_voice_simulation_requires_confirmation():
+    processor, manager = create_voice_enabled_processor()
+
+    result = processor.process("голосовая команда отправь письмо")
+
+    assert result["intent"] == "voice.confirmation_required"
+    assert manager.has_pending_confirmation() is True
+    assert manager.get_pending_confirmation()["text"] == "отправь письмо"
+
+
+def test_voice_confirmation_command_confirms_pending_action():
+    processor, manager = create_voice_enabled_processor()
+    processor.process("голосовая команда отправь письмо")
+
+    result = processor.process("подтвердить голосовую команду")
+
+    assert result["intent"] == "voice.confirmation.confirmed"
+    assert manager.has_pending_confirmation() is False
+
+
+def test_voice_cancellation_command_cancels_pending_action():
+    processor, manager = create_voice_enabled_processor()
+    processor.process("голосовая команда отправь письмо")
+
+    result = processor.process("отменить голосовую команду")
+
+    assert result["intent"] == "voice.confirmation.cancelled"
+    assert manager.has_pending_confirmation() is False
+
+
+def test_voice_confirmation_command_without_pending():
+    processor, _manager = create_voice_enabled_processor()
+
+    result = processor.process("подтвердить голосовую команду")
+
+    assert result["intent"] == "voice.confirmation.none"
+
+
 def run_tests():
     test_creation_without_profile()
     test_creation_with_profile()
@@ -490,6 +682,15 @@ def run_tests():
     test_memory_delete_command_does_not_delete()
     test_memory_delete_command_delete_memory_does_not_delete()
     test_memory_delete_command_forget_all_does_not_delete()
+    test_voice_simulation_identity_command()
+    test_voice_simulation_profile_alias_command()
+    test_voice_simulation_system_status_alias_command()
+    test_voice_simulation_recognized_text_alias_command()
+    test_voice_simulation_empty_text()
+    test_voice_simulation_requires_confirmation()
+    test_voice_confirmation_command_confirms_pending_action()
+    test_voice_cancellation_command_cancels_pending_action()
+    test_voice_confirmation_command_without_pending()
 
 
 if __name__ == "__main__":
