@@ -51,6 +51,52 @@ def test_vosk_real_commands_and_selection_flow():
     assert plan["intent"] == "speech.backend.vosk.plan"
 
 
+def test_vosk_preflight_and_in_memory_model_path_commands(tmp_path):
+    processor, manager = create_voice_enabled_processor()
+
+    for command in (
+        "проверить vosk",
+        "preflight vosk",
+        "проверка vosk",
+        "диагностика vosk",
+        "проверить воск",
+        "диагностика воск",
+    ):
+        preflight = processor.process(command)
+        assert preflight["intent"] == "speech.backend.vosk.preflight"
+        assert "микрофон не включается" in preflight["response"]
+
+    for command in (
+        "модель vosk",
+        "статус модели vosk",
+        "проверить модель vosk",
+        "модель воск",
+        "статус модели воск",
+    ):
+        model = processor.process(command)
+        assert model["intent"] == "speech.backend.vosk.model.status"
+        assert "путь к модели не задан" in model["response"]
+
+    configured_path = r"C:\models\vosk-model-small-ru"
+    configured = processor.process(f"путь модели vosk {configured_path}")
+    assert configured["intent"] == "speech.backend.vosk.model.path.set"
+    assert manager.get_vosk_backend_status()["model_path"] == configured_path
+
+    for command in (
+        "требования vosk",
+        "что не хватает vosk",
+        "чего не хватает vosk",
+        "требования воск",
+    ):
+        missing = processor.process(command)
+        assert missing["intent"] == "speech.backend.vosk.requirements"
+
+    configured = processor.process(f"установить путь модели vosk {tmp_path}")
+    assert configured["intent"] == "speech.backend.vosk.model.path.set"
+    assert manager.get_vosk_preflight()["model_path_exists"] is True
+    assert "только в памяти процесса" in configured["response"]
+
+
 def sample_profile():
     return {
         "user_name": "Исмаил",

@@ -23,6 +23,23 @@ def test_vosk_backend_selected_response_is_explicitly_safe():
     assert "звук не записывается" in response
 
 
+def test_vosk_preflight_responses_are_explicitly_safe():
+    dialogue = DialogueManager()
+    response = dialogue.vosk_preflight_response(
+        {
+            "ready": False,
+            "missing_requirements": ["vosk_dependency", "model_path"],
+        }
+    )
+
+    assert "vosk_dependency" in response
+    assert "распознавание не запускается" in response
+    assert "микрофон не включается" in response
+    assert "ничего не устанавливаю" in dialogue.vosk_missing_requirements_response(
+        ["vosk_dependency"]
+    )
+
+
 def sample_profile():
     return {
         "user_name": "Исмаил",

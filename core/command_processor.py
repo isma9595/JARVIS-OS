@@ -139,6 +139,40 @@ class CommandProcessor:
         "что нужно для vosk",
         "подключение vosk",
     }
+    VOSK_PREFLIGHT_COMMANDS = {
+        "проверить vosk",
+        "preflight vosk",
+        "проверка vosk",
+        "проверь vosk",
+        "диагностика vosk",
+        "проверить воск",
+        "диагностика воск",
+        "готов ли vosk",
+        "vosk preflight",
+    }
+    VOSK_MISSING_REQUIREMENTS_COMMANDS = {
+        "что не хватает vosk",
+        "чего не хватает vosk",
+        "чего не хватает для vosk",
+        "что отсутствует для vosk",
+        "требования vosk",
+        "требования воск",
+    }
+    VOSK_MODEL_STATUS_COMMANDS = {
+        "модель vosk",
+        "статус модели vosk",
+        "проверить модель vosk",
+        "модель воск",
+        "статус модели воск",
+    }
+    VOSK_MODEL_PATH_PREFIXES = (
+        "путь модели vosk",
+        "установить путь модели vosk",
+        "модель vosk путь",
+        "путь модели воск",
+        "укажи путь к модели vosk",
+        "установи путь к модели vosk",
+    )
     VOICE_SIMULATION_PREFIXES = (
         "голосовая команда",
         "распознанный текст",
@@ -339,6 +373,49 @@ class CommandProcessor:
                 self.dialogue_manager.vosk_backend_plan_response(),
             )
 
+        if command in self.VOSK_PREFLIGHT_COMMANDS:
+            preflight = self._get_vosk_preflight()
+            return self._result(
+                "speech.backend.vosk.preflight",
+                self.dialogue_manager.vosk_preflight_response(preflight),
+            )
+
+        if command in self.VOSK_MISSING_REQUIREMENTS_COMMANDS:
+            preflight = self._get_vosk_preflight()
+            return self._result(
+                "speech.backend.vosk.requirements",
+                self.dialogue_manager.vosk_missing_requirements_response(
+                    preflight["missing_requirements"]
+                ),
+            )
+
+        if command in self.VOSK_MODEL_STATUS_COMMANDS:
+            status = self._get_vosk_model_status()
+            return self._result(
+                "speech.backend.vosk.model.status",
+                self.dialogue_manager.vosk_model_status_response(status),
+            )
+
+        model_path = self._extract_vosk_model_path(command_text, command)
+        if model_path is not None:
+            if not model_path:
+                return self._result(
+                    "speech.backend.vosk.model_path.missing",
+                    self.dialogue_manager.vosk_model_path_required_response(),
+                )
+            if self.voice_input_manager is None:
+                return self._result(
+                    "speech.backend.vosk.model_path.unavailable",
+                    self.dialogue_manager.speech_backend_selection_unavailable_response(),
+                )
+            preflight = self.voice_input_manager.configure_vosk_model_path(model_path)
+            return self._result(
+                "speech.backend.vosk.model.path.set",
+                self.dialogue_manager.vosk_model_path_configured_response(
+                    model_path, preflight
+                ),
+            )
+
         if command in self.MICROPHONE_STATUS_COMMANDS:
             return self._microphone_result(
                 "microphone.status",
@@ -517,6 +594,29 @@ class CommandProcessor:
             return ""
 
         return " ".join(str(command_text).strip().lower().split())
+
+    def _get_vosk_preflight(self):
+        if self.voice_input_manager is None:
+            from voice.vosk_local_backend import VoskLocalBackend
+
+            return VoskLocalBackend().preflight_check()
+        return self.voice_input_manager.get_vosk_preflight()
+
+    def _get_vosk_model_status(self):
+        if self.voice_input_manager is None:
+            from voice.vosk_local_backend import VoskLocalBackend
+
+            return VoskLocalBackend().get_status()
+        return self.voice_input_manager.get_vosk_backend_status()
+
+    def _extract_vosk_model_path(self, command_text, normalized_command):
+        for prefix in self.VOSK_MODEL_PATH_PREFIXES:
+            if normalized_command == prefix:
+                return ""
+            if normalized_command.startswith(prefix + " "):
+                original = str(command_text).strip()
+                return original[len(prefix) :].strip()
+        return None
 
     def _result(self, intent, response, should_exit=False):
         return {

@@ -59,6 +59,12 @@ class VoiceInputManager:
             dialogue_manager=self.dialogue_manager,
         )
         self.microphone_adapter = microphone_adapter or MicrophoneInputAdapter()
+        current_backend = self.microphone_adapter.get_speech_backend()
+        self._vosk_backend = (
+            current_backend
+            if isinstance(current_backend, VoskLocalBackend)
+            else VoskLocalBackend()
+        )
         self.state = self.DISABLED
         self._pending_confirmation = None
 
@@ -81,12 +87,18 @@ class VoiceInputManager:
         return self.microphone_adapter.select_speech_backend(backend_name)
 
     def use_vosk_backend(self):
-        return self.select_speech_backend("vosk_local")
+        return self.set_speech_backend(self._vosk_backend)
 
     def get_vosk_backend_status(self):
         if self.get_speech_backend_name() == "vosk_local":
             return self.get_speech_backend_status()
-        return VoskLocalBackend().get_status()
+        return self._vosk_backend.get_status()
+
+    def get_vosk_preflight(self):
+        return self._vosk_backend.preflight_check()
+
+    def configure_vosk_model_path(self, model_path):
+        return self._vosk_backend.configure_model_path(model_path)
 
     def microphone_status(self):
         status = self.get_microphone_status()

@@ -411,6 +411,61 @@ class DialogueManager:
             "модель ещё не подключены. Микрофон не включён, звук не записывается."
         )
 
+    def vosk_preflight_response(self, preflight):
+        if preflight.get("ready"):
+            state = "зависимость и папка модели найдены"
+        else:
+            state = "не хватает: " + ", ".join(
+                preflight.get("missing_requirements", [])
+            )
+        return (
+            f"{self.get_preferred_name()}, preflight Vosk: {state}. "
+            "Это только проверка готовности: распознавание не запускается, "
+            "микрофон не включается и звук не записывается."
+        )
+
+    def vosk_missing_requirements_response(self, missing_requirements):
+        if missing_requirements:
+            details = ", ".join(missing_requirements)
+            return (
+                f"{self.get_preferred_name()}, для Vosk не хватает: {details}. "
+                "Я ничего не устанавливаю и не скачиваю."
+            )
+        return (
+            f"{self.get_preferred_name()}, обязательные prerequisites Vosk найдены. "
+            "Распознавание речи всё равно не запущено."
+        )
+
+    def vosk_model_status_response(self, preflight):
+        model_path = preflight.get("model_path")
+        if not model_path:
+            state = "путь к модели не задан"
+        elif preflight.get("model_path_exists"):
+            state = f"папка модели найдена: {model_path}"
+        else:
+            state = f"папка модели не найдена: {model_path}"
+        return (
+            f"{self.get_preferred_name()}, статус модели Vosk: {state}. "
+            "Это только проверка; модель не загружается и микрофон не включается."
+        )
+
+    def vosk_model_path_required_response(self):
+        return (
+            f"{self.get_preferred_name()}, после команды нужно указать локальный "
+            "путь к папке модели Vosk."
+        )
+
+    def vosk_model_path_configured_response(self, model_path, preflight):
+        path_state = (
+            "папка существует"
+            if preflight.get("model_path_exists")
+            else "папка не найдена"
+        )
+        return (
+            f"{self.get_preferred_name()}, путь к модели сохранён только в памяти "
+            f"процесса: {model_path}; {path_state}. Никакие файлы не изменены."
+        )
+
     def microphone_permission_required_response(self):
         return (
             f"{self.get_preferred_name()}, для микрофона нужно явное разрешение. "
