@@ -31,3 +31,9 @@ ideas/ideas.json
 # Local user memory
 memory/local/*.json
 !memory/local/.gitkeep
+
+# Local Vosk and other machine-specific settings
+config/local/*.json
+config/local/*.db
+config/local/*.sqlite
+!config/local/.gitkeep

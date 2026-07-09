@@ -1,4 +1,4 @@
-from voice import SpeechRecognitionBackend, VoskLocalBackend
+from voice import SpeechRecognitionBackend, VoskLocalBackend, VoskSettingsManager
 from unittest.mock import patch
 
 
@@ -55,7 +55,9 @@ def test_preflight_reports_missing_dependency_and_model_path():
 
 
 def test_preflight_detects_dependency_and_existing_model_directory(tmp_path):
-    backend = VoskLocalBackend()
+    backend = VoskLocalBackend(
+        settings_manager=VoskSettingsManager(tmp_path / "vosk_settings.json")
+    )
     configured = backend.configure_model_path(tmp_path)
 
     assert configured["model_path_configured"] is True
@@ -73,7 +75,9 @@ def test_preflight_detects_dependency_and_existing_model_directory(tmp_path):
 
 def test_configure_model_path_does_not_create_missing_directory(tmp_path):
     missing_path = tmp_path / "not-created"
-    backend = VoskLocalBackend()
+    backend = VoskLocalBackend(
+        settings_manager=VoskSettingsManager(tmp_path / "vosk_settings.json")
+    )
 
     status = backend.configure_model_path(missing_path)
 

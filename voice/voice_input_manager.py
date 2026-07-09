@@ -51,6 +51,7 @@ class VoiceInputManager:
         dialogue_manager=None,
         user_profile=None,
         microphone_adapter=None,
+        vosk_settings_manager=None,
     ):
         self.user_profile = user_profile or {}
         self.dialogue_manager = dialogue_manager or DialogueManager(self.user_profile)
@@ -63,7 +64,7 @@ class VoiceInputManager:
         self._vosk_backend = (
             current_backend
             if isinstance(current_backend, VoskLocalBackend)
-            else VoskLocalBackend()
+            else VoskLocalBackend(settings_manager=vosk_settings_manager)
         )
         self.state = self.DISABLED
         self._pending_confirmation = None
@@ -99,6 +100,12 @@ class VoiceInputManager:
 
     def configure_vosk_model_path(self, model_path):
         return self._vosk_backend.configure_model_path(model_path)
+
+    def clear_vosk_model_path(self):
+        return self._vosk_backend.clear_model_path()
+
+    def configure_vosk_language(self, language):
+        return self._vosk_backend.configure_language(language)
 
     def microphone_status(self):
         status = self.get_microphone_status()

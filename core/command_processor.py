@@ -167,12 +167,30 @@ class CommandProcessor:
     }
     VOSK_MODEL_PATH_PREFIXES = (
         "путь модели vosk",
+        "сохранить путь модели vosk",
         "установить путь модели vosk",
         "модель vosk путь",
         "путь модели воск",
         "укажи путь к модели vosk",
         "установи путь к модели vosk",
     )
+    VOSK_MODEL_PATH_CLEAR_COMMANDS = {
+        "очистить путь модели vosk",
+        "очисти путь модели vosk",
+        "сбросить путь модели vosk",
+        "удалить путь модели vosk",
+    }
+    VOSK_LANGUAGE_PREFIXES = (
+        "язык модели vosk",
+        "установить язык модели vosk",
+        "установить язык vosk",
+    )
+    VOSK_LANGUAGE_STATUS_COMMANDS = {
+        "язык vosk",
+    }
+    VOSK_SETTINGS_COMMANDS = {
+        "настройки vosk",
+    }
     VOICE_SIMULATION_PREFIXES = (
         "голосовая команда",
         "распознанный текст",
@@ -396,6 +414,56 @@ class CommandProcessor:
                 self.dialogue_manager.vosk_model_status_response(status),
             )
 
+        if command in self.VOSK_MODEL_PATH_CLEAR_COMMANDS:
+            if self.voice_input_manager is None:
+                return self._result(
+                    "speech.backend.vosk.model_path.unavailable",
+                    self.dialogue_manager.speech_backend_selection_unavailable_response(),
+                )
+            preflight = self.voice_input_manager.clear_vosk_model_path()
+            return self._result(
+                "speech.backend.vosk.model.path.cleared",
+                self.dialogue_manager.vosk_model_path_cleared_response(preflight),
+            )
+
+        if command in self.VOSK_SETTINGS_COMMANDS:
+            status = self._get_vosk_model_status()
+            return self._result(
+                "speech.backend.vosk.settings",
+                self.dialogue_manager.vosk_settings_response(status),
+            )
+
+        if command in self.VOSK_LANGUAGE_STATUS_COMMANDS:
+            status = self._get_vosk_model_status()
+            return self._result(
+                "speech.backend.vosk.language.status",
+                self.dialogue_manager.vosk_language_status_response(
+                    status.get("language", "ru")
+                ),
+            )
+
+        language = self._extract_prefixed_value(
+            command_text, command, self.VOSK_LANGUAGE_PREFIXES
+        )
+        if language is not None:
+            if not language:
+                return self._result(
+                    "speech.backend.vosk.language.missing",
+                    self.dialogue_manager.vosk_language_required_response(),
+                )
+            if self.voice_input_manager is None:
+                return self._result(
+                    "speech.backend.vosk.language.unavailable",
+                    self.dialogue_manager.speech_backend_selection_unavailable_response(),
+                )
+            status = self.voice_input_manager.configure_vosk_language(language)
+            return self._result(
+                "speech.backend.vosk.language.set",
+                self.dialogue_manager.vosk_language_configured_response(
+                    language, status
+                ),
+            )
+
         model_path = self._extract_vosk_model_path(command_text, command)
         if model_path is not None:
             if not model_path:
@@ -610,7 +678,13 @@ class CommandProcessor:
         return self.voice_input_manager.get_vosk_backend_status()
 
     def _extract_vosk_model_path(self, command_text, normalized_command):
-        for prefix in self.VOSK_MODEL_PATH_PREFIXES:
+        return self._extract_prefixed_value(
+            command_text, normalized_command, self.VOSK_MODEL_PATH_PREFIXES
+        )
+
+    @staticmethod
+    def _extract_prefixed_value(command_text, normalized_command, prefixes):
+        for prefix in prefixes:
             if normalized_command == prefix:
                 return ""
             if normalized_command.startswith(prefix + " "):

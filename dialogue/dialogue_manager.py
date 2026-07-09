@@ -462,8 +462,41 @@ class DialogueManager:
             else "папка не найдена"
         )
         return (
-            f"{self.get_preferred_name()}, путь к модели сохранён только в памяти "
-            f"процесса: {model_path}; {path_state}. Никакие файлы не изменены."
+            f"{self.get_preferred_name()}, локальный путь к модели сохранён: "
+            f"{model_path}; {path_state}. Файлы модели не изменялись."
+        )
+
+    def vosk_model_path_cleared_response(self, preflight):
+        return (
+            f"{self.get_preferred_name()}, сохранённый путь к модели Vosk очищен. "
+            "Файлы и папки модели не удалялись."
+        )
+
+    def vosk_settings_response(self, status):
+        model_path = status.get("model_path") or "не задан"
+        language = status.get("language", "ru")
+        return (
+            f"{self.get_preferred_name()}, локальные настройки Vosk: "
+            f"путь модели — {model_path}; язык — {language}. "
+            "Микрофон не запускался."
+        )
+
+    def vosk_language_required_response(self):
+        return (
+            f"{self.get_preferred_name()}, после команды нужно указать язык "
+            "модели Vosk."
+        )
+
+    def vosk_language_status_response(self, language):
+        return (
+            f"{self.get_preferred_name()}, сохранённый язык модели Vosk: "
+            f"{language}. Микрофон не запускался."
+        )
+
+    def vosk_language_configured_response(self, language, status):
+        return (
+            f"{self.get_preferred_name()}, язык модели Vosk сохранён: {language}. "
+            "Распознавание речи и микрофон не запускались."
         )
 
     def microphone_permission_required_response(self):

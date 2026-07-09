@@ -3,7 +3,7 @@ from ideas import IdeaManager
 from memory import LocalMemoryManager
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from voice import VoiceInputManager
+from voice import VoiceInputManager, VoskSettingsManager
 
 
 def test_speech_backend_commands():
@@ -52,7 +52,7 @@ def test_vosk_real_commands_and_selection_flow():
 
 
 def test_vosk_preflight_and_in_memory_model_path_commands(tmp_path):
-    processor, manager = create_voice_enabled_processor()
+    processor, manager = create_voice_enabled_processor(tmp_path)
 
     for command in (
         "проверить vosk",
@@ -78,9 +78,15 @@ def test_vosk_preflight_and_in_memory_model_path_commands(tmp_path):
         assert "путь к модели не задан" in model["response"]
 
     configured_path = r"C:\models\vosk-model-small-ru"
-    configured = processor.process(f"путь модели vosk {configured_path}")
+    configured = processor.process(
+        f"сохранить путь модели vosk {configured_path}"
+    )
     assert configured["intent"] == "speech.backend.vosk.model.path.set"
     assert manager.get_vosk_backend_status()["model_path"] == configured_path
+
+    settings = processor.process("настройки vosk")
+    assert settings["intent"] == "speech.backend.vosk.settings"
+    assert configured_path in settings["response"]
 
     for command in (
         "требования vosk",
@@ -94,7 +100,20 @@ def test_vosk_preflight_and_in_memory_model_path_commands(tmp_path):
     configured = processor.process(f"установить путь модели vosk {tmp_path}")
     assert configured["intent"] == "speech.backend.vosk.model.path.set"
     assert manager.get_vosk_preflight()["model_path_exists"] is True
-    assert "только в памяти процесса" in configured["response"]
+    assert "локальный путь к модели сохранён" in configured["response"]
+
+    language_before = processor.process("язык vosk")
+    assert language_before["intent"] == "speech.backend.vosk.language.status"
+    assert "ru" in language_before["response"]
+
+    language = processor.process("установить язык vosk ru")
+    assert language["intent"] == "speech.backend.vosk.language.set"
+    assert manager.get_vosk_backend_status()["language"] == "ru"
+
+    cleared = processor.process("очистить путь модели vosk")
+    assert cleared["intent"] == "speech.backend.vosk.model.path.cleared"
+    assert manager.get_vosk_backend_status()["model_path"] is None
+    assert tmp_path.is_dir()
 
 
 def sample_profile():
@@ -542,12 +561,16 @@ def test_memory_delete_command_forget_all_does_not_delete():
         assert memory_manager.count_memories() == 1
 
 
-def create_voice_enabled_processor():
+def create_voice_enabled_processor(tmp_path=None):
     processor = CommandProcessor(sample_profile())
+    settings_manager = None
+    if tmp_path is not None:
+        settings_manager = VoskSettingsManager(tmp_path / "vosk_settings.json")
     manager = VoiceInputManager(
         command_processor=processor,
         dialogue_manager=processor.dialogue_manager,
         user_profile=sample_profile(),
+        vosk_settings_manager=settings_manager,
     )
     processor.set_voice_input_manager(manager)
     return processor, manager

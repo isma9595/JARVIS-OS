@@ -40,6 +40,23 @@ def test_vosk_preflight_responses_are_explicitly_safe():
     )
 
 
+def test_vosk_language_status_response_is_explicitly_safe():
+    response = DialogueManager().vosk_language_status_response("ru")
+
+    assert "ru" in response
+    assert "Микрофон не запускался" in response
+
+
+def test_vosk_settings_response_contains_local_values():
+    response = DialogueManager().vosk_settings_response(
+        {"model_path": r"C:\models\vosk-model-small-ru", "language": "ru"}
+    )
+
+    assert r"C:\models\vosk-model-small-ru" in response
+    assert "язык — ru" in response
+    assert "Микрофон не запускался" in response
+
+
 def sample_profile():
     return {
         "user_name": "Исмаил",

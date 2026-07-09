@@ -2,6 +2,10 @@ import importlib.util
 from pathlib import Path
 
 from voice.speech_recognition_backend import SpeechRecognitionBackend
+from voice.vosk_settings_manager import VoskSettingsManager
+
+
+_UNSET = object()
 
 
 class VoskLocalBackend(SpeechRecognitionBackend):
@@ -11,13 +15,18 @@ class VoskLocalBackend(SpeechRecognitionBackend):
 
     def __init__(
         self,
-        model_path=None,
-        language="ru",
+        model_path=_UNSET,
+        language=None,
         installed=False,
         model_available=False,
+        settings_manager=None,
     ):
-        self.model_path = model_path
-        self.language = language
+        self.settings_manager = settings_manager or VoskSettingsManager()
+        settings = self.settings_manager.load_settings()
+        self.model_path = (
+            settings.get("model_path") if model_path is _UNSET else model_path
+        )
+        self.language = language or settings.get("language", "ru")
         self.installed = bool(installed)
         self.model_available = bool(model_available)
 
@@ -112,14 +121,29 @@ class VoskLocalBackend(SpeechRecognitionBackend):
         )
 
     def configure_model_path(self, model_path):
-        """Store a local model path in memory; do not create or modify files."""
+        """Persist a local model path without reading or modifying model files."""
         if model_path is None:
             self.model_path = None
         else:
             normalized_path = str(model_path).strip()
             self.model_path = normalized_path or None
+        self.settings_manager.set_model_path(self.model_path)
         self.model_available = self.check_model_path_exists()
         return self.preflight_check()
+
+    def clear_model_path(self):
+        self.model_path = None
+        self.settings_manager.clear_model_path()
+        self.model_available = False
+        return self.preflight_check()
+
+    def configure_language(self, language):
+        normalized_language = str(language).strip()
+        if not normalized_language:
+            raise ValueError("Vosk model language must not be empty")
+        self.language = normalized_language
+        self.settings_manager.set_language(normalized_language)
+        return self.get_status()
 
     def recognize_once(self):
         return {

@@ -1,4 +1,9 @@
-from voice import NoSpeechRecognitionBackend, VoiceInputManager, VoskLocalBackend
+from voice import (
+    NoSpeechRecognitionBackend,
+    VoiceInputManager,
+    VoskLocalBackend,
+    VoskSettingsManager,
+)
 
 
 def test_vosk_skeleton_selection_is_delegated_and_safe():
@@ -18,6 +23,22 @@ def test_speech_backend_management_is_delegated_to_microphone_adapter():
     assert status["name"] == "none"
     assert manager.get_speech_backend_name() == "none"
     assert manager.get_speech_backend_status()["available"] is False
+
+
+def test_vosk_settings_are_local_and_do_not_enable_input(tmp_path):
+    settings_path = tmp_path / "vosk_settings.json"
+    manager = VoiceInputManager(
+        vosk_settings_manager=VoskSettingsManager(settings_path)
+    )
+
+    manager.configure_vosk_model_path(r"C:\models\vosk-model-small-ru")
+    manager.configure_vosk_language("ru")
+    manager.clear_vosk_model_path()
+
+    assert manager.get_state() == "disabled"
+    assert manager.get_vosk_backend_status()["language"] == "ru"
+    assert manager.get_vosk_backend_status()["model_path"] is None
+    assert settings_path.is_file()
 
 
 def sample_profile():

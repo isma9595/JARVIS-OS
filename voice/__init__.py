@@ -5,6 +5,7 @@ from voice.speech_recognition_backend import (
 )
 from voice.voice_input_manager import VoiceInputManager
 from voice.vosk_local_backend import VoskLocalBackend
+from voice.vosk_settings_manager import VoskSettingsManager
 
 __all__ = [
     "MicrophoneInputAdapter",
@@ -12,4 +13,5 @@ __all__ = [
     "SpeechRecognitionBackend",
     "VoiceInputManager",
     "VoskLocalBackend",
+    "VoskSettingsManager",
 ]
