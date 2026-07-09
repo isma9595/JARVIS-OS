@@ -1,4 +1,13 @@
-from voice import MicrophoneInputAdapter, NoSpeechRecognitionBackend
+from voice import MicrophoneInputAdapter, NoSpeechRecognitionBackend, VoskLocalBackend
+
+
+def test_vosk_skeleton_can_be_selected_without_listening():
+    adapter = MicrophoneInputAdapter(backend_name="vosk_local")
+
+    assert isinstance(adapter.get_speech_backend(), VoskLocalBackend)
+    assert adapter.get_state() == "disabled"
+    assert adapter.has_backend() is False
+    assert adapter.listen_once()["text"] is None
 
 
 def test_default_speech_backend_is_safe_and_listen_once_delegates():

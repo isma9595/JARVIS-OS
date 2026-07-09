@@ -115,6 +115,30 @@ class CommandProcessor:
         "какой backend выбрать",
         "локальное распознавание речи",
     }
+    VOSK_BACKEND_STATUS_COMMANDS = {
+        "vosk",
+        "vosk backend",
+        "статус vosk",
+        "локальный vosk",
+        "восок",
+        "воск",
+    }
+    VOSK_BACKEND_SELECT_COMMANDS = {
+        "выбрать vosk",
+        "использовать vosk",
+        "включить vosk backend",
+        "переключиться на vosk",
+        "выбери vosk backend",
+        "используй vosk",
+        "подключи vosk",
+        "use vosk backend",
+    }
+    VOSK_BACKEND_PLAN_COMMANDS = {
+        "план vosk",
+        "как подключить vosk",
+        "что нужно для vosk",
+        "подключение vosk",
+    }
     VOICE_SIMULATION_PREFIXES = (
         "голосовая команда",
         "распознанный текст",
@@ -280,6 +304,39 @@ class CommandProcessor:
             return self._result(
                 "speech.backend.options",
                 self.dialogue_manager.speech_backend_options_response(),
+            )
+
+        if command in self.VOSK_BACKEND_STATUS_COMMANDS:
+            status = (
+                self.voice_input_manager.get_vosk_backend_status()
+                if self.voice_input_manager is not None
+                else {
+                    "name": "vosk_local",
+                    "available": False,
+                    "supports_offline": True,
+                }
+            )
+            return self._result(
+                "speech.backend.vosk.status",
+                self.dialogue_manager.speech_backend_status_response(status),
+            )
+
+        if command in self.VOSK_BACKEND_SELECT_COMMANDS:
+            if self.voice_input_manager is None:
+                return self._result(
+                    "speech.backend.select.unavailable",
+                    self.dialogue_manager.speech_backend_selection_unavailable_response(),
+                )
+            status = self.voice_input_manager.use_vosk_backend()
+            return self._result(
+                "speech.backend.vosk.select",
+                self.dialogue_manager.speech_backend_selected_response(status),
+            )
+
+        if command in self.VOSK_BACKEND_PLAN_COMMANDS:
+            return self._result(
+                "speech.backend.vosk.plan",
+                self.dialogue_manager.vosk_backend_plan_response(),
             )
 
         if command in self.MICROPHONE_STATUS_COMMANDS:

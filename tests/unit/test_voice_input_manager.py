@@ -1,4 +1,14 @@
-from voice import NoSpeechRecognitionBackend, VoiceInputManager
+from voice import NoSpeechRecognitionBackend, VoiceInputManager, VoskLocalBackend
+
+
+def test_vosk_skeleton_selection_is_delegated_and_safe():
+    manager = VoiceInputManager()
+    status = manager.select_speech_backend("vosk_local")
+
+    assert status["name"] == "vosk_local"
+    assert status["available"] is False
+    assert isinstance(manager.microphone_adapter.get_speech_backend(), VoskLocalBackend)
+    assert manager.get_state() == "disabled"
 
 
 def test_speech_backend_management_is_delegated_to_microphone_adapter():

@@ -13,6 +13,16 @@ def test_speech_backend_responses():
     assert "Vosk" in dialogue.speech_backend_options_response()
 
 
+def test_vosk_backend_selected_response_is_explicitly_safe():
+    response = DialogueManager().speech_backend_selected_response(
+        {"name": "vosk_local", "available": False}
+    )
+
+    assert "vosk_local" in response
+    assert "skeleton" in response
+    assert "звук не записывается" in response
+
+
 def sample_profile():
     return {
         "user_name": "Исмаил",

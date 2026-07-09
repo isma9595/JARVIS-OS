@@ -14,10 +14,41 @@ def test_speech_backend_commands():
         processor.process("почему нет распознавания")["intent"]
         == "speech.backend.explain"
     )
-    assert (
-        processor.process("локальное распознавание речи")["intent"]
-        == "speech.backend.options"
-    )
+
+
+def test_vosk_real_commands_and_selection_flow():
+    processor, manager = create_voice_enabled_processor()
+    original_use_vosk_backend = manager.use_vosk_backend
+    use_vosk_calls = []
+
+    def tracked_use_vosk_backend():
+        use_vosk_calls.append(True)
+        return original_use_vosk_backend()
+
+    manager.use_vosk_backend = tracked_use_vosk_backend
+
+    status = processor.process("vosk")
+    assert status["intent"] == "speech.backend.vosk.status"
+    assert manager.get_speech_backend_name() == "none"
+
+    result = processor.process("выбрать vosk")
+    assert result["intent"] == "speech.backend.vosk.select"
+    assert use_vosk_calls == [True]
+    assert manager.get_speech_backend_name() == "vosk_local"
+    assert manager.get_speech_backend_status()["available"] is False
+    assert "микрофон не включается" in result["response"]
+
+    backend_status = processor.process("речевой backend")
+    assert backend_status["intent"] == "speech.backend.status"
+    assert "vosk_local" in backend_status["response"]
+
+    listen_once = processor.process("послушай один раз")
+    assert listen_once["intent"] == "microphone.listen.once"
+    assert "Vosk skeleton готов" in listen_once["response"]
+    assert manager.get_microphone_status()["permission_granted"] is False
+
+    plan = processor.process("план vosk")
+    assert plan["intent"] == "speech.backend.vosk.plan"
 
 
 def sample_profile():
@@ -868,6 +899,8 @@ def test_voice_confirmation_command_without_pending():
 
 
 def run_tests():
+    test_speech_backend_commands()
+    test_vosk_real_commands_and_selection_flow()
     test_creation_without_profile()
     test_creation_with_profile()
     test_user_identity_command()

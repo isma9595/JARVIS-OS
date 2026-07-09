@@ -383,6 +383,34 @@ class DialogueManager:
             "и доступ к микрофону должны подключаться отдельно и явно."
         )
 
+    def speech_backend_selected_response(self, status):
+        name = status.get("name", "none")
+        return (
+            f"{self.get_preferred_name()}, выбран речевой backend: {name}. "
+            "Это безопасный skeleton: распознавание речи не запущено, "
+            "микрофон не включается и звук не записывается."
+        )
+
+    def speech_backend_selection_unavailable_response(self):
+        return (
+            f"{self.get_preferred_name()}, выбрать речевой backend сейчас нельзя: "
+            "voice input manager не подключён."
+        )
+
+    def vosk_backend_plan_response(self):
+        return (
+            f"{self.get_preferred_name()}, для подключения Vosk нужны локальная "
+            "библиотека, совместимая модель и отдельный безопасный аудио-адаптер. "
+            "Сейчас доступен только skeleton: микрофон не включается, звук не "
+            "записывается и данные не отправляются в интернет."
+        )
+
+    def vosk_skeleton_unavailable_response(self):
+        return (
+            f"{self.get_preferred_name()}, Vosk skeleton готов, но библиотека и "
+            "модель ещё не подключены. Микрофон не включён, звук не записывается."
+        )
+
     def microphone_permission_required_response(self):
         return (
             f"{self.get_preferred_name()}, для микрофона нужно явное разрешение. "

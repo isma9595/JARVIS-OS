@@ -1,4 +1,5 @@
 from voice.speech_recognition_backend import NoSpeechRecognitionBackend
+from voice.vosk_local_backend import VoskLocalBackend
 
 
 class MicrophoneInputAdapter:
@@ -21,7 +22,7 @@ class MicrophoneInputAdapter:
     def __init__(self, backend_name="none", speech_backend=None):
         self.state = self.DISABLED
         self.permission_granted = False
-        self.speech_backend = speech_backend or NoSpeechRecognitionBackend()
+        self.speech_backend = speech_backend or self._create_speech_backend(backend_name)
         self.backend_name = self.speech_backend.get_name()
         self.last_error = None
 
@@ -50,9 +51,23 @@ class MicrophoneInputAdapter:
         return self.speech_backend.get_status()
 
     def set_speech_backend(self, backend):
+        if isinstance(backend, str):
+            backend = self._create_speech_backend(backend)
         self.speech_backend = backend or NoSpeechRecognitionBackend()
         self.backend_name = self.speech_backend.get_name()
         return self.speech_backend_status()
+
+    def select_speech_backend(self, backend_name):
+        return self.set_speech_backend(backend_name)
+
+    @staticmethod
+    def _create_speech_backend(backend_name):
+        normalized_name = str(backend_name or "none").strip().lower()
+        if normalized_name in {"vosk", "vosk_local"}:
+            return VoskLocalBackend()
+        if normalized_name == "none":
+            return NoSpeechRecognitionBackend()
+        raise ValueError(f"Unknown speech recognition backend: {backend_name}")
 
     def request_permission(self):
         self.last_error = None

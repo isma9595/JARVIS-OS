@@ -1,6 +1,7 @@
 from core.command_processor import CommandProcessor
 from dialogue import DialogueManager
 from voice.microphone_input_adapter import MicrophoneInputAdapter
+from voice.vosk_local_backend import VoskLocalBackend
 
 
 class VoiceInputManager:
@@ -75,6 +76,17 @@ class VoiceInputManager:
 
     def set_speech_backend(self, backend):
         return self.microphone_adapter.set_speech_backend(backend)
+
+    def select_speech_backend(self, backend_name):
+        return self.microphone_adapter.select_speech_backend(backend_name)
+
+    def use_vosk_backend(self):
+        return self.select_speech_backend("vosk_local")
+
+    def get_vosk_backend_status(self):
+        if self.get_speech_backend_name() == "vosk_local":
+            return self.get_speech_backend_status()
+        return VoskLocalBackend().get_status()
 
     def microphone_status(self):
         status = self.get_microphone_status()
@@ -162,6 +174,16 @@ class VoiceInputManager:
         }
 
     def listen_once_from_microphone(self):
+        if self.get_speech_backend_name() == "vosk_local":
+            read_result = self.microphone_adapter.read_text()
+            self.state = self.STOPPED
+            return {
+                "state": self.state,
+                "microphone": self.get_microphone_status(),
+                "text": read_result["text"],
+                "message": self.dialogue_manager.vosk_skeleton_unavailable_response(),
+            }
+
         if not self.microphone_adapter.permission_granted:
             status = self.microphone_adapter.request_permission()
             self.state = self.DISABLED

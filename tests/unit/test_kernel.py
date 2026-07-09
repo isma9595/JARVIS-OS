@@ -12,7 +12,19 @@ from voice import (
     MicrophoneInputAdapter,
     NoSpeechRecognitionBackend,
     VoiceInputManager,
+    VoskLocalBackend,
 )
+
+
+def test_kernel_can_select_vosk_skeleton_without_changing_default():
+    kernel = JARVISKernel()
+
+    assert isinstance(kernel.speech_recognition_backend, NoSpeechRecognitionBackend)
+    status = kernel.voice_input_manager.select_speech_backend("vosk_local")
+    assert status["available"] is False
+    assert isinstance(
+        kernel.microphone_input_adapter.get_speech_backend(), VoskLocalBackend
+    )
 
 
 def assert_raises(expected_exception, callback):
