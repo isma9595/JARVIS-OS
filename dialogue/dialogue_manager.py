@@ -472,6 +472,52 @@ class DialogueManager:
             "модель ещё не подключены. Микрофон не включён, звук не записывается."
         )
 
+    def vosk_runtime_status_response(self, status):
+        return (
+            f"{self.get_preferred_name()}, Vosk runtime работает только как "
+            "безопасная заглушка. Runtime не загружен, распознавание отключено, "
+            "микрофон выключен."
+        )
+
+    def vosk_runtime_blockers_response(self, blockers):
+        blocker_labels = {
+            "vosk_dependency": "зависимость Vosk недоступна",
+            "model_path": "путь к модели не готов",
+            "model_directory": "каталог модели не готов",
+            "runtime_loading_not_implemented": "загрузка runtime ещё не реализована",
+            "real_recognition_disabled": "реальное распознавание отключено",
+        }
+        details = ", ".join(
+            blocker_labels.get(blocker, blocker) for blocker in blockers
+        )
+        if not details:
+            details = "не обнаружены"
+        return (
+            f"{self.get_preferred_name()}, блокировки Vosk runtime: {details}. "
+            "Runtime и модель не загружались."
+        )
+
+    def vosk_runtime_safety_response(self, summary):
+        return (
+            f"{self.get_preferred_name()}, безопасность Vosk runtime: настоящий "
+            "Vosk не импортируется, модель не загружается, распознавание "
+            "отключено, микрофон выключен, звук не записывается."
+        )
+
+    def vosk_runtime_prepare_response(self, result):
+        return (
+            f"{self.get_preferred_name()}, я подготовил только runtime stub. "
+            "Настоящий Vosk не импортировался, модель не загружалась, микрофон "
+            "не включался."
+        )
+
+    def vosk_runtime_recognition_disabled_response(self, result):
+        return (
+            f"{self.get_preferred_name()}, распознавание через Vosk пока "
+            "отключено. Микрофон не включается, аудио не читается, звук не "
+            "записывается."
+        )
+
     def vosk_preflight_response(self, preflight):
         if preflight.get("ready"):
             state = "зависимость и папка модели найдены"

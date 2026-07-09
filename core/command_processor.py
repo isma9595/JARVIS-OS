@@ -231,6 +231,41 @@ class CommandProcessor:
         "опасности vosk",
         "риски воск",
     }
+    VOSK_RUNTIME_STATUS_COMMANDS = {
+        "runtime vosk",
+        "статус runtime vosk",
+        "статус рантайм vosk",
+        "runtime воск",
+        "рантайм vosk",
+        "рантайм воск",
+        "статус загрузчика vosk",
+        "vosk runtime status",
+    }
+    VOSK_RUNTIME_BLOCKERS_COMMANDS = {
+        "блокировки vosk runtime",
+        "блокировки runtime vosk",
+        "блокировки рантайм vosk",
+        "почему runtime vosk не готов",
+        "почему рантайм vosk не готов",
+        "почему vosk не запускается",
+        "что мешает загрузить vosk",
+        "vosk runtime blockers",
+    }
+    VOSK_RUNTIME_SAFETY_COMMANDS = {
+        "безопасность runtime vosk",
+        "безопасность загрузчика vosk",
+        "vosk runtime safety",
+    }
+    VOSK_RUNTIME_PREPARE_COMMANDS = {
+        "подготовить runtime vosk",
+        "подготовить загрузчик vosk",
+        "prepare vosk runtime",
+    }
+    VOSK_RUNTIME_RECOGNIZE_COMMANDS = {
+        "распознать через vosk",
+        "запустить распознавание vosk",
+        "recognize with vosk",
+    }
     VOICE_SIMULATION_PREFIXES = (
         "голосовая команда",
         "распознанный текст",
@@ -342,6 +377,7 @@ class CommandProcessor:
         idea_manager=None,
         memory_manager=None,
         system_status_provider=None,
+        vosk_runtime_loader=None,
     ):
         self.user_profile = user_profile or {}
         self.dialogue_manager = dialogue_manager or DialogueManager(self.user_profile)
@@ -355,6 +391,7 @@ class CommandProcessor:
             dialogue_manager=self.dialogue_manager,
         )
         self.voice_input_manager = None
+        self.vosk_runtime_loader = vosk_runtime_loader
 
     def set_voice_input_manager(self, voice_input_manager):
         self.voice_input_manager = voice_input_manager
@@ -429,6 +466,51 @@ class CommandProcessor:
             return self._result(
                 "speech.backend.vosk.plan",
                 self.dialogue_manager.vosk_backend_plan_response(),
+            )
+
+        if command in self.VOSK_RUNTIME_STATUS_COMMANDS:
+            loader = self._get_vosk_runtime_loader()
+            return self._result(
+                "speech.backend.vosk.runtime.status",
+                self.dialogue_manager.vosk_runtime_status_response(
+                    loader.get_runtime_status()
+                ),
+            )
+
+        if command in self.VOSK_RUNTIME_BLOCKERS_COMMANDS:
+            loader = self._get_vosk_runtime_loader()
+            return self._result(
+                "speech.backend.vosk.runtime.blockers",
+                self.dialogue_manager.vosk_runtime_blockers_response(
+                    loader.get_blockers()
+                ),
+            )
+
+        if command in self.VOSK_RUNTIME_SAFETY_COMMANDS:
+            loader = self._get_vosk_runtime_loader()
+            return self._result(
+                "speech.backend.vosk.runtime.safety",
+                self.dialogue_manager.vosk_runtime_safety_response(
+                    loader.get_safety_summary()
+                ),
+            )
+
+        if command in self.VOSK_RUNTIME_PREPARE_COMMANDS:
+            loader = self._get_vosk_runtime_loader()
+            return self._result(
+                "speech.backend.vosk.runtime.prepare.stub",
+                self.dialogue_manager.vosk_runtime_prepare_response(
+                    loader.prepare_runtime_stub()
+                ),
+            )
+
+        if command in self.VOSK_RUNTIME_RECOGNIZE_COMMANDS:
+            loader = self._get_vosk_runtime_loader()
+            return self._result(
+                "speech.backend.vosk.runtime.recognition.disabled",
+                self.dialogue_manager.vosk_runtime_recognition_disabled_response(
+                    loader.recognize_text_stub()
+                ),
             )
 
         if command in self.VOSK_INSTALLATION_GUIDE_COMMANDS:
@@ -853,6 +935,13 @@ class CommandProcessor:
             command == prefix or command.startswith(prefix + " ")
             for prefix in self.IDEA_ADD_PREFIXES
         )
+
+    def _get_vosk_runtime_loader(self):
+        if self.vosk_runtime_loader is None:
+            from voice.vosk_runtime_loader import VoskRuntimeLoader
+
+            self.vosk_runtime_loader = VoskRuntimeLoader()
+        return self.vosk_runtime_loader
 
     def _add_idea(self, command):
         title = self._extract_idea_title(command)
