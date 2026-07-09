@@ -528,6 +528,37 @@ def test_microphone_responses():
     assert "микрофон сейчас не слушает" in dialogue.microphone_not_listening_response()
 
 
+def test_vosk_installation_information_responses():
+    dialogue = DialogueManager(sample_profile())
+    summary = {
+        "python": {
+            "python_version": "3.12.1",
+            "official_supported_range": "3.5-3.9",
+            "is_likely_compatible": False,
+            "message": "Совместимость не гарантируется.",
+        },
+        "pip": {
+            "command": "python -m pip install vosk",
+            "minimum_pip_version": "20.3",
+        },
+        "model": {"name": "vosk-model-small-ru-0.22"},
+    }
+
+    assert "автоматически не устанавливается" in (
+        dialogue.vosk_installation_guide_response(summary)
+    )
+    assert "отдельный совместимый venv" in (
+        dialogue.vosk_python_compatibility_response(summary["python"])
+    )
+    assert "не скачивает" in dialogue.vosk_model_download_guidance_response(
+        {"name": "vosk-model-small-ru-0.22", "size": "small"},
+        {"message": "JARVIS не скачивает модель."},
+    )
+    assert "только план" in dialogue.vosk_safe_enablement_response(
+        ["Проверить Python."]
+    )
+
+
 def run_tests():
     test_creation_without_profile()
     test_creation_with_profile()

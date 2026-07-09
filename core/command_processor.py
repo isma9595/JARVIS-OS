@@ -191,6 +191,46 @@ class CommandProcessor:
     VOSK_SETTINGS_COMMANDS = {
         "настройки vosk",
     }
+    VOSK_INSTALLATION_GUIDE_COMMANDS = {
+        "установка vosk",
+        "как установить vosk",
+        "инструкция vosk",
+        "инструкция по установке vosk",
+        "vosk installation guide",
+    }
+    VOSK_PYTHON_COMPATIBILITY_COMMANDS = {
+        "совместимость vosk",
+        "проверить совместимость vosk",
+        "python vosk",
+        "версия python vosk",
+        "совместимость воск",
+        "совместимость python vosk",
+        "python для vosk",
+        "версия python для vosk",
+        "проверить python для vosk",
+    }
+    VOSK_MODEL_GUIDE_COMMANDS = {
+        "скачать модель vosk",
+        "какую модель vosk скачать",
+        "рекомендуемая модель vosk",
+        "русская модель vosk",
+    }
+    VOSK_SAFE_ENABLEMENT_COMMANDS = {
+        "план подключения vosk",
+        "безопасный план vosk",
+        "подключить vosk план",
+        "план воск",
+        "безопасно подключить vosk",
+        "безопасное подключение vosk",
+        "план включения vosk",
+        "vosk safe enablement",
+    }
+    VOSK_RISKS_COMMANDS = {
+        "риски vosk",
+        "риски подключения vosk",
+        "опасности vosk",
+        "риски воск",
+    }
     VOICE_SIMULATION_PREFIXES = (
         "голосовая команда",
         "распознанный текст",
@@ -389,6 +429,52 @@ class CommandProcessor:
             return self._result(
                 "speech.backend.vosk.plan",
                 self.dialogue_manager.vosk_backend_plan_response(),
+            )
+
+        if command in self.VOSK_INSTALLATION_GUIDE_COMMANDS:
+            guide = self._get_vosk_installation_guide()
+            return self._result(
+                "speech.backend.vosk.installation.guide",
+                self.dialogue_manager.vosk_installation_guide_response(
+                    guide.get_installation_summary()
+                ),
+            )
+
+        if command in self.VOSK_PYTHON_COMPATIBILITY_COMMANDS:
+            guide = self._get_vosk_installation_guide()
+            return self._result(
+                "speech.backend.vosk.compatibility",
+                self.dialogue_manager.vosk_python_compatibility_response(
+                    guide.get_python_version_status()
+                ),
+            )
+
+        if command in self.VOSK_MODEL_GUIDE_COMMANDS:
+            guide = self._get_vosk_installation_guide()
+            return self._result(
+                "speech.backend.vosk.model.guide",
+                self.dialogue_manager.vosk_model_download_guidance_response(
+                    guide.get_recommended_model(),
+                    guide.get_model_download_guidance(),
+                ),
+            )
+
+        if command in self.VOSK_SAFE_ENABLEMENT_COMMANDS:
+            guide = self._get_vosk_installation_guide()
+            return self._result(
+                "speech.backend.vosk.enablement.plan",
+                self.dialogue_manager.vosk_safe_enablement_response(
+                    guide.get_safe_enablement_steps()
+                ),
+            )
+
+        if command in self.VOSK_RISKS_COMMANDS:
+            guide = self._get_vosk_installation_guide()
+            return self._result(
+                "speech.backend.vosk.risks",
+                self.dialogue_manager.vosk_runtime_risks_response(
+                    guide.get_runtime_risks()
+                ),
             )
 
         if command in self.VOSK_PREFLIGHT_COMMANDS:
@@ -669,6 +755,12 @@ class CommandProcessor:
 
             return VoskLocalBackend().preflight_check()
         return self.voice_input_manager.get_vosk_preflight()
+
+    @staticmethod
+    def _get_vosk_installation_guide():
+        from voice.vosk_installation_guide import VoskInstallationGuide
+
+        return VoskInstallationGuide()
 
     def _get_vosk_model_status(self):
         if self.voice_input_manager is None:

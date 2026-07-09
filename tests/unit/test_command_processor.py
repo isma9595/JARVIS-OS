@@ -1043,3 +1043,22 @@ def run_tests():
 
 if __name__ == "__main__":
     run_tests()
+def test_vosk_installation_information_commands():
+    processor = CommandProcessor()
+
+    install = processor.process("как установить vosk")
+    assert install["intent"] == "speech.backend.vosk.installation.guide"
+    assert "python -m pip install vosk" in install["response"]
+    assert "автоматически не устанавливается" in install["response"]
+
+    compatibility = processor.process("python для vosk")
+    assert compatibility["intent"] == "speech.backend.vosk.compatibility"
+    assert "3.5-3.9" in compatibility["response"]
+
+    model = processor.process("русская модель vosk")
+    assert model["intent"] == "speech.backend.vosk.model.guide"
+    assert "vosk-model-small-ru-0.22" in model["response"]
+
+    plan = processor.process("безопасно подключить vosk")
+    assert plan["intent"] == "speech.backend.vosk.enablement.plan"
+    assert "только план" in plan["response"]

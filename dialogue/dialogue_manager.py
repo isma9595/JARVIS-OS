@@ -405,6 +405,67 @@ class DialogueManager:
             "записывается и данные не отправляются в интернет."
         )
 
+    def vosk_installation_guide_response(self, summary):
+        python_status = summary["python"]
+        pip_info = summary["pip"]
+        model = summary["model"]
+        return (
+            f"{self.get_preferred_name()}, Vosk автоматически не устанавливается. "
+            f"{python_status['message']} "
+            f"Команда для ручной установки: {pip_info['command']} "
+            f"(pip {pip_info['minimum_pip_version']} или новее). "
+            f"Первая русская small-модель: {model['name']}. "
+            "Это только текстовая инструкция: команды не запускаются, модель "
+            "не скачивается, микрофон не включается."
+        )
+
+    def vosk_python_compatibility_response(self, status):
+        compatibility = (
+            "версия выглядит совместимой"
+            if status["is_likely_compatible"]
+            else "совместимость не гарантируется"
+        )
+        return (
+            f"{self.get_preferred_name()}, текущий Python: "
+            f"{status['python_version']}; официальный диапазон инструкции Vosk: "
+            f"{status['official_supported_range']}; {compatibility}. "
+            "Проверка информационная. Рекомендуется отдельный совместимый venv."
+        )
+
+    def vosk_model_download_guidance_response(self, model, guidance):
+        return (
+            f"{self.get_preferred_name()}, рекомендуемая первая русская модель: "
+            f"{model['name']} ({model['size']}). Откройте официальный каталог "
+            "Vosk вручную, проверьте источник, скачайте и распакуйте архив в "
+            "отдельную локальную папку, затем укажите путь в настройках. "
+            f"{guidance['message']} Микрофон не включается."
+        )
+
+    def vosk_safe_enablement_response(self, steps):
+        lines = [
+            f"{self.get_preferred_name()}, безопасный план подключения Vosk:",
+        ]
+        lines.extend(
+            f"{index}. {step}" for index, step in enumerate(steps, start=1)
+        )
+        lines.append(
+            "Сейчас это только план: установка, загрузка модели, runtime и "
+            "микрофон не запускаются."
+        )
+        return "\n".join(lines)
+
+    def vosk_runtime_risks_response(self, risks):
+        lines = [
+            f"{self.get_preferred_name()}, риски подключения Vosk:",
+        ]
+        lines.extend(
+            f"{index}. {risk}" for index, risk in enumerate(risks, start=1)
+        )
+        lines.append(
+            "Это информационная оценка: установка, runtime и микрофон не запускаются."
+        )
+        return "\n".join(lines)
+
     def vosk_skeleton_unavailable_response(self):
         return (
             f"{self.get_preferred_name()}, Vosk skeleton готов, но библиотека и "
