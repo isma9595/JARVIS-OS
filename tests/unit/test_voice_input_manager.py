@@ -1,4 +1,13 @@
-from voice import VoiceInputManager
+from voice import NoSpeechRecognitionBackend, VoiceInputManager
+
+
+def test_speech_backend_management_is_delegated_to_microphone_adapter():
+    manager = VoiceInputManager()
+    status = manager.set_speech_backend(NoSpeechRecognitionBackend())
+
+    assert status["name"] == "none"
+    assert manager.get_speech_backend_name() == "none"
+    assert manager.get_speech_backend_status()["available"] is False
 
 
 def sample_profile():

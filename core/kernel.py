@@ -7,7 +7,7 @@ from core.module_manager import ModuleManager
 from dialogue import DialogueManager
 from ideas import IdeaManager
 from memory import LocalMemoryManager
-from voice import MicrophoneInputAdapter, VoiceInputManager
+from voice import MicrophoneInputAdapter, NoSpeechRecognitionBackend, VoiceInputManager
 
 
 class JARVISKernel:
@@ -33,7 +33,10 @@ class JARVISKernel:
         )
         self.idea_manager = IdeaManager()
         self.memory_manager = LocalMemoryManager()
-        self.microphone_input_adapter = MicrophoneInputAdapter()
+        self.speech_recognition_backend = NoSpeechRecognitionBackend()
+        self.microphone_input_adapter = MicrophoneInputAdapter(
+            speech_backend=self.speech_recognition_backend
+        )
         self.command_processor = CommandProcessor(
             user_profile=self.user_profile,
             dialogue_manager=self.dialogue,

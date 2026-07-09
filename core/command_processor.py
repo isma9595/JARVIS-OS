@@ -96,6 +96,25 @@ class CommandProcessor:
         "слушай команду",
         "принять голосовую команду",
     }
+    SPEECH_BACKEND_STATUS_COMMANDS = {
+        "речевой backend",
+        "speech backend",
+        "backend речи",
+        "backend распознавания",
+        "статус распознавания речи",
+    }
+    SPEECH_BACKEND_EXPLAIN_COMMANDS = {
+        "почему ты меня не слышишь",
+        "почему микрофон не работает",
+        "почему нет распознавания",
+        "почему ты не распознаешь голос",
+    }
+    SPEECH_BACKEND_OPTIONS_COMMANDS = {
+        "варианты распознавания речи",
+        "какие есть backend голоса",
+        "какой backend выбрать",
+        "локальное распознавание речи",
+    }
     VOICE_SIMULATION_PREFIXES = (
         "голосовая команда",
         "распознанный текст",
@@ -231,6 +250,36 @@ class CommandProcessor:
             return self._result(
                 "empty",
                 self.dialogue_manager.empty_command_response(),
+            )
+
+        if command in self.SPEECH_BACKEND_STATUS_COMMANDS:
+            status = (
+                self.voice_input_manager.get_speech_backend_status()
+                if self.voice_input_manager is not None
+                else {
+                    "name": "none",
+                    "available": False,
+                    "requires_permission": False,
+                    "requires_installation": False,
+                    "supports_streaming": False,
+                    "supports_offline": False,
+                }
+            )
+            return self._result(
+                "speech.backend.status",
+                self.dialogue_manager.speech_backend_status_response(status),
+            )
+
+        if command in self.SPEECH_BACKEND_EXPLAIN_COMMANDS:
+            return self._result(
+                "speech.backend.explain",
+                self.dialogue_manager.speech_backend_explain_response(),
+            )
+
+        if command in self.SPEECH_BACKEND_OPTIONS_COMMANDS:
+            return self._result(
+                "speech.backend.options",
+                self.dialogue_manager.speech_backend_options_response(),
             )
 
         if command in self.MICROPHONE_STATUS_COMMANDS:

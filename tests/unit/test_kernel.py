@@ -8,7 +8,11 @@ from core.module_manager import ModuleManager
 from dialogue import DialogueManager
 from ideas import IdeaManager
 from memory import LocalMemoryManager
-from voice import MicrophoneInputAdapter, VoiceInputManager
+from voice import (
+    MicrophoneInputAdapter,
+    NoSpeechRecognitionBackend,
+    VoiceInputManager,
+)
 
 
 def assert_raises(expected_exception, callback):
@@ -47,6 +51,7 @@ def test_kernel_services_exist():
     assert isinstance(kernel.memory_manager, LocalMemoryManager)
     assert isinstance(kernel.microphone_input_adapter, MicrophoneInputAdapter)
     assert isinstance(kernel.voice_input_manager, VoiceInputManager)
+    assert isinstance(kernel.speech_recognition_backend, NoSpeechRecognitionBackend)
     assert isinstance(kernel.dialogue, DialogueManager)
 
 
@@ -185,6 +190,10 @@ def test_voice_input_manager_uses_kernel_services():
     assert (
         kernel.voice_input_manager.microphone_adapter
         is kernel.microphone_input_adapter
+    )
+    assert (
+        kernel.microphone_input_adapter.get_speech_backend()
+        is kernel.speech_recognition_backend
     )
 
 

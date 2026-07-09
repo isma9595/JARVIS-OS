@@ -67,6 +67,15 @@ class VoiceInputManager:
     def get_microphone_status(self):
         return self.microphone_adapter.get_status()
 
+    def get_speech_backend_status(self):
+        return self.microphone_adapter.speech_backend_status()
+
+    def get_speech_backend_name(self):
+        return self.microphone_adapter.get_speech_backend_name()
+
+    def set_speech_backend(self, backend):
+        return self.microphone_adapter.set_speech_backend(backend)
+
     def microphone_status(self):
         status = self.get_microphone_status()
         return {

@@ -1,6 +1,18 @@
 from dialogue import DialogueManager
 
 
+def test_speech_backend_responses():
+    dialogue = DialogueManager()
+    status_response = dialogue.speech_backend_status_response(
+        {"name": "none", "available": False, "supports_offline": False}
+    )
+
+    assert "none" in status_response
+    assert "не включает микрофон" in status_response
+    assert "звук не записывается" in dialogue.speech_backend_explain_response()
+    assert "Vosk" in dialogue.speech_backend_options_response()
+
+
 def sample_profile():
     return {
         "user_name": "Исмаил",

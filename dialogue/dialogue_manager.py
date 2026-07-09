@@ -357,6 +357,32 @@ class DialogueManager:
             f"Доступ: {permission_text}. Backend: {backend_name}."
         )
 
+    def speech_backend_status_response(self, status):
+        name = status.get("name", "none")
+        availability = "доступен" if status.get("available") else "недоступен"
+        mode = "офлайн" if status.get("supports_offline") else "без распознавания"
+        return (
+            f"{self.get_preferred_name()}, речевой backend: {name}; "
+            f"статус: {availability}; режим: {mode}. "
+            "Проверка статуса не включает микрофон и не записывает звук."
+        )
+
+    def speech_backend_explain_response(self):
+        return (
+            f"{self.get_preferred_name()}, сейчас выбран безопасный backend без "
+            "распознавания речи. Микрофон не включается, звук не записывается. "
+            "Локальный backend можно будет подключить отдельно после установки "
+            "и явного разрешения."
+        )
+
+    def speech_backend_options_response(self):
+        return (
+            f"{self.get_preferred_name()}, кандидаты для локального распознавания: "
+            "Vosk, Whisper и адаптер Windows Speech Recognition. Рекомендуемый "
+            "первый прототип — Vosk за единым безопасным интерфейсом; зависимости "
+            "и доступ к микрофону должны подключаться отдельно и явно."
+        )
+
     def microphone_permission_required_response(self):
         return (
             f"{self.get_preferred_name()}, для микрофона нужно явное разрешение. "

@@ -6,6 +6,20 @@ from tempfile import TemporaryDirectory
 from voice import VoiceInputManager
 
 
+def test_speech_backend_commands():
+    processor = CommandProcessor()
+
+    assert processor.process("speech backend")["intent"] == "speech.backend.status"
+    assert (
+        processor.process("почему нет распознавания")["intent"]
+        == "speech.backend.explain"
+    )
+    assert (
+        processor.process("локальное распознавание речи")["intent"]
+        == "speech.backend.options"
+    )
+
+
 def sample_profile():
     return {
         "user_name": "Исмаил",

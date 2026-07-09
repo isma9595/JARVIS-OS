@@ -1,4 +1,29 @@
-from voice import MicrophoneInputAdapter
+from voice import MicrophoneInputAdapter, NoSpeechRecognitionBackend
+
+
+def test_default_speech_backend_is_safe_and_listen_once_delegates():
+    adapter = MicrophoneInputAdapter()
+
+    assert isinstance(adapter.get_speech_backend(), NoSpeechRecognitionBackend)
+    assert adapter.get_speech_backend_name() == "none"
+    assert adapter.speech_backend_status()["available"] is False
+    assert adapter.listen_once()["intent"] == "speech.backend.unavailable"
+
+
+def test_speech_backend_can_be_replaced():
+    class StubBackend(NoSpeechRecognitionBackend):
+        def get_name(self):
+            return "stub"
+
+        def recognize_once(self):
+            return {"intent": "stub.result", "text": "safe"}
+
+    adapter = MicrophoneInputAdapter()
+    status = adapter.set_speech_backend(StubBackend())
+
+    assert status["name"] == "stub"
+    assert adapter.get_speech_backend_name() == "stub"
+    assert adapter.listen_once()["intent"] == "stub.result"
 
 
 def test_initial_state_is_disabled():

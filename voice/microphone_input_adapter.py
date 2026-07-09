@@ -1,3 +1,6 @@
+from voice.speech_recognition_backend import NoSpeechRecognitionBackend
+
+
 class MicrophoneInputAdapter:
     DISABLED = "disabled"
     PERMISSION_REQUIRED = "permission_required"
@@ -15,10 +18,11 @@ class MicrophoneInputAdapter:
         STOPPED,
     }
 
-    def __init__(self, backend_name="none"):
+    def __init__(self, backend_name="none", speech_backend=None):
         self.state = self.DISABLED
         self.permission_granted = False
-        self.backend_name = backend_name or "none"
+        self.speech_backend = speech_backend or NoSpeechRecognitionBackend()
+        self.backend_name = self.speech_backend.get_name()
         self.last_error = None
 
     def get_state(self):
@@ -34,7 +38,21 @@ class MicrophoneInputAdapter:
         }
 
     def has_backend(self):
-        return self.backend_name != "none"
+        return self.speech_backend.is_available()
+
+    def get_speech_backend(self):
+        return self.speech_backend
+
+    def get_speech_backend_name(self):
+        return self.speech_backend.get_name()
+
+    def speech_backend_status(self):
+        return self.speech_backend.get_status()
+
+    def set_speech_backend(self, backend):
+        self.speech_backend = backend or NoSpeechRecognitionBackend()
+        self.backend_name = self.speech_backend.get_name()
+        return self.speech_backend_status()
 
     def request_permission(self):
         self.last_error = None
@@ -98,12 +116,20 @@ class MicrophoneInputAdapter:
         return self.get_status()
 
     def read_text(self):
-        self.last_error = "speech recognition backend is not connected"
-        self.state = self.UNAVAILABLE
-        return {
-            "text": None,
-            "state": self.state,
-            "permission_granted": self.permission_granted,
-            "backend_name": self.backend_name,
-            "last_error": self.last_error,
-        }
+        result = dict(self.listen_once())
+        result.update(
+            {
+                "state": self.state,
+                "permission_granted": self.permission_granted,
+                "backend_name": self.backend_name,
+                "last_error": self.last_error,
+            }
+        )
+        return result
+
+    def listen_once(self):
+        result = self.speech_backend.recognize_once()
+        if not self.speech_backend.is_available():
+            self.last_error = "speech recognition backend is not connected"
+            self.state = self.UNAVAILABLE
+        return result
