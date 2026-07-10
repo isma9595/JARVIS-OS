@@ -12,7 +12,11 @@ class VoskRuntimeLoader:
         self.installation_guide = installation_guide or VoskInstallationGuide()
 
     def can_prepare_runtime(self):
-        return bool(self.backend.preflight_check().get("ready"))
+        return bool(
+            self.backend.preflight_check().get(
+                "backend_ready_for_real_recognition"
+            )
+        )
 
     def get_blockers(self):
         blockers = list(
@@ -24,11 +28,16 @@ class VoskRuntimeLoader:
 
     def get_runtime_status(self):
         preflight = self.backend.preflight_check()
-        can_prepare = bool(preflight.get("ready"))
+        can_prepare = bool(
+            preflight.get("backend_ready_for_real_recognition")
+        )
         return {
             "runtime": "vosk",
             "loader_type": "safe_stub",
             "runtime_loaded": False,
+            "vosk_package_available": bool(
+                preflight.get("vosk_package_available")
+            ),
             "dependency_available": bool(
                 preflight.get("dependency_available")
             ),
@@ -36,9 +45,17 @@ class VoskRuntimeLoader:
                 preflight.get("model_path_configured")
             ),
             "model_path_exists": bool(preflight.get("model_path_exists")),
+            "backend_ready_for_real_recognition": can_prepare,
             "can_prepare_runtime": can_prepare,
             "real_recognition_enabled": False,
             "microphone_enabled": False,
+            "missing_requirements": list(
+                preflight.get("missing_requirements", [])
+            ),
+            "recognition_disabled_reason": (
+                preflight.get("recognition_disabled_reason")
+                or "real_recognition_disabled"
+            ),
             "message": (
                 "Vosk runtime is not loaded. This safe stub performs readiness "
                 "checks only; recognition and microphone access are disabled."

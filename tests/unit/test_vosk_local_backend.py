@@ -45,13 +45,62 @@ def test_preflight_reports_missing_dependency_and_model_path():
     with patch("voice.vosk_local_backend.importlib.util.find_spec", return_value=None):
         status = backend.preflight_check()
 
-    assert status == {
-        "dependency_available": False,
-        "model_path_configured": False,
-        "model_path_exists": False,
-        "ready": False,
-        "missing_requirements": ["vosk_dependency", "model_path"],
-    }
+    assert status["vosk_package_available"] is False
+    assert status["dependency_available"] is False
+    assert status["model_path_configured"] is False
+    assert status["model_path_exists"] is False
+    assert status["backend_ready_for_real_recognition"] is False
+    assert status["ready"] is False
+    assert status["real_recognition_enabled"] is False
+    assert status["microphone_enabled"] is False
+    assert status["missing_requirements"] == ["vosk_dependency", "model_path"]
+
+
+def test_readiness_false_when_vosk_package_is_missing(tmp_path):
+    backend = VoskLocalBackend(model_path=tmp_path)
+
+    with patch("voice.vosk_local_backend.importlib.util.find_spec", return_value=None):
+        report = backend.get_readiness_report()
+
+    assert report["vosk_package_available"] is False
+    assert report["model_path_configured"] is True
+    assert report["model_path_exists"] is True
+    assert report["backend_ready_for_real_recognition"] is False
+    assert report["real_recognition_enabled"] is False
+    assert report["missing_requirements"] == ["vosk_dependency"]
+
+
+def test_readiness_false_when_model_path_is_missing():
+    backend = VoskLocalBackend()
+
+    with patch(
+        "voice.vosk_local_backend.importlib.util.find_spec",
+        return_value=object(),
+    ):
+        report = backend.get_readiness_report()
+
+    assert report["vosk_package_available"] is True
+    assert report["model_path_configured"] is False
+    assert report["model_path_exists"] is False
+    assert report["backend_ready_for_real_recognition"] is False
+    assert report["missing_requirements"] == ["model_path"]
+
+
+def test_readiness_false_when_configured_model_path_does_not_exist(tmp_path):
+    missing_path = tmp_path / "missing-model"
+    backend = VoskLocalBackend(model_path=missing_path)
+
+    with patch(
+        "voice.vosk_local_backend.importlib.util.find_spec",
+        return_value=object(),
+    ):
+        report = backend.get_readiness_report()
+
+    assert report["model_path_configured"] is True
+    assert report["model_path_exists"] is False
+    assert report["backend_ready_for_real_recognition"] is False
+    assert report["missing_requirements"] == ["model_directory"]
+    assert missing_path.exists() is False
 
 
 def test_preflight_detects_dependency_and_existing_model_directory(tmp_path):
@@ -69,6 +118,9 @@ def test_preflight_detects_dependency_and_existing_model_directory(tmp_path):
         status = backend.preflight_check()
 
     assert status["ready"] is True
+    assert status["backend_ready_for_real_recognition"] is True
+    assert status["real_recognition_enabled"] is False
+    assert status["microphone_enabled"] is False
     assert status["missing_requirements"] == []
     assert backend.is_available() is False
 

@@ -55,6 +55,14 @@ class VoskLocalBackend(SpeechRecognitionBackend):
                 "model_path": self.model_path,
                 "installed": preflight["dependency_available"],
                 "model_available": preflight["model_path_exists"],
+                "vosk_package_available": preflight["vosk_package_available"],
+                "model_path_configured": preflight["model_path_configured"],
+                "backend_ready_for_real_recognition": preflight[
+                    "backend_ready_for_real_recognition"
+                ],
+                "real_recognition_enabled": False,
+                "microphone_enabled": False,
+                "missing_requirements": preflight["missing_requirements"],
                 "skeleton": True,
                 "preflight": preflight,
             }
@@ -80,14 +88,7 @@ class VoskLocalBackend(SpeechRecognitionBackend):
             return False
 
     def get_missing_requirements(self):
-        missing = []
-        if not self.check_dependency_available():
-            missing.append("vosk_dependency")
-        if not self.check_model_path_configured():
-            missing.append("model_path")
-        elif not self.check_model_path_exists():
-            missing.append("model_directory")
-        return missing
+        return list(self.preflight_check()["missing_requirements"])
 
     def preflight_check(self):
         dependency_available = self.check_dependency_available()
@@ -100,18 +101,29 @@ class VoskLocalBackend(SpeechRecognitionBackend):
             missing_requirements.append("model_path")
         elif not model_path_exists:
             missing_requirements.append("model_directory")
+        backend_ready = not missing_requirements
 
         return {
+            "vosk_package_available": dependency_available,
             "dependency_available": dependency_available,
             "model_path_configured": model_path_configured,
             "model_path_exists": model_path_exists,
-            "ready": not missing_requirements,
+            "backend_ready_for_real_recognition": backend_ready,
+            "ready": backend_ready,
+            "real_recognition_enabled": False,
+            "microphone_enabled": False,
+            "safe_bootstrap_only": True,
             "missing_requirements": missing_requirements,
+            "recognition_disabled_reason": (
+                "real_recognition_not_enabled_for_task_023"
+                if backend_ready
+                else "missing_safe_requirements"
+            ),
         }
 
     def get_preflight_summary(self):
         status = self.preflight_check()
-        if status["ready"]:
+        if status["backend_ready_for_real_recognition"]:
             return (
                 "Vosk prerequisites are ready. Speech recognition and microphone "
                 "access remain disabled."
@@ -119,6 +131,30 @@ class VoskLocalBackend(SpeechRecognitionBackend):
         return "Missing Vosk prerequisites: " + ", ".join(
             status["missing_requirements"]
         )
+
+    def get_readiness_report(self):
+        """Return a side-effect-free readiness report for local Vosk setup."""
+        preflight = self.preflight_check()
+        return {
+            "backend": self.backend_name,
+            "language": self.language,
+            "model_path": self.model_path,
+            "vosk_package_available": preflight["vosk_package_available"],
+            "model_path_configured": preflight["model_path_configured"],
+            "model_path_exists": preflight["model_path_exists"],
+            "backend_ready_for_real_recognition": preflight[
+                "backend_ready_for_real_recognition"
+            ],
+            "real_recognition_enabled": False,
+            "microphone_enabled": False,
+            "requires_permission": self.requires_permission(),
+            "requires_installation": self.requires_installation(),
+            "supports_offline": self.supports_offline(),
+            "supports_streaming": self.supports_streaming(),
+            "missing_requirements": preflight["missing_requirements"],
+            "safe_bootstrap_only": True,
+            "message": self.get_preflight_summary(),
+        }
 
     def configure_model_path(self, model_path):
         """Persist a local model path without reading or modifying model files."""

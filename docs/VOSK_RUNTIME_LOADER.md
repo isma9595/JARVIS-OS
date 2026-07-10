@@ -4,7 +4,7 @@
 readiness by using the existing local backend preflight, but it never loads a
 runtime or model and never performs speech recognition.
 
-## Guarantees in TASK-021
+## Guarantees in TASK-021 through TASK-023
 
 - `runtime_loaded` is always `false`.
 - Real recognition and microphone access are always disabled.
@@ -16,6 +16,22 @@ runtime or model and never performs speech recognition.
 
 The stub separates dependency/model readiness from runtime activation. A future
 real loader requires a separately reviewed and explicitly authorized task.
+
+## TASK-023 Readiness Fields
+
+The runtime status reports these side-effect-free readiness values:
+
+- `vosk_package_available`
+- `dependency_available`
+- `model_path_configured`
+- `model_path_exists`
+- `backend_ready_for_real_recognition`
+- `missing_requirements`
+- `recognition_disabled_reason`
+
+`backend_ready_for_real_recognition` means only that the local prerequisites are
+present. It does not mean that Vosk has been imported, that a model has been
+loaded, or that microphone recognition is enabled.
 
 ## Commands
 

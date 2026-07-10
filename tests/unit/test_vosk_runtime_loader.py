@@ -5,10 +5,14 @@ from voice.vosk_runtime_loader import VoskRuntimeLoader
 class ReadyBackend:
     def preflight_check(self):
         return {
+            "vosk_package_available": True,
             "dependency_available": True,
             "model_path_configured": True,
             "model_path_exists": True,
+            "backend_ready_for_real_recognition": True,
             "ready": True,
+            "real_recognition_enabled": False,
+            "microphone_enabled": False,
             "missing_requirements": [],
         }
 
@@ -16,10 +20,14 @@ class ReadyBackend:
 class BlockedBackend:
     def preflight_check(self):
         return {
+            "vosk_package_available": False,
             "dependency_available": False,
             "model_path_configured": False,
             "model_path_exists": False,
+            "backend_ready_for_real_recognition": False,
             "ready": False,
+            "real_recognition_enabled": False,
+            "microphone_enabled": False,
             "missing_requirements": ["vosk_dependency", "model_path"],
         }
 
@@ -27,10 +35,14 @@ class BlockedBackend:
 class ModelPathBlockedBackend:
     def preflight_check(self):
         return {
+            "vosk_package_available": True,
             "dependency_available": True,
             "model_path_configured": False,
             "model_path_exists": False,
+            "backend_ready_for_real_recognition": False,
             "ready": False,
+            "real_recognition_enabled": False,
+            "microphone_enabled": False,
             "missing_requirements": ["model_path"],
         }
 
@@ -40,8 +52,24 @@ def test_runtime_always_remains_unloaded_even_when_preflight_is_ready():
 
     assert loader.can_prepare_runtime() is True
     assert loader.is_runtime_loaded() is False
-    assert loader.get_runtime_status()["runtime_loaded"] is False
+    status = loader.get_runtime_status()
+    assert status["runtime_loaded"] is False
+    assert status["backend_ready_for_real_recognition"] is True
+    assert status["real_recognition_enabled"] is False
+    assert status["microphone_enabled"] is False
     assert loader.prepare_runtime_stub()["prepared"] is False
+
+
+def test_runtime_reports_missing_requirements_clearly():
+    status = VoskRuntimeLoader(backend=BlockedBackend()).get_runtime_status()
+
+    assert status["vosk_package_available"] is False
+    assert status["model_path_configured"] is False
+    assert status["model_path_exists"] is False
+    assert status["backend_ready_for_real_recognition"] is False
+    assert status["missing_requirements"] == ["vosk_dependency", "model_path"]
+    assert status["runtime_loaded"] is False
+    assert status["real_recognition_enabled"] is False
 
 
 def test_blockers_include_preflight_and_stub_boundaries():
