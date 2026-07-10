@@ -10,15 +10,27 @@ from voice.microphone_listening_modes import (
     MicrophoneListeningMode,
     MicrophoneListeningModeManager,
 )
+from voice.one_shot_microphone_capture import (
+    HARD_MAX_CAPTURE_DURATION_SECONDS,
+    DEFAULT_CAPTURE_DURATION_SECONDS,
+    OneShotCaptureResult,
+    OneShotMicrophoneCapture,
+    SoundDeviceOneShotCaptureAdapter,
+)
 from voice.vosk_runtime_loader import VoskRuntimeLoader
 from voice.vosk_settings_manager import VoskSettingsManager
 
 __all__ = [
+    "DEFAULT_CAPTURE_DURATION_SECONDS",
+    "HARD_MAX_CAPTURE_DURATION_SECONDS",
     "MicrophoneInputAdapter",
     "MicrophoneListeningMode",
     "MicrophoneListeningModeManager",
     "NoSpeechRecognitionBackend",
+    "OneShotCaptureResult",
+    "OneShotMicrophoneCapture",
     "SpeechRecognitionBackend",
+    "SoundDeviceOneShotCaptureAdapter",
     "VoiceInputManager",
     "VoskLocalBackend",
     "VoskInstallationGuide",
