@@ -3,7 +3,11 @@ from ideas import IdeaManager
 from memory import LocalMemoryManager
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from voice import VoiceInputManager, VoskSettingsManager
+from voice import (
+    MicrophoneListeningModeManager,
+    VoiceInputManager,
+    VoskSettingsManager,
+)
 
 
 def test_speech_backend_commands():
@@ -576,15 +580,144 @@ def create_voice_enabled_processor(tmp_path=None):
     return processor, manager
 
 
-def test_microphone_status_commands():
-    for command in ("микрофон", "статус микрофона"):
-        processor, _manager = create_voice_enabled_processor()
+def test_microphone_mode_status_is_off_by_default():
+    processor = CommandProcessor(sample_profile())
+
+    result = processor.process("статус микрофона")
+
+    assert result["intent"] == "microphone.mode.status"
+    assert result["should_exit"] is False
+    assert result["response"] == "Микрофон выключен."
+    assert processor.microphone_listening_mode_manager.get_mode() == "off"
+
+
+def test_microphone_mode_status_commands():
+    for command in (
+        "статус микрофона",
+        "режим микрофона",
+        "какой режим микрофона",
+        "микрофон статус",
+    ):
+        processor = CommandProcessor(sample_profile())
 
         result = processor.process(command)
 
-        assert result["intent"] == "microphone.status"
+        assert result["intent"] == "microphone.mode.status"
         assert result["should_exit"] is False
-        assert "статус микрофона" in result["response"]
+        assert result["response"] == "Микрофон выключен."
+
+
+def test_microphone_legacy_status_command_still_reports_adapter_status():
+    processor, _manager = create_voice_enabled_processor()
+
+    result = processor.process("микрофон")
+
+    assert result["intent"] == "microphone.status"
+    assert result["should_exit"] is False
+    assert "статус микрофона" in result["response"]
+
+
+def test_microphone_mode_off_commands_switch_to_off():
+    for command in (
+        "выключи микрофон",
+        "отключи микрофон",
+        "отключи прослушивание",
+        "выключи прослушивание",
+        "стоп микрофон",
+        "отключи постоянное прослушивание",
+        "выключи постоянное прослушивание",
+        "перестань слушать постоянно",
+    ):
+        mode_manager = MicrophoneListeningModeManager("continuous")
+        processor = CommandProcessor(
+            sample_profile(),
+            microphone_listening_mode_manager=mode_manager,
+        )
+
+        result = processor.process(command)
+
+        assert result["intent"] == "microphone.mode.off"
+        assert result["response"] == "Микрофон выключен."
+        assert mode_manager.get_mode() == "off"
+
+
+def test_microphone_mode_partial_commands_switch_to_partial():
+    for command in (
+        "слушай одну команду",
+        "прими голосовую команду",
+        "включи частичное прослушивание",
+        "режим одной команды",
+        "частичное прослушивание",
+    ):
+        processor = CommandProcessor(sample_profile())
+
+        result = processor.process(command)
+
+        assert result["intent"] == "microphone.mode.partial"
+        assert result["response"] == (
+            "Включено частичное прослушивание. "
+            "Реальный захват микрофона пока не запускается автоматически."
+        )
+        assert processor.microphone_listening_mode_manager.get_mode() == "partial"
+
+        status = processor.process("режим микрофона")
+        assert status["response"] == (
+            "Включено частичное прослушивание. JARVIS готов принять одну "
+            "голосовую команду после явного запуска."
+        )
+
+
+def test_microphone_mode_continuous_commands_switch_to_continuous():
+    for command in (
+        "включи постоянное прослушивание",
+        "слушай постоянно",
+        "режим постоянного прослушивания",
+        "включи постоянный микрофон",
+    ):
+        processor = CommandProcessor(sample_profile())
+
+        result = processor.process(command)
+
+        assert result["intent"] == "microphone.mode.continuous"
+        assert result["response"] == (
+            "Режим постоянного прослушивания включен как безопасное состояние. "
+            "Реальный микрофон пока не запускается автоматически."
+        )
+        assert processor.microphone_listening_mode_manager.get_mode() == "continuous"
+
+        status = processor.process("режим микрофона")
+        assert status["response"] == (
+            "Включен режим постоянного прослушивания. Реальный захват "
+            "микрофона пока не активирован в целях безопасности."
+        )
+
+
+def test_microphone_mode_unknown_command_stays_safe():
+    processor = CommandProcessor(sample_profile())
+
+    result = processor.process("включи неизвестный режим микрофона")
+
+    assert result["intent"] == "unknown"
+    assert processor.microphone_listening_mode_manager.get_mode() == "off"
+
+
+def test_microphone_mode_commands_do_not_touch_real_capture_or_vosk():
+    processor, manager = create_voice_enabled_processor()
+
+    def fail_if_called(*_args, **_kwargs):
+        raise AssertionError("real microphone or Vosk path must not be used")
+
+    manager.microphone_adapter.start_listening = fail_if_called
+    manager.microphone_adapter.read_text = fail_if_called
+    manager.use_vosk_backend = fail_if_called
+
+    processor.process("слушай одну команду")
+    processor.process("включи постоянное прослушивание")
+    result = processor.process("выключи микрофон")
+
+    assert result["intent"] == "microphone.mode.off"
+    assert manager.microphone_adapter.get_state() == "disabled"
+    assert manager.get_speech_backend_name() == "none"
 
 
 def test_microphone_permission_request_commands():
@@ -651,7 +784,6 @@ def test_microphone_listen_stop_commands():
     for command in (
         "перестань слушать",
         "остановить микрофон",
-        "выключи микрофон",
     ):
         processor, manager = create_voice_enabled_processor()
         manager.grant_microphone_permission()
@@ -1012,7 +1144,14 @@ def run_tests():
     test_memory_delete_command_does_not_delete()
     test_memory_delete_command_delete_memory_does_not_delete()
     test_memory_delete_command_forget_all_does_not_delete()
-    test_microphone_status_commands()
+    test_microphone_mode_status_is_off_by_default()
+    test_microphone_mode_status_commands()
+    test_microphone_legacy_status_command_still_reports_adapter_status()
+    test_microphone_mode_off_commands_switch_to_off()
+    test_microphone_mode_partial_commands_switch_to_partial()
+    test_microphone_mode_continuous_commands_switch_to_continuous()
+    test_microphone_mode_unknown_command_stays_safe()
+    test_microphone_mode_commands_do_not_touch_real_capture_or_vosk()
     test_microphone_permission_request_commands()
     test_microphone_permission_grant_commands()
     test_microphone_permission_revoke_commands()

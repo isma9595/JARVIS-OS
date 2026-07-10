@@ -63,8 +63,38 @@ class CommandProcessor:
         "отключить голосовой ввод",
     }
     MICROPHONE_STATUS_COMMANDS = {
-        "микрофон",
         "статус микрофона",
+        "режим микрофона",
+        "какой режим микрофона",
+        "микрофон статус",
+    }
+    MICROPHONE_ADAPTER_STATUS_COMMANDS = {
+        "микрофон",
+    }
+    MICROPHONE_MODE_OFF_COMMANDS = {
+        "выключи микрофон",
+        "отключи микрофон",
+        "отключи прослушивание",
+        "выключи прослушивание",
+        "стоп микрофон",
+    }
+    MICROPHONE_MODE_PARTIAL_COMMANDS = {
+        "слушай одну команду",
+        "прими голосовую команду",
+        "включи частичное прослушивание",
+        "режим одной команды",
+        "частичное прослушивание",
+    }
+    MICROPHONE_MODE_CONTINUOUS_COMMANDS = {
+        "включи постоянное прослушивание",
+        "слушай постоянно",
+        "режим постоянного прослушивания",
+        "включи постоянный микрофон",
+    }
+    MICROPHONE_MODE_DISABLE_CONTINUOUS_COMMANDS = {
+        "отключи постоянное прослушивание",
+        "выключи постоянное прослушивание",
+        "перестань слушать постоянно",
     }
     MICROPHONE_PERMISSION_REQUEST_COMMANDS = {
         "разрешение микрофона",
@@ -378,6 +408,7 @@ class CommandProcessor:
         memory_manager=None,
         system_status_provider=None,
         vosk_runtime_loader=None,
+        microphone_listening_mode_manager=None,
     ):
         self.user_profile = user_profile or {}
         self.dialogue_manager = dialogue_manager or DialogueManager(self.user_profile)
@@ -392,6 +423,13 @@ class CommandProcessor:
         )
         self.voice_input_manager = None
         self.vosk_runtime_loader = vosk_runtime_loader
+        if microphone_listening_mode_manager is None:
+            from voice.microphone_listening_modes import (
+                MicrophoneListeningModeManager,
+            )
+
+            microphone_listening_mode_manager = MicrophoneListeningModeManager()
+        self.microphone_listening_mode_manager = microphone_listening_mode_manager
 
     def set_voice_input_manager(self, voice_input_manager):
         self.voice_input_manager = voice_input_manager
@@ -653,6 +691,33 @@ class CommandProcessor:
             )
 
         if command in self.MICROPHONE_STATUS_COMMANDS:
+            return self._microphone_mode_status_result()
+
+        if command in self.MICROPHONE_MODE_OFF_COMMANDS:
+            return self._set_microphone_mode_result(
+                "microphone.mode.off",
+                "off",
+            )
+
+        if command in self.MICROPHONE_MODE_PARTIAL_COMMANDS:
+            return self._set_microphone_mode_result(
+                "microphone.mode.partial",
+                "partial",
+            )
+
+        if command in self.MICROPHONE_MODE_CONTINUOUS_COMMANDS:
+            return self._set_microphone_mode_result(
+                "microphone.mode.continuous",
+                "continuous",
+            )
+
+        if command in self.MICROPHONE_MODE_DISABLE_CONTINUOUS_COMMANDS:
+            return self._set_microphone_mode_result(
+                "microphone.mode.off",
+                "off",
+            )
+
+        if command in self.MICROPHONE_ADAPTER_STATUS_COMMANDS:
             return self._microphone_result(
                 "microphone.status",
                 "microphone_status",
@@ -900,6 +965,49 @@ class CommandProcessor:
         manager_method = getattr(self.voice_input_manager, manager_method_name)
         manager_result = manager_method()
         return self._result(intent, manager_result["message"])
+
+    def _microphone_mode_status_result(self):
+        mode = self.microphone_listening_mode_manager.get_mode()
+        return self._result(
+            "microphone.mode.status",
+            self._microphone_mode_status_response(mode),
+        )
+
+    def _set_microphone_mode_result(self, intent, mode):
+        if mode == "off":
+            self.microphone_listening_mode_manager.switch_to_off()
+            response = "Микрофон выключен."
+        elif mode == "partial":
+            self.microphone_listening_mode_manager.switch_to_partial()
+            response = (
+                "Включено частичное прослушивание. "
+                "Реальный захват микрофона пока не запускается автоматически."
+            )
+        elif mode == "continuous":
+            self.microphone_listening_mode_manager.switch_to_continuous()
+            response = (
+                "Режим постоянного прослушивания включен как безопасное "
+                "состояние. Реальный микрофон пока не запускается автоматически."
+            )
+        else:
+            raise ValueError(f"Unsupported microphone mode command target: {mode}")
+
+        return self._result(intent, response)
+
+    @staticmethod
+    def _microphone_mode_status_response(mode):
+        responses = {
+            "off": "Микрофон выключен.",
+            "partial": (
+                "Включено частичное прослушивание. JARVIS готов принять одну "
+                "голосовую команду после явного запуска."
+            ),
+            "continuous": (
+                "Включен режим постоянного прослушивания. Реальный захват "
+                "микрофона пока не активирован в целях безопасности."
+            ),
+        }
+        return responses[mode]
 
     def _is_voice_simulation_command(self, command):
         return any(
