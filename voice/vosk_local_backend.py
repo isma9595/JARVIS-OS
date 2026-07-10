@@ -41,7 +41,7 @@ class VoskLocalBackend(SpeechRecognitionBackend):
         return True
 
     def requires_installation(self):
-        return not (self.installed or self.check_dependency_available())
+        return not self.installed
 
     def supports_offline(self):
         return True
