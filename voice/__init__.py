@@ -27,6 +27,10 @@ from voice.vosk_local_recognition_gate import (
     check_vosk_package_status,
     evaluate_vosk_local_recognition_gate,
 )
+from voice.vosk_local_recognition_dry_run import (
+    VoskLocalRecognitionDryRun,
+    VoskLocalRecognitionDryRunResult,
+)
 
 __all__ = [
     "DEFAULT_CAPTURE_DURATION_SECONDS",
@@ -45,6 +49,8 @@ __all__ = [
     "VoskRuntimeLoader",
     "VoskSettingsManager",
     "VoskLocalRecognitionGateResult",
+    "VoskLocalRecognitionDryRun",
+    "VoskLocalRecognitionDryRunResult",
     "VoskModelPathStatus",
     "VoskPackageStatus",
     "check_vosk_model_path_status",

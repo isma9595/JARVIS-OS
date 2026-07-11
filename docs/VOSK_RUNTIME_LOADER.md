@@ -1,3 +1,25 @@
+## TASK-031: safe dry run
+
+TASK-031 добавляет отдельный пробный запуск локального распознавания Vosk. Это
+не runtime loader и не реальное распознавание. Dry run использует существующий
+gate готовности и fake/stub recognizer с тестовыми данными.
+
+Команды dry run:
+
+- `пробный запуск vosk`
+- `тест vosk`
+- `тест распознавания`
+- `пробное распознавание`
+- `проверить локальное распознавание`
+- `dry run vosk`
+
+Даже при успешном dry run `VoskRuntimeLoader` остается безопасной заглушкой:
+runtime не загружается, настоящая модель Vosk не открывается, микрофон не
+запускается, one-shot захват не вызывается, `CONTINUOUS` не подключается к
+реальному распознаванию, аудио не пишется на диск и не отправляется наружу.
+
+Подробности: `docs/VOSK_LOCAL_RECOGNITION_DRY_RUN.md`.
+
 # Vosk Safe Runtime Loader
 
 `VoskRuntimeLoader` is an architectural stub. It reports prerequisite

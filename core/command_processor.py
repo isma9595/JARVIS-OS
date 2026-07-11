@@ -164,6 +164,14 @@ class CommandProcessor:
         "локальное распознавание",
         "готово ли локальное распознавание",
     }
+    VOSK_RECOGNITION_DRY_RUN_COMMANDS = {
+        "пробный запуск vosk",
+        "тест vosk",
+        "тест распознавания",
+        "пробное распознавание",
+        "проверить локальное распознавание",
+        "dry run vosk",
+    }
     VOSK_BACKEND_SELECT_COMMANDS = {
         "выбрать vosk",
         "использовать vosk",
@@ -432,6 +440,7 @@ class CommandProcessor:
         memory_manager=None,
         system_status_provider=None,
         vosk_runtime_loader=None,
+        vosk_recognition_dry_run=None,
         microphone_listening_mode_manager=None,
     ):
         self.user_profile = user_profile or {}
@@ -447,6 +456,7 @@ class CommandProcessor:
         )
         self.voice_input_manager = None
         self.vosk_runtime_loader = vosk_runtime_loader
+        self.vosk_recognition_dry_run = vosk_recognition_dry_run
         if microphone_listening_mode_manager is None:
             from voice.microphone_listening_modes import (
                 MicrophoneListeningModeManager,
@@ -502,6 +512,13 @@ class CommandProcessor:
             return self._result(
                 "speech.backend.vosk.recognition.status",
                 self._vosk_recognition_status_response(gate_result),
+            )
+
+        if command in self.VOSK_RECOGNITION_DRY_RUN_COMMANDS:
+            dry_run_result = self._get_vosk_recognition_dry_run().run()
+            return self._result(
+                "speech.backend.vosk.recognition.dry_run",
+                self._vosk_recognition_dry_run_response(dry_run_result),
             )
 
         if command in self.VOSK_BACKEND_STATUS_COMMANDS:
@@ -966,6 +983,17 @@ class CommandProcessor:
             recognition_continuous=False,
         )
 
+    def _get_vosk_recognition_dry_run(self):
+        if self.vosk_recognition_dry_run is None:
+            from voice.vosk_local_recognition_dry_run import (
+                VoskLocalRecognitionDryRun,
+            )
+
+            self.vosk_recognition_dry_run = VoskLocalRecognitionDryRun(
+                gate_checker=self._get_vosk_recognition_gate_result
+            )
+        return self.vosk_recognition_dry_run
+
     @staticmethod
     def _vosk_recognition_status_response(gate_result):
         lines = [
@@ -997,6 +1025,41 @@ class CommandProcessor:
                 ),
             ]
         )
+        return "\n".join(lines)
+
+    @staticmethod
+    def _vosk_recognition_dry_run_response(dry_run_result):
+        lines = [
+            dry_run_result.message,
+            (
+                "Пробный запуск разрешен gate: "
+                + ("да." if dry_run_result.allowed else "нет.")
+            ),
+            (
+                "Пробный запуск завершен: "
+                + ("да." if dry_run_result.success else "нет.")
+            ),
+            "Тестовые данные использовались: да.",
+            "Реальный микрофон запускался: нет.",
+            "Настоящая модель Vosk загружалась: нет.",
+            "Реальное распознавание не запускалось.",
+        ]
+
+        if dry_run_result.recognized_text:
+            lines.append(f"Тестовый распознанный текст: {dry_run_result.recognized_text}")
+
+        if dry_run_result.blockers:
+            lines.append("Причины:")
+            lines.extend(f"- {blocker}" for blocker in dry_run_result.blockers)
+
+        if dry_run_result.warnings:
+            lines.append("Предупреждения:")
+            lines.extend(f"- {warning}" for warning in dry_run_result.warnings)
+
+        if dry_run_result.next_steps:
+            lines.append("Следующие шаги:")
+            lines.extend(f"- {step}" for step in dry_run_result.next_steps)
+
         return "\n".join(lines)
 
     @staticmethod

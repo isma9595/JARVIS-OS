@@ -104,6 +104,73 @@ def test_vosk_manual_status_commands_use_safe_recognition_gate():
     assert manager.get_speech_backend_name() == "none"
 
 
+def test_vosk_dry_run_commands_return_safe_russian_response():
+    processor, manager = create_voice_enabled_processor()
+
+    def fail_if_called(*_args, **_kwargs):
+        raise AssertionError("dry run command must not touch real microphone or runtime")
+
+    manager.microphone_adapter.start_listening = fail_if_called
+    manager.microphone_adapter.read_text = fail_if_called
+    manager.listen_once_from_microphone = fail_if_called
+    manager.use_vosk_backend = fail_if_called
+    manager.get_vosk_backend_status = lambda: {
+        "model_path": None,
+        "vosk_package_available": False,
+    }
+    processor._get_vosk_runtime_loader = fail_if_called
+
+    for command in (
+        "пробный запуск vosk",
+        "тест vosk",
+        "тест распознавания",
+        "пробное распознавание",
+        "проверить локальное распознавание",
+        "dry run vosk",
+    ):
+        processor.vosk_recognition_dry_run = None
+        result = processor.process(command)
+
+        assert result["intent"] == "speech.backend.vosk.recognition.dry_run"
+        assert "Пробный запуск локального распознавания Vosk заблокирован." in result["response"]
+        assert "Пробный запуск разрешен gate: нет." in result["response"]
+        assert "Пробный запуск завершен: нет." in result["response"]
+        assert "Реальный микрофон запускался: нет." in result["response"]
+        assert "Настоящая модель Vosk загружалась: нет." in result["response"]
+        assert "Реальное распознавание не запускалось." in result["response"]
+        assert "Пакет vosk не установлен." in result["response"]
+        assert "Путь к модели Vosk не указан." in result["response"]
+
+    assert manager.microphone_adapter.get_state() == "disabled"
+    assert manager.get_speech_backend_name() == "none"
+
+
+def test_vosk_dry_run_command_can_report_fake_success_without_real_capture():
+    from voice import VoskLocalRecognitionDryRun
+
+    processor = CommandProcessor(
+        vosk_recognition_dry_run=VoskLocalRecognitionDryRun(
+            gate_checker=lambda: {
+                "allowed": True,
+                "blockers": [],
+                "warnings": [],
+                "next_steps": [],
+            },
+            recognizer=lambda _fake_audio: "тестовая команда",
+        )
+    )
+
+    result = processor.process("тест vosk")
+
+    assert result["intent"] == "speech.backend.vosk.recognition.dry_run"
+    assert "Пробный запуск локального распознавания Vosk выполнен" in result["response"]
+    assert "Пробный запуск разрешен gate: да." in result["response"]
+    assert "Пробный запуск завершен: да." in result["response"]
+    assert "Тестовый распознанный текст: тестовая команда" in result["response"]
+    assert "Реальный микрофон запускался: нет." in result["response"]
+    assert "Настоящая модель Vosk загружалась: нет." in result["response"]
+
+
 def test_vosk_manual_setup_commands_return_safe_russian_instructions():
     processor = CommandProcessor()
 
