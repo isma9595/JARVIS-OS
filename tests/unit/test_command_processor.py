@@ -132,14 +132,16 @@ def test_vosk_dry_run_commands_return_safe_russian_response():
         result = processor.process(command)
 
         assert result["intent"] == "speech.backend.vosk.recognition.dry_run"
-        assert "Пробный запуск локального распознавания Vosk заблокирован." in result["response"]
-        assert "Пробный запуск разрешен gate: нет." in result["response"]
-        assert "Пробный запуск завершен: нет." in result["response"]
-        assert "Реальный микрофон запускался: нет." in result["response"]
-        assert "Настоящая модель Vosk загружалась: нет." in result["response"]
-        assert "Реальное распознавание не запускалось." in result["response"]
+        assert "Пробный запуск Vosk заблокирован." in result["response"]
+        assert result["response"].count("Причины:") == 1
+        assert result["response"].count("Безопасность:") == 1
+        assert "микрофон не запускался" in result["response"]
+        assert "настоящая модель Vosk не загружалась" in result["response"]
+        assert "реальное распознавание не запускалось" in result["response"]
         assert "Пакет vosk не установлен." in result["response"]
         assert "Путь к модели Vosk не указан." in result["response"]
+        assert result["response"].count("Пакет vosk не установлен.") == 1
+        assert result["response"].count("Путь к модели Vosk не указан.") == 1
 
     assert manager.microphone_adapter.get_state() == "disabled"
     assert manager.get_speech_backend_name() == "none"
@@ -163,12 +165,10 @@ def test_vosk_dry_run_command_can_report_fake_success_without_real_capture():
     result = processor.process("тест vosk")
 
     assert result["intent"] == "speech.backend.vosk.recognition.dry_run"
-    assert "Пробный запуск локального распознавания Vosk выполнен" in result["response"]
-    assert "Пробный запуск разрешен gate: да." in result["response"]
-    assert "Пробный запуск завершен: да." in result["response"]
+    assert "Пробный запуск Vosk выполнен." in result["response"]
     assert "Тестовый распознанный текст: тестовая команда" in result["response"]
-    assert "Реальный микрофон запускался: нет." in result["response"]
-    assert "Настоящая модель Vosk загружалась: нет." in result["response"]
+    assert "микрофон не запускался" in result["response"]
+    assert "настоящая модель Vosk не загружалась" in result["response"]
 
 
 def test_vosk_manual_setup_commands_return_safe_russian_instructions():
@@ -481,7 +481,11 @@ def test_help_command():
     assert result["intent"] == "assistant.help"
     assert result["should_exit"] is False
     assert "работать с профилем" in result["response"]
-    assert "Голос, зрение экрана и автоматизация" in result["response"]
+    assert "режимы микрофона" in result["response"]
+    assert "Vosk" in result["response"]
+    assert "Реальный захват микрофона автоматически не включается" in result["response"]
+    assert "реальное распознавание Vosk ещё не подключено" in result["response"]
+    assert "будут добавлены позже" not in result["response"]
 
 
 def test_help_alias_command():
@@ -489,7 +493,25 @@ def test_help_alias_command():
 
     assert result["intent"] == "assistant.help"
     assert result["should_exit"] is False
+    assert "пробный запуск Vosk" in result["response"]
+    assert "симуляция голосовой команды" in result["response"]
     assert "Для выхода напишите: выход" in result["response"]
+
+
+def test_greeting_command():
+    result = CommandProcessor(sample_profile()).process("привет")
+
+    assert result["intent"] == "assistant.greeting"
+    assert result["should_exit"] is False
+    assert result["response"] == "Исмаил, привет. JARVIS работает и готов помочь."
+
+
+def test_greeting_salam_command():
+    result = CommandProcessor(sample_profile()).process("салам")
+
+    assert result["intent"] == "assistant.greeting"
+    assert result["should_exit"] is False
+    assert "JARVIS работает и готов помочь" in result["response"]
 
 
 def test_version_command():
@@ -738,6 +760,33 @@ def test_list_memory_command_show_memory():
         assert "1. любишь зелёный цвет" in result["response"]
 
 
+def test_memory_recall_what_was_remembered_command():
+    with TemporaryDirectory() as tmp_dir:
+        memory_manager = LocalMemoryManager(Path(tmp_dir) / "memory.json")
+        memory_manager.add_memory("любишь зелёный цвет")
+        memory_manager.add_memory("JARVIS должен быть расширяемым")
+        processor = CommandProcessor(sample_profile(), memory_manager=memory_manager)
+
+        result = processor.process("что ты запомнил")
+
+        assert result["intent"] == "memory.list"
+        assert result["should_exit"] is False
+        assert "1. любишь зелёный цвет" in result["response"]
+        assert "2. JARVIS должен быть расширяемым" in result["response"]
+
+
+def test_memory_recall_empty_memory_is_safe():
+    with TemporaryDirectory() as tmp_dir:
+        memory_manager = LocalMemoryManager(Path(tmp_dir) / "memory.json")
+        processor = CommandProcessor(sample_profile(), memory_manager=memory_manager)
+
+        result = processor.process("локальная память")
+
+        assert result["intent"] == "memory.list"
+        assert result["should_exit"] is False
+        assert result["response"] == "В локальной памяти пока нет сохранённых записей."
+
+
 def test_list_memory_command_what_do_you_remember():
     with TemporaryDirectory() as tmp_dir:
         memory_manager = LocalMemoryManager(Path(tmp_dir) / "memory.json")
@@ -747,6 +796,18 @@ def test_list_memory_command_what_do_you_remember():
 
         assert result["intent"] == "memory.list"
         assert result["should_exit"] is False
+
+
+def test_show_memory_alias_still_works():
+    with TemporaryDirectory() as tmp_dir:
+        memory_manager = LocalMemoryManager(Path(tmp_dir) / "memory.json")
+        memory_manager.add_memory("локальный факт")
+        processor = CommandProcessor(sample_profile(), memory_manager=memory_manager)
+
+        result = processor.process("покажи память")
+
+        assert result["intent"] == "memory.list"
+        assert "1. локальный факт" in result["response"]
 
 
 def test_search_memory_command():
@@ -773,6 +834,21 @@ def test_memory_count_command():
         assert result["intent"] == "memory.count"
         assert result["should_exit"] is False
         assert "сохранено записей: 1" in result["response"]
+
+
+def test_idea_count_commands():
+    with TemporaryDirectory() as tmp_dir:
+        idea_manager = IdeaManager(Path(tmp_dir) / "ideas.json")
+        idea_manager.add_idea("первая идея")
+        idea_manager.add_idea("вторая идея")
+        processor = CommandProcessor(sample_profile(), idea_manager=idea_manager)
+
+        for command in ("сколько идей", "количество идей", "сколько сохранено идей"):
+            result = processor.process(command)
+
+            assert result["intent"] == "idea.count"
+            assert result["should_exit"] is False
+            assert result["response"] == "Исмаил, сохранено идей: 2."
 
 
 def test_recent_memory_command():

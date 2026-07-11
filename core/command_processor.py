@@ -7,6 +7,13 @@ from memory import LocalMemoryManager
 
 
 class CommandProcessor:
+    GREETING_COMMANDS = {
+        "привет",
+        "здравствуй",
+        "здравствуйте",
+        "салам",
+        "ассаламу алейкум",
+    }
     USER_IDENTITY_COMMANDS = {
         "кто я",
         "как меня зовут",
@@ -387,6 +394,11 @@ class CommandProcessor:
         "список идей",
         "идеи",
     }
+    IDEA_COUNT_COMMANDS = {
+        "сколько идей",
+        "количество идей",
+        "сколько сохранено идей",
+    }
     MEMORY_ADD_PREFIXES = (
         "запомни что",
         "запомни",
@@ -396,8 +408,12 @@ class CommandProcessor:
         "сохрани это в память",
     )
     MEMORY_LIST_COMMANDS = {
+        "что ты запомнил",
         "что ты помнишь",
         "покажи память",
+        "покажи что ты запомнил",
+        "что в памяти",
+        "локальная память",
         "моя память",
         "память",
     }
@@ -833,6 +849,9 @@ class CommandProcessor:
 
             return self.voice_input_manager.cancel_pending_action()
 
+        if command in self.GREETING_COMMANDS:
+            return self._result("assistant.greeting", self._greeting_response())
+
         if command in self.USER_IDENTITY_COMMANDS:
             return self._result(
                 "user.identity",
@@ -900,7 +919,7 @@ class CommandProcessor:
         if command in self.CAPABILITIES_COMMANDS:
             return self._result(
                 "assistant.help",
-                self.dialogue_manager.help_response(),
+                self._help_response(),
             )
 
         if command in self.EXIT_COMMANDS:
@@ -939,6 +958,9 @@ class CommandProcessor:
 
         if command in self.IDEA_LIST_COMMANDS:
             return self._list_ideas()
+
+        if command in self.IDEA_COUNT_COMMANDS:
+            return self._count_ideas()
 
         route = self.action_router.route(command)
         return self._route_result(route)
@@ -1029,20 +1051,13 @@ class CommandProcessor:
 
     @staticmethod
     def _vosk_recognition_dry_run_response(dry_run_result):
+        result_text = (
+            "Пробный запуск Vosk выполнен."
+            if dry_run_result.success
+            else "Пробный запуск Vosk заблокирован."
+        )
         lines = [
-            dry_run_result.message,
-            (
-                "Пробный запуск разрешен gate: "
-                + ("да." if dry_run_result.allowed else "нет.")
-            ),
-            (
-                "Пробный запуск завершен: "
-                + ("да." if dry_run_result.success else "нет.")
-            ),
-            "Тестовые данные использовались: да.",
-            "Реальный микрофон запускался: нет.",
-            "Настоящая модель Vosk загружалась: нет.",
-            "Реальное распознавание не запускалось.",
+            result_text,
         ]
 
         if dry_run_result.recognized_text:
@@ -1056,9 +1071,13 @@ class CommandProcessor:
             lines.append("Предупреждения:")
             lines.extend(f"- {warning}" for warning in dry_run_result.warnings)
 
+        lines.append(
+            "Безопасность: использовались только тестовые данные, микрофон не запускался, "
+            "настоящая модель Vosk не загружалась, реальное распознавание не запускалось."
+        )
+
         if dry_run_result.next_steps:
-            lines.append("Следующие шаги:")
-            lines.extend(f"- {step}" for step in dry_run_result.next_steps)
+            lines.append(f"Следующий шаг: {dry_run_result.next_steps[0]}")
 
         return "\n".join(lines)
 
@@ -1296,6 +1315,13 @@ class CommandProcessor:
 
         return self._result("idea.list", response)
 
+    def _count_ideas(self):
+        count = self.idea_manager.count_ideas()
+        return self._result(
+            "idea.count",
+            f"{self.dialogue_manager.get_preferred_name()}, сохранено идей: {count}.",
+        )
+
     def _is_memory_add_command(self, command):
         return any(
             command == prefix or command.startswith(prefix + " ")
@@ -1313,7 +1339,7 @@ class CommandProcessor:
     def _list_memories(self):
         memories = self.memory_manager.list_memories()
         if not memories:
-            response = self.dialogue_manager.no_memory_response()
+            response = "В локальной памяти пока нет сохранённых записей."
         else:
             response = self.dialogue_manager.memory_list_response(memories)
 
@@ -1362,6 +1388,23 @@ class CommandProcessor:
                 return command[len(prefix) :].strip()
 
         return command
+
+    def _greeting_response(self):
+        return (
+            f"{self.dialogue_manager.get_preferred_name()}, привет. "
+            f"{self.dialogue_manager.get_assistant_name()} работает и готов помочь."
+        )
+
+    def _help_response(self):
+        return (
+            f"{self.dialogue_manager.get_preferred_name()}, сейчас я умею работать с профилем, "
+            "показывать статус системы, вести локальную память и идеи, выполнять безопасную "
+            "маршрутизацию действий и обнаружение рискованных команд; "
+            "режимы микрофона; настройка, статус и путь модели Vosk; пробный запуск Vosk на тестовых данных; "
+            "симуляция голосовой команды. Реальный захват микрофона автоматически не включается, "
+            "реальное распознавание Vosk ещё не подключено. Зрение экрана и автоматизация запланированы позже. "
+            "Для выхода напишите: выход."
+        )
 
     def _route_result(self, route):
         intent_by_category = {
