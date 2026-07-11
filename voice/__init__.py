@@ -19,6 +19,14 @@ from voice.one_shot_microphone_capture import (
 )
 from voice.vosk_runtime_loader import VoskRuntimeLoader
 from voice.vosk_settings_manager import VoskSettingsManager
+from voice.vosk_local_recognition_gate import (
+    VoskLocalRecognitionGateResult,
+    VoskModelPathStatus,
+    VoskPackageStatus,
+    check_vosk_model_path_status,
+    check_vosk_package_status,
+    evaluate_vosk_local_recognition_gate,
+)
 
 __all__ = [
     "DEFAULT_CAPTURE_DURATION_SECONDS",
@@ -36,4 +44,10 @@ __all__ = [
     "VoskInstallationGuide",
     "VoskRuntimeLoader",
     "VoskSettingsManager",
+    "VoskLocalRecognitionGateResult",
+    "VoskModelPathStatus",
+    "VoskPackageStatus",
+    "check_vosk_model_path_status",
+    "check_vosk_package_status",
+    "evaluate_vosk_local_recognition_gate",
 ]

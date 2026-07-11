@@ -1,11 +1,11 @@
 # JARVIS-OS Checkpoint
 
 - Project: JARVIS-OS
-- Current stable stage: TASK-026 — Microphone Mode Commands
-- Last stable commit: 96a5989
-- Last stable commit message: Add microphone mode commands
-- Next stage: TASK-027 — One-Shot Microphone Capture
-- TASK-027 status: in progress
+- Current stable stage: TASK-027 — One-Shot Microphone Capture
+- Last stable commit: 26c14b4
+- Last stable commit message: Add one-shot microphone capture
+- Next stage: TASK-028 — Vosk Model Setup and Local Recognition Gate
+- TASK-028 status: in progress
 
 ## Approved Workflow
 
@@ -21,12 +21,11 @@ ChatGPT plans -> User approves -> Codex executes -> User verifies -> Commit only
 
 ## Notes
 
-TASK-026 is the current stable stage.
+TASK-027 is the current stable stage.
 
-TASK-027 adds a safe one-shot microphone capture foundation. One-shot
-microphone capture must remain explicit, bounded, and non-continuous. It must
-not enable real startup capture, always-on listening, continuous recognition,
-Vosk activation, automatic downloads, or automatic installs.
+TASK-028 adds safe Vosk model setup checks and a local recognition gate. Vosk
+local recognition must remain gated by explicit setup checks and user
+activation.
 
 JARVIS remains Russian-first for user-facing functionality, with future
 multilingual switching planned.

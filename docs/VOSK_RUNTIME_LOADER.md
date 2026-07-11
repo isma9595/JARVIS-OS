@@ -4,6 +4,23 @@
 readiness by using the existing local backend preflight, but it never loads a
 runtime or model and never performs speech recognition.
 
+## TASK-028: gate локального распознавания
+
+TASK-028 добавляет отдельный безопасный gate:
+`voice.vosk_local_recognition_gate`.
+
+Gate проверяет доступность пакета `vosk`, наличие настроенного пути к модели,
+существование пути и то, что путь является папкой. Также он фиксирует
+обязательные условия безопасности: требуется явное разрешение пользователя,
+микрофон не запускается автоматически, а режим `CONTINUOUS` пока не связан с
+реальным распознаванием.
+
+Gate не импортирует Vosk, не загружает модель, не вызывает one-shot захват, не
+запускает постоянное прослушивание и не создает фоновые потоки.
+
+Подробная инструкция по ручной подготовке модели находится в
+`docs/VOSK_MODEL_SETUP.md`.
+
 ## Guarantees in TASK-021 through TASK-023
 
 - `runtime_loaded` is always `false`.
