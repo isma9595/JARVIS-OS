@@ -148,10 +148,19 @@ class CommandProcessor:
     VOSK_BACKEND_STATUS_COMMANDS = {
         "vosk",
         "vosk backend",
-        "статус vosk",
         "локальный vosk",
         "восок",
         "воск",
+    }
+    VOSK_RECOGNITION_STATUS_COMMANDS = {
+        "статус vosk",
+        "проверить vosk",
+        "готов ли vosk",
+        "готово ли распознавание",
+        "статус распознавания",
+        "проверка распознавания",
+        "локальное распознавание",
+        "готово ли локальное распознавание",
     }
     VOSK_BACKEND_SELECT_COMMANDS = {
         "выбрать vosk",
@@ -170,14 +179,12 @@ class CommandProcessor:
         "подключение vosk",
     }
     VOSK_PREFLIGHT_COMMANDS = {
-        "проверить vosk",
         "preflight vosk",
         "проверка vosk",
         "проверь vosk",
         "диагностика vosk",
         "проверить воск",
         "диагностика воск",
-        "готов ли vosk",
         "vosk preflight",
     }
     VOSK_MISSING_REQUIREMENTS_COMMANDS = {
@@ -195,8 +202,11 @@ class CommandProcessor:
         "модель воск",
         "статус модели воск",
     }
-    VOSK_MODEL_PATH_PREFIXES = (
+    VOSK_MODEL_PATH_STATUS_COMMANDS = {
         "путь модели vosk",
+        "где модель vosk",
+    }
+    VOSK_MODEL_PATH_PREFIXES = (
         "сохранить путь модели vosk",
         "установить путь модели vosk",
         "модель vosk путь",
@@ -224,8 +234,11 @@ class CommandProcessor:
     VOSK_INSTALLATION_GUIDE_COMMANDS = {
         "установка vosk",
         "как установить vosk",
+        "настроить vosk",
+        "как настроить vosk",
         "инструкция vosk",
         "инструкция по установке vosk",
+        "настройка распознавания",
         "vosk installation guide",
     }
     VOSK_PYTHON_COMPATIBILITY_COMMANDS = {
@@ -473,6 +486,13 @@ class CommandProcessor:
                 self.dialogue_manager.speech_backend_options_response(),
             )
 
+        if command in self.VOSK_RECOGNITION_STATUS_COMMANDS:
+            gate_result = self._get_vosk_recognition_gate_result()
+            return self._result(
+                "speech.backend.vosk.recognition.status",
+                self._vosk_recognition_status_response(gate_result),
+            )
+
         if command in self.VOSK_BACKEND_STATUS_COMMANDS:
             status = (
                 self.voice_input_manager.get_vosk_backend_status()
@@ -618,6 +638,13 @@ class CommandProcessor:
             return self._result(
                 "speech.backend.vosk.model.status",
                 self.dialogue_manager.vosk_model_status_response(status),
+            )
+
+        if command in self.VOSK_MODEL_PATH_STATUS_COMMANDS:
+            status = self._get_vosk_model_status()
+            return self._result(
+                "speech.backend.vosk.model.path.status",
+                self._vosk_model_path_status_response(status),
             )
 
         if command in self.VOSK_MODEL_PATH_CLEAR_COMMANDS:
@@ -915,6 +942,65 @@ class CommandProcessor:
 
             return VoskLocalBackend().get_status()
         return self.voice_input_manager.get_vosk_backend_status()
+
+    def _get_vosk_recognition_gate_result(self):
+        from voice.vosk_local_recognition_gate import (
+            evaluate_vosk_local_recognition_gate,
+        )
+
+        status = self._get_vosk_model_status()
+        return evaluate_vosk_local_recognition_gate(
+            model_path=status.get("model_path"),
+            package_available=status.get("vosk_package_available"),
+            explicit_activation_required=True,
+            microphone_capture_automatic=False,
+            recognition_continuous=False,
+        )
+
+    @staticmethod
+    def _vosk_recognition_status_response(gate_result):
+        lines = [
+            gate_result.message,
+            (
+                "Локальное распознавание Vosk сейчас разрешено: "
+                + ("да." if gate_result.allowed else "нет.")
+            ),
+        ]
+
+        if gate_result.blockers:
+            lines.append("Причины:")
+            lines.extend(f"- {blocker}" for blocker in gate_result.blockers)
+
+        if gate_result.warnings:
+            lines.append("Предупреждения:")
+            lines.extend(f"- {warning}" for warning in gate_result.warnings)
+
+        if gate_result.next_steps:
+            lines.append("Следующие шаги:")
+            lines.extend(f"- {step}" for step in gate_result.next_steps)
+
+        lines.extend(
+            [
+                "Микрофон не запускается автоматически.",
+                (
+                    "Постоянное прослушивание пока не связано с реальным "
+                    "распознаванием."
+                ),
+            ]
+        )
+        return "\n".join(lines)
+
+    @staticmethod
+    def _vosk_model_path_status_response(status):
+        model_path = status.get("model_path")
+        if not model_path:
+            return "Путь к модели Vosk пока не указан."
+        return (
+            "Текущий путь к модели Vosk: "
+            f"{model_path}\n"
+            "Это только чтение настройки; файлы модели не открываются, "
+            "модель не загружается и микрофон не запускается."
+        )
 
     def _extract_vosk_model_path(self, command_text, normalized_command):
         return self._extract_prefixed_value(

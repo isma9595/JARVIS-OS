@@ -55,11 +55,99 @@ def test_vosk_real_commands_and_selection_flow():
     assert plan["intent"] == "speech.backend.vosk.plan"
 
 
+def test_vosk_manual_status_commands_use_safe_recognition_gate():
+    processor, manager = create_voice_enabled_processor()
+
+    def fail_if_called(*_args, **_kwargs):
+        raise AssertionError("status command must stay read-only")
+
+    manager.microphone_adapter.start_listening = fail_if_called
+    manager.microphone_adapter.read_text = fail_if_called
+    manager.listen_once_from_microphone = fail_if_called
+    manager.use_vosk_backend = fail_if_called
+    manager.get_vosk_backend_status = lambda: {
+        "model_path": None,
+        "vosk_package_available": False,
+    }
+
+    for command in (
+        "статус vosk",
+        "проверить vosk",
+        "готов ли vosk",
+        "готово ли распознавание",
+        "статус распознавания",
+        "проверка распознавания",
+        "локальное распознавание",
+        "готово ли локальное распознавание",
+    ):
+        result = processor.process(command)
+
+        assert result["intent"] == "speech.backend.vosk.recognition.status"
+        assert "Локальное распознавание Vosk пока недоступно." in result["response"]
+        assert (
+            "Локальное распознавание Vosk сейчас разрешено: нет."
+            in result["response"]
+        )
+        assert "Причины:" in result["response"]
+        assert "Пакет vosk не установлен." in result["response"]
+        assert "Путь к модели Vosk не указан." in result["response"]
+        assert "Следующие шаги:" in result["response"]
+        assert "Установите пакет vosk вручную" in result["response"]
+        assert "Скачайте модель Vosk вручную" in result["response"]
+        assert "Микрофон не запускается автоматически." in result["response"]
+        assert (
+            "Постоянное прослушивание пока не связано с реальным распознаванием."
+            in result["response"]
+        )
+
+    assert manager.microphone_adapter.get_state() == "disabled"
+    assert manager.get_speech_backend_name() == "none"
+
+
+def test_vosk_manual_setup_commands_return_safe_russian_instructions():
+    processor = CommandProcessor()
+
+    for command in ("как настроить vosk", "инструкция vosk", "настройка распознавания"):
+        result = processor.process(command)
+
+        assert result["intent"] == "speech.backend.vosk.installation.guide"
+        assert "Vosk автоматически не устанавливается" in result["response"]
+        assert "Команда для ручной установки" in result["response"]
+        assert "модель не скачивается" in result["response"]
+        assert "микрофон не включается" in result["response"]
+
+
+def test_vosk_model_path_status_reports_missing_path_without_writes(tmp_path):
+    processor, manager = create_voice_enabled_processor(tmp_path)
+
+    result = processor.process("путь модели vosk")
+
+    assert result["intent"] == "speech.backend.vosk.model.path.status"
+    assert result["response"] == "Путь к модели Vosk пока не указан."
+    assert manager.get_vosk_backend_status()["model_path"] is None
+
+
+def test_vosk_model_path_status_reports_configured_path_read_only(tmp_path):
+    processor, manager = create_voice_enabled_processor(tmp_path)
+    configured_path = str(tmp_path / "vosk-model-small-ru")
+    manager.configure_vosk_model_path(configured_path)
+
+    result = processor.process("путь модели vosk")
+    alias_result = processor.process("где модель vosk")
+
+    assert result["intent"] == "speech.backend.vosk.model.path.status"
+    assert configured_path in result["response"]
+    assert "модель не загружается" in result["response"]
+    assert "микрофон не запускается" in result["response"]
+    assert alias_result["intent"] == "speech.backend.vosk.model.path.status"
+    assert configured_path in alias_result["response"]
+    assert manager.get_vosk_backend_status()["model_path"] == configured_path
+
+
 def test_vosk_preflight_and_in_memory_model_path_commands(tmp_path):
     processor, manager = create_voice_enabled_processor(tmp_path)
 
     for command in (
-        "проверить vosk",
         "preflight vosk",
         "проверка vosk",
         "диагностика vosk",
