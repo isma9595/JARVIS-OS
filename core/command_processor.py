@@ -196,6 +196,16 @@ class CommandProcessor:
         "проверить локальное распознавание",
         "dry run vosk",
     }
+    ONE_SHOT_VOSK_BRIDGE_COMMANDS = {
+        "мост vosk",
+        "голосовой мост",
+        "one shot vosk",
+        "one-shot vosk",
+        "проверка голосового моста",
+        "тест голосового моста",
+        "проверить мост распознавания",
+        "мост распознавания",
+    }
     VOSK_BACKEND_SELECT_COMMANDS = {
         "выбрать vosk",
         "использовать vosk",
@@ -474,6 +484,7 @@ class CommandProcessor:
         system_status_provider=None,
         vosk_runtime_loader=None,
         vosk_recognition_dry_run=None,
+        one_shot_vosk_recognition_bridge=None,
         microphone_listening_mode_manager=None,
         user_profile_manager=None,
     ):
@@ -492,6 +503,7 @@ class CommandProcessor:
         self.voice_input_manager = None
         self.vosk_runtime_loader = vosk_runtime_loader
         self.vosk_recognition_dry_run = vosk_recognition_dry_run
+        self.one_shot_vosk_recognition_bridge = one_shot_vosk_recognition_bridge
         if microphone_listening_mode_manager is None:
             from voice.microphone_listening_modes import (
                 MicrophoneListeningModeManager,
@@ -554,6 +566,15 @@ class CommandProcessor:
             return self._result(
                 "speech.backend.vosk.recognition.dry_run",
                 self._vosk_recognition_dry_run_response(dry_run_result),
+            )
+
+        if command in self.ONE_SHOT_VOSK_BRIDGE_COMMANDS:
+            bridge_result = self._get_one_shot_vosk_recognition_bridge().run_once(
+                explicit_one_shot_requested=True
+            )
+            return self._result(
+                "speech.backend.vosk.one_shot_bridge",
+                self._one_shot_vosk_bridge_response(bridge_result),
             )
 
         if command in self.VOSK_BACKEND_STATUS_COMMANDS:
@@ -1042,6 +1063,17 @@ class CommandProcessor:
             )
         return self.vosk_recognition_dry_run
 
+    def _get_one_shot_vosk_recognition_bridge(self):
+        if self.one_shot_vosk_recognition_bridge is None:
+            from voice.one_shot_vosk_recognition_bridge import (
+                OneShotVoskRecognitionBridge,
+            )
+
+            self.one_shot_vosk_recognition_bridge = OneShotVoskRecognitionBridge(
+                gate_checker=self._get_vosk_recognition_gate_result
+            )
+        return self.one_shot_vosk_recognition_bridge
+
     @staticmethod
     def _vosk_recognition_status_response(gate_result):
         lines = [
@@ -1105,6 +1137,16 @@ class CommandProcessor:
         if dry_run_result.next_steps:
             lines.append(f"Следующий шаг: {dry_run_result.next_steps[0]}")
 
+        return "\n".join(lines)
+
+    @staticmethod
+    def _one_shot_vosk_bridge_response(bridge_result):
+        from voice.one_shot_vosk_recognition_bridge import OneShotVoskRecognitionBridge
+
+        lines = [OneShotVoskRecognitionBridge.format_result(bridge_result)]
+        lines.append(
+            "Это только проверка bridge/coordinator: реальное распознавание и выполнение команд будут подключаться отдельной задачей."
+        )
         return "\n".join(lines)
 
     @staticmethod

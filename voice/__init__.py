@@ -17,6 +17,10 @@ from voice.one_shot_microphone_capture import (
     OneShotMicrophoneCapture,
     SoundDeviceOneShotCaptureAdapter,
 )
+from voice.one_shot_vosk_recognition_bridge import (
+    OneShotVoskRecognitionBridge,
+    OneShotVoskRecognitionBridgeResult,
+)
 from voice.vosk_runtime_loader import VoskRuntimeLoader
 from voice.vosk_settings_manager import VoskSettingsManager
 from voice.vosk_local_recognition_gate import (
@@ -41,6 +45,8 @@ __all__ = [
     "NoSpeechRecognitionBackend",
     "OneShotCaptureResult",
     "OneShotMicrophoneCapture",
+    "OneShotVoskRecognitionBridge",
+    "OneShotVoskRecognitionBridgeResult",
     "SpeechRecognitionBackend",
     "SoundDeviceOneShotCaptureAdapter",
     "VoiceInputManager",

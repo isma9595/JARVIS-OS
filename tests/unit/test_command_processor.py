@@ -6,6 +6,7 @@ from tempfile import TemporaryDirectory
 from users.user_profile import UserProfileManager
 from voice import (
     MicrophoneListeningModeManager,
+    OneShotVoskRecognitionBridgeResult,
     VoiceInputManager,
     VoskSettingsManager,
 )
@@ -170,6 +171,42 @@ def test_vosk_dry_run_command_can_report_fake_success_without_real_capture():
     assert "Тестовый распознанный текст: тестовая команда" in result["response"]
     assert "микрофон не запускался" in result["response"]
     assert "настоящая модель Vosk не загружалась" in result["response"]
+
+
+def test_one_shot_vosk_bridge_command_aliases_return_safe_response():
+    processor = CommandProcessor()
+
+    for command in ("голосовой мост", "мост vosk", "тест голосового моста"):
+        result = processor.process(command)
+
+        assert result["intent"] == "speech.backend.vosk.one_shot_bridge"
+        assert "One-shot Vosk bridge" in result["response"]
+        assert "Реальный микрофон не запускался автоматически." in result["response"]
+        assert "Постоянное прослушивание не использовалось." in result["response"]
+        assert "Аудио не отправлялось в облако." in result["response"]
+        assert "выполнение команд будут подключаться отдельной задачей" in result["response"]
+
+
+def test_one_shot_vosk_bridge_recognized_text_is_not_executed_as_command():
+    class FakeBridge:
+        def run_once(self, explicit_one_shot_requested=False):
+            assert explicit_one_shot_requested is True
+            return OneShotVoskRecognitionBridgeResult(
+                allowed=True,
+                completed=True,
+                blocked=False,
+                simulated=True,
+                recognized_text="статус системы",
+            )
+
+    processor = CommandProcessor(one_shot_vosk_recognition_bridge=FakeBridge())
+
+    result = processor.process("проверить мост распознавания")
+
+    assert result["intent"] == "speech.backend.vosk.one_shot_bridge"
+    assert "Распознанный текст: статус системы" in result["response"]
+    assert "Активных сервисов" not in result["response"]
+    assert "Распознанный текст не выполнялся как команда." in result["response"]
 
 
 def test_vosk_manual_setup_commands_return_safe_russian_instructions():
