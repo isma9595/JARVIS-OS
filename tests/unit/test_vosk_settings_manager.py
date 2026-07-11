@@ -29,6 +29,18 @@ def test_model_path_and_language_persist_in_temporary_directory(tmp_path):
     }
 
 
+def test_quoted_model_path_is_saved_without_wrapper_quotes(tmp_path):
+    settings_path = tmp_path / "config" / "local" / "vosk_settings.json"
+    manager = VoskSettingsManager(settings_path)
+
+    manager.set_model_path('"C:\\models\\vosk model small ru"')
+
+    assert manager.get_model_path() == r"C:\models\vosk model small ru"
+    assert json.loads(settings_path.read_text(encoding="utf-8"))["model_path"] == (
+        r"C:\models\vosk model small ru"
+    )
+
+
 def test_clear_model_path_preserves_language_and_user_directory(tmp_path):
     settings_path = tmp_path / "settings" / "vosk_settings.json"
     model_directory = tmp_path / "user-model"

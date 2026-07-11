@@ -129,11 +129,15 @@ def test_vosk_model_path_status_reports_missing_path_without_writes(tmp_path):
 
 def test_vosk_model_path_status_reports_configured_path_read_only(tmp_path):
     processor, manager = create_voice_enabled_processor(tmp_path)
-    configured_path = str(tmp_path / "vosk-model-small-ru")
+    model_dir = tmp_path / "vosk-model-small-ru"
+    model_dir.mkdir()
+    configured_path = str(model_dir)
     manager.configure_vosk_model_path(configured_path)
 
     result = processor.process("путь модели vosk")
     alias_result = processor.process("где модель vosk")
+    check_result = processor.process("проверить путь модели vosk")
+    which_result = processor.process("какой путь модели vosk")
 
     assert result["intent"] == "speech.backend.vosk.model.path.status"
     assert configured_path in result["response"]
@@ -141,7 +145,152 @@ def test_vosk_model_path_status_reports_configured_path_read_only(tmp_path):
     assert "микрофон не запускается" in result["response"]
     assert alias_result["intent"] == "speech.backend.vosk.model.path.status"
     assert configured_path in alias_result["response"]
+    assert check_result["intent"] == "speech.backend.vosk.model.path.status"
+    assert configured_path in check_result["response"]
+    assert which_result["intent"] == "speech.backend.vosk.model.path.status"
+    assert configured_path in which_result["response"]
     assert manager.get_vosk_backend_status()["model_path"] == configured_path
+
+
+def test_vosk_model_path_status_reports_missing_and_not_directory_cases(tmp_path):
+    processor, manager = create_voice_enabled_processor(tmp_path)
+    missing_path = str(tmp_path / "missing-model")
+    manager.configure_vosk_model_path(missing_path)
+
+    missing = processor.process("проверить путь модели vosk")
+
+    assert missing["intent"] == "speech.backend.vosk.model.path.status"
+    assert missing["response"] == (
+        f"Путь к модели Vosk указан, но папка не найдена: {missing_path}"
+    )
+
+    file_path = tmp_path / "vosk-model-file"
+    file_path.write_text("not a directory", encoding="utf-8")
+    manager.configure_vosk_model_path(str(file_path))
+
+    not_directory = processor.process("проверить путь модели vosk")
+
+    assert not_directory["intent"] == "speech.backend.vosk.model.path.status"
+    assert not_directory["response"] == (
+        f"Путь к модели Vosk указан, но это не папка: {file_path}"
+    )
+
+
+def test_vosk_model_path_set_commands_save_safely_and_report_path_state(tmp_path):
+    processor, manager = create_voice_enabled_processor(tmp_path)
+    model_dir = tmp_path / "vosk model small ru"
+    model_dir.mkdir()
+
+    for command_prefix in (
+        "установи путь модели vosk",
+        "задай путь модели vosk",
+        "измени путь модели vosk",
+        "сохрани путь модели vosk",
+        "путь модели vosk",
+    ):
+        result = processor.process(f"{command_prefix} {model_dir}")
+
+        assert result["intent"] == "speech.backend.vosk.model.path.set"
+        assert manager.get_vosk_backend_status()["model_path"] == str(model_dir)
+        assert result["response"] == (
+            "Путь к модели Vosk сохранен. Папка найдена.\n"
+            "Распознавание речи не запускается автоматически. "
+            "Выполните команду 'статус vosk', чтобы проверить готовность."
+        )
+
+
+def test_vosk_model_path_set_quoted_and_missing_paths(tmp_path):
+    processor, manager = create_voice_enabled_processor(tmp_path)
+    quoted_path = tmp_path / "quoted vosk model"
+    quoted_path.mkdir()
+
+    quoted = processor.process(f'установи путь модели vosk "{quoted_path}"')
+
+    assert quoted["intent"] == "speech.backend.vosk.model.path.set"
+    assert manager.get_vosk_backend_status()["model_path"] == str(quoted_path)
+    assert "Папка найдена" in quoted["response"]
+
+    missing_path = tmp_path / "missing model with spaces"
+    missing = processor.process(f"сохрани путь модели vosk {missing_path}")
+
+    assert missing["intent"] == "speech.backend.vosk.model.path.set"
+    assert manager.get_vosk_backend_status()["model_path"] == str(missing_path)
+    assert "папка пока не найдена" in missing["response"]
+    assert "Распознавание речи не запускается автоматически" in missing["response"]
+
+
+def test_vosk_model_path_set_empty_command_is_rejected(tmp_path):
+    processor, manager = create_voice_enabled_processor(tmp_path)
+
+    for command in (
+        "установи путь модели vosk",
+        'установи путь модели vosk ""',
+    ):
+        result = processor.process(command)
+
+        assert result["intent"] == "speech.backend.vosk.model_path.missing"
+        assert result["response"] == (
+            "Не удалось сохранить путь к модели Vosk: путь не указан."
+        )
+        assert manager.get_vosk_backend_status()["model_path"] is None
+
+
+def test_vosk_model_path_set_reports_not_directory(tmp_path):
+    processor, manager = create_voice_enabled_processor(tmp_path)
+    file_path = tmp_path / "vosk-model-file"
+    file_path.write_text("not a directory", encoding="utf-8")
+
+    result = processor.process(f"установи путь модели vosk {file_path}")
+
+    assert result["intent"] == "speech.backend.vosk.model.path.set"
+    assert manager.get_vosk_backend_status()["model_path"] == str(file_path)
+    assert "указанный путь не является папкой" in result["response"]
+
+
+def test_vosk_model_path_clear_aliases_clear_configured_path(tmp_path):
+    processor, manager = create_voice_enabled_processor(tmp_path)
+
+    for command in (
+        "очисти путь модели vosk",
+        "сбрось путь модели vosk",
+        "удали путь модели vosk",
+        "удалить путь модели vosk",
+    ):
+        manager.configure_vosk_model_path(str(tmp_path))
+
+        result = processor.process(command)
+
+        assert result["intent"] == "speech.backend.vosk.model.path.cleared"
+        assert manager.get_vosk_backend_status()["model_path"] is None
+        assert result["response"] == (
+            "Путь к модели Vosk очищен.\n"
+            "Распознавание речи не запускается автоматически. "
+            "Выполните команду 'статус vosk', чтобы проверить готовность."
+        )
+
+
+def test_vosk_model_path_commands_do_not_start_capture_or_load_runtime(tmp_path):
+    processor, manager = create_voice_enabled_processor(tmp_path)
+
+    def fail_if_called(*_args, **_kwargs):
+        raise AssertionError("path commands must remain configuration-only")
+
+    manager.microphone_adapter.start_listening = fail_if_called
+    manager.microphone_adapter.read_text = fail_if_called
+    manager.listen_once_from_microphone = fail_if_called
+    manager.use_vosk_backend = fail_if_called
+    processor._get_vosk_runtime_loader = fail_if_called
+
+    for command in (
+        "путь модели vosk",
+        f"установи путь модели vosk {tmp_path}",
+        "где модель vosk",
+        "очисти путь модели vosk",
+    ):
+        result = processor.process(command)
+        assert result["intent"].startswith("speech.backend.vosk.model.path")
+
+    assert manager.microphone_adapter.get_state() == "disabled"
 
 
 def test_vosk_preflight_and_in_memory_model_path_commands(tmp_path):
@@ -192,7 +341,7 @@ def test_vosk_preflight_and_in_memory_model_path_commands(tmp_path):
     configured = processor.process(f"установить путь модели vosk {tmp_path}")
     assert configured["intent"] == "speech.backend.vosk.model.path.set"
     assert manager.get_vosk_preflight()["model_path_exists"] is True
-    assert "локальный путь к модели сохранён" in configured["response"]
+    assert "Путь к модели Vosk сохранен" in configured["response"]
 
     language_before = processor.process("язык vosk")
     assert language_before["intent"] == "speech.backend.vosk.language.status"

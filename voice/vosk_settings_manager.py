@@ -80,4 +80,7 @@ class VoskSettingsManager:
         if value is None:
             return None
         normalized = str(value).strip()
+        if len(normalized) >= 2 and normalized[0] == normalized[-1]:
+            if normalized[0] in {'"', "'"}:
+                normalized = normalized[1:-1].strip()
         return normalized or None

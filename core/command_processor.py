@@ -1,3 +1,5 @@
+from pathlib import Path
+
 from core.action_router import SafeActionRouter
 from dialogue import DialogueManager
 from ideas import IdeaManager
@@ -205,10 +207,17 @@ class CommandProcessor:
     VOSK_MODEL_PATH_STATUS_COMMANDS = {
         "путь модели vosk",
         "где модель vosk",
+        "проверить путь модели vosk",
+        "какой путь модели vosk",
     }
     VOSK_MODEL_PATH_PREFIXES = (
         "сохранить путь модели vosk",
         "установить путь модели vosk",
+        "установи путь модели vosk",
+        "задай путь модели vosk",
+        "измени путь модели vosk",
+        "сохрани путь модели vosk",
+        "путь модели vosk",
         "модель vosk путь",
         "путь модели воск",
         "укажи путь к модели vosk",
@@ -218,7 +227,9 @@ class CommandProcessor:
         "очистить путь модели vosk",
         "очисти путь модели vosk",
         "сбросить путь модели vosk",
+        "сбрось путь модели vosk",
         "удалить путь модели vosk",
+        "удали путь модели vosk",
     }
     VOSK_LANGUAGE_PREFIXES = (
         "язык модели vosk",
@@ -656,7 +667,7 @@ class CommandProcessor:
             preflight = self.voice_input_manager.clear_vosk_model_path()
             return self._result(
                 "speech.backend.vosk.model.path.cleared",
-                self.dialogue_manager.vosk_model_path_cleared_response(preflight),
+                self._vosk_model_path_cleared_response(preflight),
             )
 
         if command in self.VOSK_SETTINGS_COMMANDS:
@@ -702,7 +713,7 @@ class CommandProcessor:
             if not model_path:
                 return self._result(
                     "speech.backend.vosk.model_path.missing",
-                    self.dialogue_manager.vosk_model_path_required_response(),
+                    self._vosk_model_path_required_response(),
                 )
             if self.voice_input_manager is None:
                 return self._result(
@@ -712,9 +723,7 @@ class CommandProcessor:
             preflight = self.voice_input_manager.configure_vosk_model_path(model_path)
             return self._result(
                 "speech.backend.vosk.model.path.set",
-                self.dialogue_manager.vosk_model_path_configured_response(
-                    model_path, preflight
-                ),
+                self._vosk_model_path_configured_response(model_path, preflight),
             )
 
         if command in self.MICROPHONE_STATUS_COMMANDS:
@@ -995,6 +1004,13 @@ class CommandProcessor:
         model_path = status.get("model_path")
         if not model_path:
             return "Путь к модели Vosk пока не указан."
+
+        path_status = CommandProcessor._safe_model_path_filesystem_status(model_path)
+        if not path_status["exists"]:
+            return f"Путь к модели Vosk указан, но папка не найдена: {model_path}"
+        if not path_status["is_directory"]:
+            return f"Путь к модели Vosk указан, но это не папка: {model_path}"
+
         return (
             "Текущий путь к модели Vosk: "
             f"{model_path}\n"
@@ -1003,8 +1019,62 @@ class CommandProcessor:
         )
 
     def _extract_vosk_model_path(self, command_text, normalized_command):
-        return self._extract_prefixed_value(
+        value = self._extract_prefixed_value(
             command_text, normalized_command, self.VOSK_MODEL_PATH_PREFIXES
+        )
+        if value is None:
+            return None
+        return self._normalize_vosk_model_path_text(value)
+
+    @staticmethod
+    def _normalize_vosk_model_path_text(model_path):
+        normalized = str(model_path).strip()
+        if len(normalized) >= 2 and normalized[0] == normalized[-1]:
+            if normalized[0] in {'"', "'"}:
+                normalized = normalized[1:-1].strip()
+        return normalized
+
+    @staticmethod
+    def _safe_model_path_filesystem_status(model_path):
+        try:
+            path = Path(model_path)
+            exists = path.exists()
+            is_directory = path.is_dir() if exists else False
+        except (OSError, TypeError, ValueError):
+            exists = False
+            is_directory = False
+        return {"exists": exists, "is_directory": is_directory}
+
+    @staticmethod
+    def _vosk_model_path_required_response():
+        return "Не удалось сохранить путь к модели Vosk: путь не указан."
+
+    @staticmethod
+    def _vosk_model_path_change_reminder():
+        return (
+            "Распознавание речи не запускается автоматически. "
+            "Выполните команду 'статус vosk', чтобы проверить готовность."
+        )
+
+    @staticmethod
+    def _vosk_model_path_configured_response(model_path, preflight):
+        path_status = CommandProcessor._safe_model_path_filesystem_status(model_path)
+        if path_status["exists"] and path_status["is_directory"]:
+            result = "Путь к модели Vosk сохранен. Папка найдена."
+        elif path_status["exists"] and not path_status["is_directory"]:
+            result = "Путь к модели Vosk сохранен, но указанный путь не является папкой."
+        else:
+            result = (
+                "Путь к модели Vosk сохранен, но папка пока не найдена. "
+                "Проверьте, что модель скачана и распакована."
+            )
+        return f"{result}\n{CommandProcessor._vosk_model_path_change_reminder()}"
+
+    @staticmethod
+    def _vosk_model_path_cleared_response(preflight):
+        return (
+            "Путь к модели Vosk очищен.\n"
+            f"{CommandProcessor._vosk_model_path_change_reminder()}"
         )
 
     @staticmethod

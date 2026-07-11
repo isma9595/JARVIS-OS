@@ -1,11 +1,11 @@
 # JARVIS-OS Checkpoint
 
 - Project: JARVIS-OS
-- Current stable stage: TASK-028 — Vosk Model Setup and Local Recognition Gate
-- Last stable commit: 19a7c59
-- Last stable commit message: Add Vosk recognition gate
-- Next stage: TASK-029 — Vosk Manual Setup Commands
-- TASK-029 status: in progress
+- Current stable stage: TASK-029 — Vosk Manual Setup Commands
+- Last stable commit: 97cb6ec
+- Last stable commit message: Add Vosk manual setup commands
+- Next stage: TASK-030 — Vosk Model Path Configuration Commands
+- TASK-030 status: in progress
 
 ## Approved Workflow
 
@@ -21,12 +21,11 @@ ChatGPT plans -> User approves -> Codex executes -> User verifies -> Commit only
 
 ## Notes
 
-TASK-028 is the current stable stage.
+TASK-029 is the current stable stage.
 
-TASK-029 adds Russian-first manual Vosk setup/status commands. Vosk setup
-commands must remain read-only and safe: they must not install packages,
-download models, load models, start recognition, start microphone capture, or
-change settings silently.
+TASK-030 adds Russian-first Vosk model path configuration commands. Vosk model
+path commands must remain configuration-only and must not install, download,
+load models, start recognition, or start microphone capture.
 
 JARVIS remains Russian-first for user-facing functionality, with future
 multilingual switching planned.
