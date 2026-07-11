@@ -1,11 +1,11 @@
 # JARVIS-OS Checkpoint
 
 - Project: JARVIS-OS
-- Current stable stage: TASK-031 — Vosk Local Recognition Dry Run
-- Last stable commit: d005f5e
-- Last stable commit message: Add Vosk recognition dry run
-- Next stage: TASK-032 — Command Smoke Test Polish
-- Status for TASK-032: in progress
+- Current stable stage: TASK-032 — Command Smoke Test Polish
+- Last stable commit: c066f89
+- Last stable commit message: Polish command smoke test responses
+- Next stage: TASK-033 — Assistant Name Configuration Commands
+- Status for TASK-033: in progress
 
 ## Approved Workflow
 
@@ -21,10 +21,6 @@ ChatGPT plans -> User approves -> Codex executes -> User verifies -> Commit only
 
 ## Notes
 
-TASK-031 is the current stable stage.
+TASK-033 adds safe assistant name configuration through local profile commands only; it must not enable voice, Vosk recognition, microphone capture, or automation.
 
-TASK-032 is command polish based on live run.py smoke test; no real recognition
-or microphone capture should be enabled.
-
-JARVIS remains Russian-first for user-facing functionality, with future
-multilingual switching planned.
+JARVIS remains Russian-first for user-facing functionality, with future multilingual switching planned.

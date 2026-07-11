@@ -3,6 +3,7 @@ from ideas import IdeaManager
 from memory import LocalMemoryManager
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from users.user_profile import UserProfileManager
 from voice import (
     MicrophoneListeningModeManager,
     VoiceInputManager,
@@ -460,7 +461,16 @@ def test_assistant_identity_command():
 
     assert result["intent"] == "assistant.identity"
     assert result["should_exit"] is False
+    assert result["response"] == "Исмаил, меня зовут JARVIS."
     assert "JARVIS" in result["response"]
+
+
+def test_assistant_name_view_aliases_return_current_name():
+    for command in ("как тебя зовут", "имя ассистента"):
+        result = CommandProcessor(sample_profile()).process(command)
+
+        assert result["intent"] == "assistant.identity"
+        assert result["response"] == "Исмаил, меня зовут JARVIS."
 
 
 def test_profile_command():
@@ -481,6 +491,7 @@ def test_help_command():
     assert result["intent"] == "assistant.help"
     assert result["should_exit"] is False
     assert "работать с профилем" in result["response"]
+    assert "имя ассистента можно посмотреть, изменить или сбросить" in result["response"]
     assert "режимы микрофона" in result["response"]
     assert "Vosk" in result["response"]
     assert "Реальный захват микрофона автоматически не включается" in result["response"]
@@ -512,6 +523,75 @@ def test_greeting_salam_command():
     assert result["intent"] == "assistant.greeting"
     assert result["should_exit"] is False
     assert "JARVIS работает и готов помочь" in result["response"]
+
+
+def test_change_assistant_name_to_jarvis_persists_in_profile():
+    with TemporaryDirectory() as tmp_dir:
+        manager = UserProfileManager(Path(tmp_dir) / "profile.json")
+        profile = manager.save_profile(sample_profile())
+        processor = CommandProcessor(profile, user_profile_manager=manager)
+
+        result = processor.process("измени имя ассистента на JARVIS")
+
+        assert result["intent"] == "assistant.name.changed"
+        assert result["response"] == (
+            "Исмаил, имя ассистента изменено. Теперь меня зовут JARVIS."
+        )
+        assert manager.get_assistant_name() == "JARVIS"
+
+
+def test_change_assistant_name_aliases_update_greeting():
+    processor = CommandProcessor(sample_profile())
+
+    first = processor.process("назови себя ВанДам")
+    identity = processor.process("как тебя зовут")
+    greeting = processor.process("привет")
+
+    assert first["intent"] == "assistant.name.changed"
+    assert first["response"] == (
+        "Исмаил, имя ассистента изменено. Теперь меня зовут ВанДам."
+    )
+    assert identity["response"] == "Исмаил, меня зовут ВанДам."
+    assert greeting["response"] == "Исмаил, привет. ВанДам работает и готов помочь."
+
+
+def test_now_your_name_is_alias_changes_assistant_name():
+    processor = CommandProcessor(sample_profile())
+
+    result = processor.process("теперь тебя зовут Али")
+
+    assert result["intent"] == "assistant.name.changed"
+    assert processor.process("имя ассистента")["response"] == "Исмаил, меня зовут Али."
+
+
+def test_reset_assistant_name_command_returns_default():
+    processor = CommandProcessor(sample_profile())
+    processor.process("назови себя ВанДам")
+
+    result = processor.process("сбрось имя ассистента")
+
+    assert result["intent"] == "assistant.name.reset"
+    assert result["response"] == (
+        "Исмаил, имя ассистента сброшено. Теперь меня зовут JARVIS."
+    )
+    assert processor.process("как тебя зовут")["response"] == "Исмаил, меня зовут JARVIS."
+
+
+def test_invalid_assistant_name_does_not_change_name():
+    processor = CommandProcessor(sample_profile())
+
+    for command in (
+        "назови себя",
+        "назови себя Али/Бот",
+        "назови себя " + ("А" * 41),
+        "назови себя Али\nБот",
+    ):
+        result = processor.process(command)
+
+        assert result["intent"] == "assistant.name.invalid"
+        assert result["should_exit"] is False
+        assert "имя ассистента не изменено" in result["response"]
+        assert processor.dialogue_manager.get_assistant_name() == "JARVIS"
 
 
 def test_version_command():
@@ -1486,9 +1566,17 @@ def run_tests():
     test_creation_with_profile()
     test_user_identity_command()
     test_assistant_identity_command()
+    test_assistant_name_view_aliases_return_current_name()
     test_profile_command()
     test_help_command()
     test_help_alias_command()
+    test_greeting_command()
+    test_greeting_salam_command()
+    test_change_assistant_name_to_jarvis_persists_in_profile()
+    test_change_assistant_name_aliases_update_greeting()
+    test_now_your_name_is_alias_changes_assistant_name()
+    test_reset_assistant_name_command_returns_default()
+    test_invalid_assistant_name_does_not_change_name()
     test_version_command()
     test_show_version_command()
     test_system_status_command()

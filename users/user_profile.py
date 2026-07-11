@@ -1,10 +1,14 @@
 import json
+import re
 from datetime import datetime
 from pathlib import Path
 
 
 class UserProfileManager:
     DEFAULT_PROFILE_PATH = Path("users") / "profiles" / "default_user.json"
+    DEFAULT_ASSISTANT_NAME = "JARVIS"
+    MAX_ASSISTANT_NAME_LENGTH = 40
+    ASSISTANT_NAME_PATTERN = re.compile(r"^[A-Za-zА-Яа-яЁё0-9 _-]+$")
 
     def __init__(self, profile_path=None):
         self.profile_path = Path(profile_path) if profile_path else self.DEFAULT_PROFILE_PATH
@@ -58,7 +62,37 @@ class UserProfileManager:
         return self._get_value(profile, "user_name", "Пользователь")
 
     def get_assistant_name(self, profile=None):
-        return self._get_value(profile, "assistant_name", "JARVIS")
+        return self._get_value(profile, "assistant_name", self.DEFAULT_ASSISTANT_NAME)
+
+    def set_assistant_name(self, name):
+        assistant_name = self.validate_assistant_name(name)
+        profile = self.load_profile() if self.profile_exists() else {}
+        profile["assistant_name"] = assistant_name
+        return self.save_profile(profile)
+
+    def reset_assistant_name(self):
+        profile = self.load_profile() if self.profile_exists() else {}
+        profile["assistant_name"] = self.DEFAULT_ASSISTANT_NAME
+        return self.save_profile(profile)
+
+    @classmethod
+    def validate_assistant_name(cls, name):
+        if not isinstance(name, str):
+            raise ValueError("Assistant name must be a string.")
+
+        assistant_name = name.strip()
+        if not assistant_name:
+            raise ValueError("Assistant name must not be empty.")
+        if len(assistant_name) > cls.MAX_ASSISTANT_NAME_LENGTH:
+            raise ValueError("Assistant name is too long.")
+        if any(character in assistant_name for character in ("\r", "\n")):
+            raise ValueError("Assistant name must be single-line.")
+        if any(ord(character) < 32 or ord(character) == 127 for character in assistant_name):
+            raise ValueError("Assistant name must not contain control characters.")
+        if not cls.ASSISTANT_NAME_PATTERN.fullmatch(assistant_name):
+            raise ValueError("Assistant name contains unsupported characters.")
+
+        return assistant_name
 
     def get_language(self, profile=None):
         return self._get_value(profile, "language", "ru")

@@ -4,6 +4,7 @@ from core.action_router import SafeActionRouter
 from dialogue import DialogueManager
 from ideas import IdeaManager
 from memory import LocalMemoryManager
+from users.user_profile import UserProfileManager
 
 
 class CommandProcessor:
@@ -22,9 +23,25 @@ class CommandProcessor:
     }
     ASSISTANT_IDENTITY_COMMANDS = {
         "как тебя зовут",
+        "как зовут ассистента",
+        "имя ассистента",
+        "покажи имя ассистента",
         "кто ты",
         "твое имя",
         "твоё имя",
+    }
+    ASSISTANT_NAME_CHANGE_PREFIXES = (
+        "измени имя ассистента на",
+        "поменяй имя ассистента на",
+        "назови себя",
+        "теперь тебя зовут",
+        "зови себя",
+    )
+    ASSISTANT_NAME_RESET_COMMANDS = {
+        "сбрось имя ассистента",
+        "верни имя ассистента по умолчанию",
+        "сбросить имя ассистента",
+        "удали имя ассистента",
     }
     PROFILE_COMMANDS = {
         "покажи профиль",
@@ -458,9 +475,11 @@ class CommandProcessor:
         vosk_runtime_loader=None,
         vosk_recognition_dry_run=None,
         microphone_listening_mode_manager=None,
+        user_profile_manager=None,
     ):
         self.user_profile = user_profile or {}
         self.dialogue_manager = dialogue_manager or DialogueManager(self.user_profile)
+        self.user_profile_manager = user_profile_manager
         self.idea_manager = idea_manager or IdeaManager()
         self.memory_manager = memory_manager or LocalMemoryManager()
         self.system_status_provider = (
@@ -861,8 +880,15 @@ class CommandProcessor:
         if command in self.ASSISTANT_IDENTITY_COMMANDS:
             return self._result(
                 "assistant.identity",
-                self.dialogue_manager.assistant_identity_response(),
+                self._assistant_name_response(),
             )
+
+        assistant_name = self._extract_assistant_name(command_text, command)
+        if assistant_name is not None:
+            return self._change_assistant_name(assistant_name)
+
+        if command in self.ASSISTANT_NAME_RESET_COMMANDS:
+            return self._reset_assistant_name()
 
         if command in self.PROFILE_COMMANDS:
             return self._result(
@@ -1395,11 +1421,74 @@ class CommandProcessor:
             f"{self.dialogue_manager.get_assistant_name()} работает и готов помочь."
         )
 
+    def _assistant_name_response(self):
+        return (
+            f"{self.dialogue_manager.get_preferred_name()}, меня зовут "
+            f"{self.dialogue_manager.get_assistant_name()}."
+        )
+
+    def _change_assistant_name(self, assistant_name):
+        try:
+            assistant_name = UserProfileManager.validate_assistant_name(assistant_name)
+        except ValueError:
+            return self._result(
+                "assistant.name.invalid",
+                self._invalid_assistant_name_response(),
+            )
+
+        self._save_assistant_name(assistant_name)
+        return self._result(
+            "assistant.name.changed",
+            (
+                f"{self.dialogue_manager.get_preferred_name()}, имя ассистента изменено. "
+                f"Теперь меня зовут {assistant_name}."
+            ),
+        )
+
+    def _reset_assistant_name(self):
+        assistant_name = UserProfileManager.DEFAULT_ASSISTANT_NAME
+        self._save_assistant_name(assistant_name)
+        return self._result(
+            "assistant.name.reset",
+            (
+                f"{self.dialogue_manager.get_preferred_name()}, имя ассистента сброшено. "
+                f"Теперь меня зовут {assistant_name}."
+            ),
+        )
+
+    def _save_assistant_name(self, assistant_name):
+        self.user_profile["assistant_name"] = assistant_name
+        self.dialogue_manager.user_profile["assistant_name"] = assistant_name
+        if self.voice_input_manager is not None:
+            self.voice_input_manager.user_profile["assistant_name"] = assistant_name
+
+        if self.user_profile_manager is not None:
+            self.user_profile_manager.set_assistant_name(assistant_name)
+        elif self._profile_looks_persisted():
+            UserProfileManager().save_profile(self.user_profile)
+
+    def _profile_looks_persisted(self):
+        return bool(self.user_profile.get("created_at") or self.user_profile.get("updated_at"))
+
+    def _extract_assistant_name(self, command_text, normalized_command):
+        return self._extract_prefixed_value(
+            command_text,
+            normalized_command,
+            self.ASSISTANT_NAME_CHANGE_PREFIXES,
+        )
+
+    def _invalid_assistant_name_response(self):
+        return (
+            f"{self.dialogue_manager.get_preferred_name()}, имя ассистента не изменено. "
+            "Укажите короткое имя без переносов строк и специальных управляющих символов."
+        )
+
     def _help_response(self):
         return (
             f"{self.dialogue_manager.get_preferred_name()}, сейчас я умею работать с профилем, "
             "показывать статус системы, вести локальную память и идеи, выполнять безопасную "
             "маршрутизацию действий и обнаружение рискованных команд; "
+            "имя ассистента можно посмотреть, изменить или сбросить; "
             "режимы микрофона; настройка, статус и путь модели Vosk; пробный запуск Vosk на тестовых данных; "
             "симуляция голосовой команды. Реальный захват микрофона автоматически не включается, "
             "реальное распознавание Vosk ещё не подключено. Зрение экрана и автоматизация запланированы позже. "

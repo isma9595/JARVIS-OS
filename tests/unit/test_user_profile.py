@@ -1,6 +1,8 @@
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
+import pytest
+
 from users.user_profile import UserProfileManager
 
 
@@ -83,6 +85,80 @@ def test_get_assistant_name():
         temp_dir.cleanup()
 
 
+def test_default_assistant_name_returns_jarvis():
+    temp_dir, manager = create_manager()
+    try:
+        profile = sample_profile()
+        profile.pop("assistant_name")
+
+        assert manager.get_assistant_name(profile) == "JARVIS"
+    finally:
+        temp_dir.cleanup()
+
+
+def test_set_assistant_name():
+    temp_dir, manager = create_manager()
+    try:
+        manager.save_profile(sample_profile())
+        manager.set_assistant_name("ВанДам")
+
+        assert manager.get_assistant_name() == "ВанДам"
+    finally:
+        temp_dir.cleanup()
+
+
+def test_reset_assistant_name_returns_default():
+    temp_dir, manager = create_manager()
+    try:
+        manager.save_profile(sample_profile())
+        manager.set_assistant_name("Али")
+        manager.reset_assistant_name()
+
+        assert manager.get_assistant_name() == "JARVIS"
+    finally:
+        temp_dir.cleanup()
+
+
+def test_empty_assistant_name_is_rejected():
+    temp_dir, manager = create_manager()
+    try:
+        manager.save_profile(sample_profile())
+
+        with pytest.raises(ValueError):
+            manager.set_assistant_name("   ")
+
+        assert manager.get_assistant_name() == "JARVIS"
+    finally:
+        temp_dir.cleanup()
+
+
+def test_too_long_assistant_name_is_rejected():
+    temp_dir, manager = create_manager()
+    try:
+        manager.save_profile(sample_profile())
+
+        with pytest.raises(ValueError):
+            manager.set_assistant_name("А" * 41)
+
+        assert manager.get_assistant_name() == "JARVIS"
+    finally:
+        temp_dir.cleanup()
+
+
+def test_multiline_or_control_assistant_name_is_rejected():
+    temp_dir, manager = create_manager()
+    try:
+        manager.save_profile(sample_profile())
+
+        for name in ("Али\nБот", "Али\tБот", "Али\x1fБот"):
+            with pytest.raises(ValueError):
+                manager.set_assistant_name(name)
+
+        assert manager.get_assistant_name() == "JARVIS"
+    finally:
+        temp_dir.cleanup()
+
+
 def test_get_language():
     temp_dir, manager = create_manager()
     try:
@@ -148,6 +224,12 @@ def run_tests():
     test_profile_load()
     test_get_user_name()
     test_get_assistant_name()
+    test_default_assistant_name_returns_jarvis()
+    test_set_assistant_name()
+    test_reset_assistant_name_returns_default()
+    test_empty_assistant_name_is_rejected()
+    test_too_long_assistant_name_is_rejected()
+    test_multiline_or_control_assistant_name_is_rejected()
     test_get_language()
     test_get_communication_style()
     test_optional_age()
