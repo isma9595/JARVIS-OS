@@ -206,6 +206,16 @@ class CommandProcessor:
         "проверить мост распознавания",
         "мост распознавания",
     }
+    ONE_SHOT_VOSK_REAL_RECOGNITION_COMMANDS = {
+        "распознай голос один раз",
+        "распознай одну голосовую команду",
+        "реальное распознавание vosk",
+        "запусти распознавание vosk один раз",
+        "запусти голосовое распознавание один раз",
+        "проверить голос через vosk",
+        "тест реального vosk",
+        "тест реального распознавания",
+    }
     VOSK_BACKEND_SELECT_COMMANDS = {
         "выбрать vosk",
         "использовать vosk",
@@ -495,6 +505,7 @@ class CommandProcessor:
         vosk_runtime_loader=None,
         vosk_recognition_dry_run=None,
         one_shot_vosk_recognition_bridge=None,
+        one_shot_vosk_real_recognition=None,
         microphone_listening_mode_manager=None,
         user_profile_manager=None,
     ):
@@ -514,6 +525,7 @@ class CommandProcessor:
         self.vosk_runtime_loader = vosk_runtime_loader
         self.vosk_recognition_dry_run = vosk_recognition_dry_run
         self.one_shot_vosk_recognition_bridge = one_shot_vosk_recognition_bridge
+        self.one_shot_vosk_real_recognition = one_shot_vosk_real_recognition
         if microphone_listening_mode_manager is None:
             from voice.microphone_listening_modes import (
                 MicrophoneListeningModeManager,
@@ -585,6 +597,15 @@ class CommandProcessor:
             return self._result(
                 "speech.backend.vosk.one_shot_bridge",
                 self._one_shot_vosk_bridge_response(bridge_result),
+            )
+
+        if command in self.ONE_SHOT_VOSK_REAL_RECOGNITION_COMMANDS:
+            recognition_result = self._get_one_shot_vosk_real_recognition().run_once(
+                explicit_one_shot_requested=True
+            )
+            return self._result(
+                "speech.backend.vosk.one_shot_real_recognition",
+                self._one_shot_vosk_real_recognition_response(recognition_result),
             )
 
         if command in self.VOSK_BACKEND_STATUS_COMMANDS:
@@ -1096,6 +1117,15 @@ class CommandProcessor:
             )
         return self.one_shot_vosk_recognition_bridge
 
+    def _get_one_shot_vosk_real_recognition(self):
+        if self.one_shot_vosk_real_recognition is None:
+            from voice.one_shot_vosk_real_recognition import (
+                OneShotVoskRealRecognition,
+            )
+
+            self.one_shot_vosk_real_recognition = OneShotVoskRealRecognition()
+        return self.one_shot_vosk_real_recognition
+
     @staticmethod
     def _vosk_recognition_status_response(gate_result):
         lines = [
@@ -1170,6 +1200,12 @@ class CommandProcessor:
             "Это только проверка bridge/coordinator: реальное распознавание и выполнение команд будут подключаться отдельной задачей."
         )
         return "\n".join(lines)
+
+    @staticmethod
+    def _one_shot_vosk_real_recognition_response(recognition_result):
+        from voice.one_shot_vosk_real_recognition import OneShotVoskRealRecognition
+
+        return OneShotVoskRealRecognition.format_result(recognition_result)
 
     @staticmethod
     def _vosk_model_readiness_response(readiness):
@@ -1566,8 +1602,11 @@ class CommandProcessor:
             "маршрутизацию действий и обнаружение рискованных команд; "
             "имя ассистента можно посмотреть, изменить или сбросить; "
             "режимы микрофона; настройка, статус и путь модели Vosk; пробный запуск Vosk на тестовых данных; "
-            "симуляция голосовой команды. Реальный захват микрофона автоматически не включается, "
-            "реальное распознавание Vosk ещё не подключено. Зрение экрана и автоматизация запланированы позже. "
+            "реальное one-shot распознавание Vosk по явной команде; симуляция голосовой команды. "
+            "Реальный захват микрофона автоматически не включается. "
+            "Распознанный текст пока не выполняется автоматически, постоянное прослушивание не связано "
+            "с реальным распознаванием, выполнение команд голосом будет подключено позже. "
+            "Зрение экрана и автоматизация запланированы позже. "
             "Для выхода напишите: выход."
         )
 

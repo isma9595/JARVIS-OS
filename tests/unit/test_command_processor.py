@@ -7,6 +7,7 @@ from users.user_profile import UserProfileManager
 from voice import (
     MicrophoneListeningModeManager,
     OneShotVoskRecognitionBridgeResult,
+    OneShotVoskRealRecognitionResult,
     VoiceInputManager,
     VoskSettingsManager,
 )
@@ -229,6 +230,99 @@ def test_one_shot_vosk_bridge_recognized_text_is_not_executed_as_command():
     assert "Распознанный текст: статус системы" in result["response"]
     assert "Активных сервисов" not in result["response"]
     assert "Распознанный текст не выполнялся как команда." in result["response"]
+
+
+def test_one_shot_vosk_real_recognition_command_aliases_return_safe_response():
+    class FakeRealRecognition:
+        def __init__(self):
+            self.calls = 0
+
+        def run_once(self, explicit_one_shot_requested=False):
+            assert explicit_one_shot_requested is True
+            self.calls += 1
+            return OneShotVoskRealRecognitionResult(
+                allowed=True,
+                completed=True,
+                blocked=False,
+                recognized_text="статус системы",
+                capture_seconds=2,
+            )
+
+    recognizer = FakeRealRecognition()
+    processor = CommandProcessor(one_shot_vosk_real_recognition=recognizer)
+
+    for command in (
+        "распознай голос один раз",
+        "реальное распознавание vosk",
+        "проверить голос через vosk",
+    ):
+        result = processor.process(command)
+
+        assert result["intent"] == "speech.backend.vosk.one_shot_real_recognition"
+        assert "Распознавание завершено." in result["response"]
+        assert "Распознанный текст: статус системы" in result["response"]
+        assert "Команда не выполнялась автоматически." in result["response"]
+        assert "Постоянное прослушивание не использовалось." in result["response"]
+        assert "Аудио не отправлялось в облако." in result["response"]
+
+    assert recognizer.calls == 3
+
+
+def test_one_shot_vosk_real_recognition_handles_unavailable_dependencies_safely():
+    class FakeRealRecognition:
+        def run_once(self, explicit_one_shot_requested=False):
+            assert explicit_one_shot_requested is True
+            return OneShotVoskRealRecognitionResult(
+                allowed=False,
+                completed=False,
+                blocked=True,
+                recognized_text=None,
+                capture_seconds=0,
+                reasons=[
+                    "Пакет vosk не установлен или недоступен для текущего Python."
+                ],
+                next_steps=[
+                    "Установите Vosk вручную в совместимое окружение.",
+                ],
+                safety_notes=[
+                    "Микрофон не запускался.",
+                    "Постоянное прослушивание не использовалось.",
+                    "Аудио не отправлялось в облако.",
+                    "Распознанный текст не выполнялся как команда.",
+                ],
+            )
+
+    processor = CommandProcessor(one_shot_vosk_real_recognition=FakeRealRecognition())
+
+    result = processor.process("тест реального распознавания")
+
+    assert result["intent"] == "speech.backend.vosk.one_shot_real_recognition"
+    assert "Реальное распознавание Vosk заблокировано." in result["response"]
+    assert "Пакет vosk не установлен" in result["response"]
+    assert "Установите Vosk вручную" in result["response"]
+    assert "Безопасность:" in result["response"]
+    assert "Микрофон не запускался." in result["response"]
+
+
+def test_existing_bridge_commands_still_do_not_start_real_recognition():
+    class FailRealRecognition:
+        def run_once(self, explicit_one_shot_requested=False):
+            raise AssertionError("bridge commands must not start real recognition")
+
+    processor = CommandProcessor(
+        one_shot_vosk_real_recognition=FailRealRecognition()
+    )
+
+    for command in (
+        "голосовой мост",
+        "мост vosk",
+        "тест голосового моста",
+        "проверить мост распознавания",
+    ):
+        result = processor.process(command)
+
+        assert result["intent"] == "speech.backend.vosk.one_shot_bridge"
+        assert "One-shot Vosk bridge" in result["response"]
 
 
 def test_vosk_manual_setup_commands_return_safe_russian_instructions():
@@ -553,8 +647,11 @@ def test_help_command():
     assert "имя ассистента можно посмотреть, изменить или сбросить" in result["response"]
     assert "режимы микрофона" in result["response"]
     assert "Vosk" in result["response"]
+    assert "реальное one-shot распознавание Vosk по явной команде" in result["response"]
+    assert "Распознанный текст пока не выполняется автоматически" in result["response"]
+    assert "постоянное прослушивание не связано" in result["response"]
     assert "Реальный захват микрофона автоматически не включается" in result["response"]
-    assert "реальное распознавание Vosk ещё не подключено" in result["response"]
+    assert "выполнение команд голосом будет подключено позже" in result["response"]
     assert "будут добавлены позже" not in result["response"]
 
 

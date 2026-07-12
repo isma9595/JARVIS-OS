@@ -4,6 +4,10 @@ TASK-034 adds a safe bridge layer for a future explicit one-shot microphone capt
 
 The bridge is implemented in `voice/one_shot_vosk_recognition_bridge.py` as `OneShotVoskRecognitionBridge`. It coordinates readiness checks, injected audio input, injected recognizer backends, and a structured Russian-first result.
 
+TASK-037 adds a separate real one-shot path in
+`voice/one_shot_vosk_real_recognition.py`. The bridge commands below remain
+safe coordinator checks and still do not start the real microphone.
+
 ## What It Does
 
 - Checks local Vosk readiness through the existing Vosk recognition gate.

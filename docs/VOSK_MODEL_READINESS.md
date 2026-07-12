@@ -4,7 +4,11 @@ TASK-035 adds a safe check for the configured Vosk model folder.
 
 Model readiness means JARVIS can inspect the configured path and report whether it looks like a manually extracted Vosk model folder. The check is filesystem-only: path exists, path is a directory, directory is empty or not, and common Vosk model markers such as `conf`, `am`, `graph`, `ivector`, `README`, or model/config files are present.
 
-Model readiness does not mean real recognition is enabled. TASK-035 does not import Vosk, does not load a model, does not start the microphone, does not record audio, does not recognize speech, and does not execute recognized text.
+Model readiness does not mean real recognition is enabled by itself. TASK-035 does not import Vosk, does not load a model, does not start the microphone, does not record audio, does not recognize speech, and does not execute recognized text.
+
+TASK-037 uses this readiness check as one gate before a separate explicit
+one-shot real recognition command. Even there, recognized text is displayed
+only and is not executed automatically.
 
 ## Manual Installation Flow
 
