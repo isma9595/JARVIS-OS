@@ -1,10 +1,10 @@
 # JARVIS-OS Checkpoint
 
 - Project: JARVIS-OS
-- Current stable stage: TASK-040 — Conservative Voice Command Normalization & Safe Aliases
-- Last stable commit: 2ef5fbb
-- Last stable commit message: Add conservative voice command normalization
-- Next stage: TASK-041 — Voice Command Session History & Last Recognition
+- Current stable stage: TASK-041 — Voice Command Session History & Last Recognition
+- Last stable commit: 74af033
+- Last stable commit message: Add voice command session history
+- Next stage: TASK-042 — Voice Recognition Correction Flow
 - Status: in progress
 
 ## Approved Workflow

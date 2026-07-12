@@ -768,6 +768,47 @@ def test_help_alias_command():
     assert "Для выхода напишите: выход" in result["response"]
 
 
+def test_voice_recognition_correction_commands():
+    processor = CommandProcessor()
+
+    added = processor.process("я сказал не статуя система, а статус системы")
+    listed = processor.process("голосовые исправления")
+    count = processor.process("сколько голосовых исправлений")
+    cleared = processor.process("очистить голосовые исправления")
+    empty = processor.process("голосовые исправления")
+
+    assert added["intent"] == "voice.recognition_correction.added"
+    assert "Было: статуя система" in added["response"]
+    assert "Должно быть: статус системы" in added["response"]
+    assert "не обходит проверку команд" in added["response"]
+    assert listed["intent"] == "voice.recognition_correction.list"
+    assert "1. статуя система -> статус системы" in listed["response"]
+    assert count["intent"] == "voice.recognition_correction.count"
+    assert count["response"] == "Голосовых исправлений в текущей сессии: 1."
+    assert cleared["intent"] == "voice.recognition_correction.cleared"
+    assert cleared["response"] == "Голосовые исправления текущей сессии очищены."
+    assert empty["response"] == "В текущей сессии нет голосовых исправлений."
+
+
+def test_voice_recognition_correction_arrow_command():
+    processor = CommandProcessor()
+
+    result = processor.process(
+        "исправь распознавание: статуя система -> статус системы"
+    )
+
+    assert result["intent"] == "voice.recognition_correction.added"
+    assert processor.voice_recognition_correction_manager.count() == 1
+
+
+def test_help_mentions_voice_corrections():
+    response = CommandProcessor(sample_profile()).process("помощь")["response"]
+
+    assert "исправление распознавания" in response
+    assert "я сказал не X, а Y" in response
+    assert "текущей сессии" in response
+
+
 def test_voice_history_commands_return_empty_responses():
     processor = CommandProcessor()
 

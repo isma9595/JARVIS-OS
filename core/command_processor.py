@@ -248,6 +248,26 @@ class CommandProcessor:
         "очисти историю голоса",
         "сбросить историю распознавания",
     }
+    VOICE_RECOGNITION_CORRECTION_LIST_COMMANDS = {
+        "голосовые исправления",
+        "список голосовых исправлений",
+        "покажи исправления распознавания",
+    }
+    VOICE_RECOGNITION_CORRECTION_COUNT_COMMANDS = {
+        "сколько голосовых исправлений",
+    }
+    VOICE_RECOGNITION_CORRECTION_CLEAR_COMMANDS = {
+        "очистить голосовые исправления",
+        "очисти исправления распознавания",
+        "сбросить голосовые исправления",
+    }
+    VOICE_RECOGNITION_CORRECTION_PREFIXES = (
+        ("я сказал не ", ", а "),
+        ("я говорил не ", ", а "),
+        ("исправь распознавание: ", " -> "),
+        ("исправь голос: ", " -> "),
+        ("это не ", ", это "),
+    )
     PENDING_VOICE_COMMAND_CLEAR_COMMANDS = {
         "отменить голосовую команду",
         "сбросить голосовую команду",
@@ -576,6 +596,7 @@ class CommandProcessor:
         user_profile_manager=None,
         safe_voice_command_allowlist=None,
         voice_command_history=None,
+        voice_recognition_correction_manager=None,
     ):
         self.user_profile = user_profile or {}
         self.dialogue_manager = dialogue_manager or DialogueManager(self.user_profile)
@@ -601,6 +622,17 @@ class CommandProcessor:
 
             voice_command_history = VoiceCommandSessionHistory()
         self.voice_command_history = voice_command_history
+        if voice_recognition_correction_manager is None:
+            from voice.voice_recognition_corrections import (
+                VoiceRecognitionCorrectionManager,
+            )
+
+            voice_recognition_correction_manager = (
+                VoiceRecognitionCorrectionManager()
+            )
+        self.voice_recognition_correction_manager = (
+            voice_recognition_correction_manager
+        )
         self._pending_voice_command = None
         if microphone_listening_mode_manager is None:
             from voice.microphone_listening_modes import (
@@ -731,6 +763,46 @@ class CommandProcessor:
             return self._result(
                 "voice.history.cleared",
                 "История голосовых команд за текущую сессию очищена.",
+            )
+
+        correction_parts = self._parse_voice_recognition_correction(command)
+        if correction_parts is not None:
+            wrong_text, corrected_text = correction_parts
+            correction = self.voice_recognition_correction_manager.add_correction(
+                wrong_text,
+                corrected_text,
+            )
+            self._record_voice_history(
+                recognized_text=correction.wrong_text,
+                corrected_text=correction.corrected_text,
+                normalized_text=correction.normalized_wrong_text,
+                canonical_command=correction.corrected_text,
+                source=correction.source,
+                status="correction_added",
+                reason="explicit user session correction",
+            )
+            return self._result(
+                "voice.recognition_correction.added",
+                self._voice_recognition_correction_added_response(correction),
+            )
+
+        if command in self.VOICE_RECOGNITION_CORRECTION_LIST_COMMANDS:
+            return self._result(
+                "voice.recognition_correction.list",
+                self._voice_recognition_corrections_response(),
+            )
+
+        if command in self.VOICE_RECOGNITION_CORRECTION_COUNT_COMMANDS:
+            return self._result(
+                "voice.recognition_correction.count",
+                self._voice_recognition_corrections_count_response(),
+            )
+
+        if command in self.VOICE_RECOGNITION_CORRECTION_CLEAR_COMMANDS:
+            self.voice_recognition_correction_manager.clear()
+            return self._result(
+                "voice.recognition_correction.cleared",
+                "Голосовые исправления текущей сессии очищены.",
             )
 
         if command in self.PENDING_VOICE_COMMAND_CLEAR_COMMANDS and self.has_pending_voice_command():
@@ -1423,20 +1495,38 @@ class CommandProcessor:
             and not recognition_result.blocked
             and recognized_text
         ):
-            decision = self._get_safe_voice_command_allowlist().decide(recognized_text)
+            correction = self.voice_recognition_correction_manager.find_correction(
+                recognized_text
+            )
+            command_text = (
+                correction.corrected_text if correction is not None else recognized_text
+            )
+            decision = self._get_safe_voice_command_allowlist().decide(command_text)
             if decision.allowed:
                 return self._execute_safe_voice_allowlisted_command(
                     recognized_text,
                     decision,
+                    correction=correction,
                 )
-            self.set_pending_voice_command(recognized_text)
+            self.set_pending_voice_command(command_text)
             self._record_voice_history(
                 recognized_text=recognized_text,
+                corrected_text=correction.corrected_text if correction else None,
                 normalized_text=decision.normalized_text,
                 status="pending_confirmation",
-                reason=decision.reason,
+                reason=(
+                    "session correction applied; " + decision.reason
+                    if correction
+                    else decision.reason
+                ),
                 safety_notes=decision.safety_notes,
             )
+            if correction is not None:
+                return self._corrected_pending_voice_command_response(
+                    recognition_result,
+                    correction,
+                    decision,
+                )
         elif recognition_result.blocked or not recognition_result.allowed:
             self._record_voice_history(
                 recognized_text=recognized_text or None,
@@ -1461,28 +1551,46 @@ class CommandProcessor:
 
         return OneShotVoskRealRecognition.format_result(recognition_result)
 
-    def _execute_safe_voice_allowlisted_command(self, recognized_text, decision):
+    def _execute_safe_voice_allowlisted_command(self, recognized_text, decision, correction=None):
         self.clear_pending_voice_command()
         result = self.process(decision.canonical_command)
         self._record_voice_history(
             recognized_text=recognized_text,
+            corrected_text=correction.corrected_text if correction else None,
             normalized_text=decision.normalized_text,
             canonical_command=decision.canonical_command,
-            status="allowlisted_executed",
-            reason=decision.reason,
+            status="correction_applied" if correction else "allowlisted_executed",
+            reason=(
+                "session correction applied; " + decision.reason
+                if correction
+                else decision.reason
+            ),
             safety_notes=decision.safety_notes,
         )
         result = dict(result)
-        result["response"] = (
-            "Распознавание завершено.\n"
-            f"Я распознал безопасную голосовую команду: \"{recognized_text}\".\n"
-            "Команда входит в безопасный список и будет выполнена без дополнительного подтверждения.\n"
-            f"Выполняю: {decision.canonical_command}\n"
-            "Безопасность: разрешены только заранее известные read-only команды; рискованные команды всё ещё требуют подтверждения.\n"
-            f"{result['response']}"
-        )
+        if correction is None:
+            result["response"] = (
+                "Распознавание завершено.\n"
+                f"Я распознал безопасную голосовую команду: \"{recognized_text}\".\n"
+                "Команда входит в безопасный список и будет выполнена без дополнительного подтверждения.\n"
+                f"Выполняю: {decision.canonical_command}\n"
+                "Безопасность: разрешены только заранее известные read-only команды; рискованные команды всё ещё требуют подтверждения.\n"
+                f"{result['response']}"
+            )
+        else:
+            result["response"] = (
+                "Распознавание завершено.\n"
+                f"Я распознал: \"{recognized_text}\".\n"
+                f"Применено исправление текущей сессии: \"{correction.corrected_text}\".\n"
+                "Команда входит в безопасный список и будет выполнена без дополнительного подтверждения.\n"
+                f"Выполняю: {decision.canonical_command}\n"
+                "Безопасность: исправление действует только в текущей сессии и не обходит проверку команд.\n"
+                f"{result['response']}"
+            )
         result["safe_voice_command_allowed"] = True
         result["recognized_voice_command"] = recognized_text
+        if correction is not None:
+            result["corrected_voice_command"] = correction.corrected_text
         result["canonical_voice_command"] = decision.canonical_command
         return result
 
@@ -1580,9 +1688,67 @@ class CommandProcessor:
     def _safe_voice_command_allowlist_response(self):
         return self._get_safe_voice_command_allowlist().format_read_only_commands()
 
+    def _parse_voice_recognition_correction(self, command):
+        for prefix, separator in self.VOICE_RECOGNITION_CORRECTION_PREFIXES:
+            if not command.startswith(prefix):
+                continue
+            payload = command[len(prefix) :].strip()
+            if separator not in payload:
+                continue
+            wrong_text, corrected_text = payload.split(separator, 1)
+            wrong_text = wrong_text.strip()
+            corrected_text = corrected_text.strip()
+            if wrong_text and corrected_text:
+                return wrong_text, corrected_text
+        return None
+
+    @staticmethod
+    def _voice_recognition_correction_added_response(correction):
+        return (
+            "Исправление распознавания добавлено для текущей сессии:\n"
+            f"- Было: {correction.wrong_text}\n"
+            f"- Должно быть: {correction.corrected_text}\n"
+            "Безопасность: исправление действует только в текущей сессии и не обходит проверку команд."
+        )
+
+    def _voice_recognition_corrections_response(self):
+        corrections = self.voice_recognition_correction_manager.list_corrections()
+        if not corrections:
+            return "В текущей сессии нет голосовых исправлений."
+
+        lines = ["Голосовые исправления текущей сессии:"]
+        for index, correction in enumerate(corrections, start=1):
+            lines.append(
+                f"{index}. {correction.wrong_text} -> {correction.corrected_text}"
+            )
+        return "\n".join(lines)
+
+    def _voice_recognition_corrections_count_response(self):
+        return (
+            "Голосовых исправлений в текущей сессии: "
+            f"{self.voice_recognition_correction_manager.count()}."
+        )
+
+    @staticmethod
+    def _corrected_pending_voice_command_response(
+        recognition_result,
+        correction,
+        decision,
+    ):
+        safety = " ".join(decision.safety_notes or recognition_result.safety_notes)
+        return (
+            "Распознавание завершено.\n"
+            f"Я распознал: \"{correction.wrong_text}\".\n"
+            f"Применено исправление текущей сессии: \"{correction.corrected_text}\".\n"
+            "Выполнить эту команду? Подтвердите: да / нет.\n"
+            "Безопасность: исправление действует только в текущей сессии и не обходит проверку команд.\n"
+            f"Безопасность: {safety}"
+        )
+
     def _record_voice_history(
         self,
         recognized_text=None,
+        corrected_text=None,
         normalized_text=None,
         canonical_command=None,
         source="one_shot_vosk",
@@ -1592,6 +1758,7 @@ class CommandProcessor:
     ):
         return self.voice_command_history.add_entry(
             recognized_text=recognized_text,
+            corrected_text=corrected_text,
             normalized_text=normalized_text,
             canonical_command=canonical_command,
             source=source,
@@ -1617,6 +1784,8 @@ class CommandProcessor:
         ]
         if entry.canonical_command:
             lines.append(f"- Каноническая команда: {entry.canonical_command}")
+        if entry.corrected_text:
+            lines.append(f"- Исправлено на: {entry.corrected_text}")
         lines.append(f"- Статус: {self._voice_history_status_label(entry.status)}")
         lines.append(f"- Источник: {self._voice_history_source_label(entry.source)}")
         if entry.reason:
@@ -1631,7 +1800,9 @@ class CommandProcessor:
         lines = ["История голосовых команд за текущую сессию:"]
         for index, entry in enumerate(entries, start=1):
             source_text = entry.recognized_text or "пусто / речь не распознана"
-            if entry.canonical_command:
+            if entry.corrected_text:
+                source_text = f"{source_text} -> {entry.corrected_text}"
+            elif entry.canonical_command:
                 source_text = f"{source_text} -> {entry.canonical_command}"
             lines.append(
                 f"{index}. {source_text} — {self._voice_history_status_label(entry.status)}"
@@ -1648,6 +1819,7 @@ class CommandProcessor:
     def _voice_history_source_label(source):
         labels = {
             "one_shot_vosk": "one-shot Vosk",
+            "user_session_correction": "исправление текущей сессии",
         }
         return labels.get(source, source)
 
@@ -1655,6 +1827,8 @@ class CommandProcessor:
     def _voice_history_status_label(status):
         labels = {
             "recognized": "распознано",
+            "correction_added": "исправление добавлено",
+            "correction_applied": "исправление применено",
             "allowlisted_executed": "выполнено как безопасная read-only команда",
             "pending_confirmation": "ожидает подтверждения",
             "confirmed_executed": "подтверждено и передано в безопасную обработку",
@@ -2069,6 +2243,7 @@ class CommandProcessor:
             "Неизвестные и рискованные голосовые команды всё ещё требуют подтверждения да / нет; "
             "ожидающую голосовую команду можно проверить или отменить. "
             "Можно посмотреть последнее голосовое распознавание, историю голосовых команд за сессию, количество событий и очистить историю голоса. "
+            "Можно добавить исправление распознавания: я сказал не X, а Y; исправления действуют только в текущей сессии, их можно посмотреть или очистить. "
             "Рискованные действия не обходят безопасность, постоянное прослушивание не связано "
             "с реальным распознаванием. "
             "Зрение экрана и автоматизация запланированы позже. "

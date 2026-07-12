@@ -411,6 +411,116 @@ def test_failed_recognition_does_not_create_pending_command():
     assert processor.voice_command_history.last_entry().status == "blocked"
 
 
+def test_correction_command_adds_session_correction():
+    processor = CommandProcessor()
+
+    result = processor.process("я сказал не статуя система, а статус системы")
+
+    assert result["intent"] == "voice.recognition_correction.added"
+    assert processor.voice_recognition_correction_manager.count() == 1
+    entry = processor.voice_command_history.last_entry()
+    assert entry.status == "correction_added"
+    assert entry.recognized_text == "статуя система"
+    assert entry.corrected_text == "статус системы"
+
+
+def test_recognized_text_with_safe_correction_auto_executes_canonical_command():
+    processor = CommandProcessor(
+        one_shot_vosk_real_recognition=FakeRealRecognition(
+            [success_result("статуя система")]
+        )
+    )
+    processor.process("я сказал не статуя система, а статус системы")
+
+    result = processor.process("распознай голос один раз")
+
+    assert result["intent"] == "system.status"
+    assert processor.has_pending_voice_command() is False
+    assert result["recognized_voice_command"] == "статуя система"
+    assert result["corrected_voice_command"] == "статус системы"
+    assert result["canonical_voice_command"] == "статус системы"
+    assert "Я распознал: \"статуя система\"." in result["response"]
+    assert "Применено исправление текущей сессии: \"статус системы\"." in result["response"]
+    assert "Активных сервисов" in result["response"]
+    entry = processor.voice_command_history.last_entry()
+    assert entry.status == "correction_applied"
+    assert entry.recognized_text == "статуя система"
+    assert entry.corrected_text == "статус системы"
+
+
+def test_correction_to_risky_command_still_creates_pending_confirmation():
+    processor = CommandProcessor(
+        one_shot_vosk_real_recognition=FakeRealRecognition([success_result("браузер")])
+    )
+    processor.process("исправь распознавание: браузер -> открой браузер")
+
+    result = processor.process("распознай голос один раз")
+
+    assert result["intent"] == "speech.backend.vosk.one_shot_real_recognition"
+    assert processor.get_pending_voice_command() == "открой браузер"
+    assert "Я распознал: \"браузер\"." in result["response"]
+    assert "Применено исправление текущей сессии: \"открой браузер\"." in result["response"]
+    assert "Подтвердите: да / нет" in result["response"]
+    assert "Активных сервисов" not in result["response"]
+    assert processor.voice_command_history.last_entry().status == "pending_confirmation"
+
+
+def test_corrections_do_not_bypass_action_router_after_confirmation():
+    processor = CommandProcessor(
+        one_shot_vosk_real_recognition=FakeRealRecognition([success_result("браузер")])
+    )
+    processor.process("исправь распознавание: браузер -> открой браузер")
+    processor.process("распознай голос один раз")
+
+    result = processor.process("да")
+
+    assert result["intent"] == "action.confirmation_required"
+    assert result["requires_confirmation"] is True
+    assert processor.has_pending_voice_command() is False
+
+
+def test_list_clear_count_corrections_commands_work():
+    processor = CommandProcessor()
+    processor.process("я сказал не статуя система, а статус системы")
+
+    listed = processor.process("список голосовых исправлений")
+    count = processor.process("сколько голосовых исправлений")
+    cleared = processor.process("сбросить голосовые исправления")
+
+    assert listed["intent"] == "voice.recognition_correction.list"
+    assert "статуя система -> статус системы" in listed["response"]
+    assert count["response"] == "Голосовых исправлений в текущей сессии: 1."
+    assert cleared["intent"] == "voice.recognition_correction.cleared"
+    assert processor.voice_recognition_correction_manager.count() == 0
+
+
+def test_unknown_text_without_correction_keeps_existing_behavior():
+    processor = CommandProcessor(
+        one_shot_vosk_real_recognition=FakeRealRecognition(
+            [success_result("расскажи что-нибудь")]
+        )
+    )
+
+    result = processor.process("распознай голос один раз")
+
+    assert result["intent"] == "speech.backend.vosk.one_shot_real_recognition"
+    assert processor.get_pending_voice_command() == "расскажи что-нибудь"
+    assert "Применено исправление" not in result["response"]
+
+
+def test_corrections_are_session_only_and_do_not_touch_audio_or_cloud():
+    processor = CommandProcessor()
+
+    processor.process("я сказал не статуя система, а статус системы")
+    correction = processor.voice_recognition_correction_manager.list_corrections()[0]
+
+    assert not hasattr(processor.voice_recognition_correction_manager, "path")
+    assert not hasattr(processor.voice_recognition_correction_manager, "file_path")
+    assert not hasattr(correction, "audio")
+    assert not hasattr(correction, "audio_path")
+    assert not hasattr(correction, "audio_bytes")
+
+
 def test_confirmed_risky_command_still_uses_safety_router():
     processor = CommandProcessor(
         one_shot_vosk_real_recognition=FakeRealRecognition(

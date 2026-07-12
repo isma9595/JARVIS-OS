@@ -57,6 +57,10 @@ from voice.voice_command_history import (
     VoiceCommandHistoryEntry,
     VoiceCommandSessionHistory,
 )
+from voice.voice_recognition_corrections import (
+    VoiceRecognitionCorrection,
+    VoiceRecognitionCorrectionManager,
+)
 
 __all__ = [
     "DEFAULT_CAPTURE_DURATION_SECONDS",
@@ -93,6 +97,8 @@ __all__ = [
     "VoiceAllowlistDecision",
     "VoiceCommandHistoryEntry",
     "VoiceCommandSessionHistory",
+    "VoiceRecognitionCorrection",
+    "VoiceRecognitionCorrectionManager",
     "check_vosk_model_path_status",
     "check_vosk_package_status",
     "evaluate_vosk_local_recognition_gate",

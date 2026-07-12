@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 class VoiceCommandHistoryEntry:
     id: int
     recognized_text: str | None
+    corrected_text: str | None
     normalized_text: str | None
     canonical_command: str | None
     source: str
@@ -32,6 +33,7 @@ class VoiceCommandSessionHistory:
     def add_entry(
         self,
         recognized_text=None,
+        corrected_text=None,
         normalized_text=None,
         canonical_command=None,
         source="one_shot_vosk",
@@ -42,6 +44,7 @@ class VoiceCommandSessionHistory:
         entry = VoiceCommandHistoryEntry(
             id=self._next_id,
             recognized_text=self._clean_optional_text(recognized_text),
+            corrected_text=self._clean_optional_text(corrected_text),
             normalized_text=self._clean_optional_text(normalized_text),
             canonical_command=self._clean_optional_text(canonical_command),
             source=str(source or "unknown"),
