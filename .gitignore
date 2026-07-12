@@ -37,3 +37,6 @@ config/local/*.json
 config/local/*.db
 config/local/*.sqlite
 !config/local/.gitkeep
+
+# Local AI/Vosk models
+models/
