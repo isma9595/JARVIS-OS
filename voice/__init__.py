@@ -4,6 +4,11 @@ from voice.speech_recognition_backend import (
     SpeechRecognitionBackend,
 )
 from voice.voice_input_manager import VoiceInputManager
+from voice.audio_dependency_readiness import (
+    AudioDependencyReadinessChecker,
+    AudioDependencyReadinessResult,
+    AudioDependencyStatus,
+)
 from voice.vosk_local_backend import VoskLocalBackend
 from voice.vosk_installation_guide import VoskInstallationGuide
 from voice.microphone_listening_modes import (
@@ -52,6 +57,9 @@ __all__ = [
     "MicrophoneListeningMode",
     "MicrophoneListeningModeManager",
     "NoSpeechRecognitionBackend",
+    "AudioDependencyReadinessChecker",
+    "AudioDependencyReadinessResult",
+    "AudioDependencyStatus",
     "OneShotCaptureResult",
     "OneShotMicrophoneCapture",
     "OneShotVoskRecognitionBridge",

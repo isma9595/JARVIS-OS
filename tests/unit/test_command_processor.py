@@ -5,6 +5,8 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from users.user_profile import UserProfileManager
 from voice import (
+    AudioDependencyReadinessResult,
+    AudioDependencyStatus,
     MicrophoneListeningModeManager,
     OneShotVoskRecognitionBridgeResult,
     OneShotVoskRealRecognitionResult,
@@ -35,6 +37,39 @@ class InMemoryVoskSettingsManager:
         return dict(self._settings)
 
 
+class FakeAudioDependencyReadinessChecker:
+    def __init__(self, missing=()):
+        self.missing = set(missing)
+        self.calls = 0
+
+    def check(self):
+        self.calls += 1
+        dependencies = []
+        for name in ("numpy", "sounddevice", "vosk"):
+            available = name not in self.missing
+            dependencies.append(
+                AudioDependencyStatus(
+                    name=name,
+                    available=available,
+                    import_error=None if available else f"missing {name}",
+                    manual_install_command=f"python -m pip install {name}",
+                )
+            )
+        available = {dependency.name: dependency.available for dependency in dependencies}
+        from voice.audio_dependency_readiness import AudioDependencyReadinessChecker
+
+        return AudioDependencyReadinessResult(
+            dependencies=tuple(dependencies),
+            audio_capture_dependencies_ready=bool(
+                available["numpy"] and available["sounddevice"]
+            ),
+            vosk_recognition_dependencies_ready=bool(available["vosk"]),
+            russian_summary=AudioDependencyReadinessChecker.format_russian_dependencies(
+                dependencies
+            ),
+        )
+
+
 def test_speech_backend_commands():
     processor = CommandProcessor()
 
@@ -43,6 +78,65 @@ def test_speech_backend_commands():
         processor.process("почему нет распознавания")["intent"]
         == "speech.backend.explain"
     )
+
+
+def test_audio_dependency_readiness_commands_return_safe_success_response():
+    checker = FakeAudioDependencyReadinessChecker()
+    processor = CommandProcessor(audio_dependency_readiness_checker=checker)
+
+    for command in (
+        "проверка аудио зависимостей",
+        "проверить зависимости микрофона",
+        "диагностика микрофона",
+        "почему не работает микрофон",
+    ):
+        result = processor.process(command)
+
+        assert result["intent"] == "voice.audio_dependencies.status"
+        assert "Зависимости аудиозахвата готовы." in result["response"]
+        assert "- numpy" in result["response"]
+        assert "- sounddevice" in result["response"]
+        assert "- vosk" in result["response"]
+        assert "JARVIS ничего не устанавливает автоматически" in result["response"]
+        assert "постоянное прослушивание не включается" in result["response"]
+
+    assert checker.calls == 4
+
+
+def test_audio_dependency_package_commands_return_safe_responses():
+    for command, missing, install_command in (
+        ("проверить numpy", "numpy", "python -m pip install numpy"),
+        ("проверить sounddevice", "sounddevice", "python -m pip install sounddevice"),
+        ("проверить vosk пакет", "vosk", "python -m pip install vosk"),
+    ):
+        processor = CommandProcessor(
+            audio_dependency_readiness_checker=FakeAudioDependencyReadinessChecker(
+                missing={missing}
+            )
+        )
+
+        result = processor.process(command)
+
+        assert result["intent"] == "voice.audio_dependencies.status"
+        assert install_command in result["response"]
+        assert "JARVIS ничего не устанавливает автоматически" in result["response"]
+
+
+def test_audio_dependency_status_alias_commands_return_safe_responses():
+    checker = FakeAudioDependencyReadinessChecker()
+    processor = CommandProcessor(audio_dependency_readiness_checker=checker)
+
+    for command in (
+        "проверить аудио зависимости",
+        "статус numpy",
+        "статус sounddevice",
+        "статус vosk пакета",
+    ):
+        result = processor.process(command)
+
+        assert result["intent"] == "voice.audio_dependencies.status"
+        assert "Зависимости аудиозахвата готовы." in result["response"]
+        assert "JARVIS ничего не устанавливает автоматически" in result["response"]
 
 
 def test_vosk_real_commands_and_selection_flow():

@@ -76,6 +76,7 @@ class OneShotVoskRealRecognition:
         readiness_verifier=None,
         capture_provider=None,
         vosk_runtime_factory=None,
+        dependency_checker=None,
         capture_seconds=DEFAULT_CAPTURE_DURATION_SECONDS,
     ):
         self.settings_manager = settings_manager or VoskSettingsManager()
@@ -83,6 +84,17 @@ class OneShotVoskRealRecognition:
         self.readiness_verifier = readiness_verifier or VoskModelReadinessVerifier()
         self.capture_provider = capture_provider
         self.vosk_runtime_factory = vosk_runtime_factory or self._load_vosk_runtime
+        self.dependency_checker = dependency_checker
+        if (
+            self.dependency_checker is None
+            and capture_provider is None
+            and vosk_runtime_factory is None
+        ):
+            from voice.audio_dependency_readiness import (
+                AudioDependencyReadinessChecker,
+            )
+
+            self.dependency_checker = AudioDependencyReadinessChecker()
         self.capture_seconds = capture_seconds
 
     def run_once(self, explicit_one_shot_requested=False):
@@ -94,6 +106,10 @@ class OneShotVoskRealRecognition:
                 ["Нужна явная команда одноразового распознавания."],
                 safety_notes=blocked_safety_notes,
             )
+
+        dependency_block = self._dependency_blocked_result(blocked_safety_notes)
+        if dependency_block is not None:
+            return dependency_block
 
         model_path = self._get_model_path()
         if not model_path:
@@ -137,7 +153,7 @@ class OneShotVoskRealRecognition:
                 warnings=gate_warnings,
                 safety_notes=blocked_safety_notes,
                 next_steps=[
-                    "Установите Vosk вручную в совместимое окружение.",
+                    "python -m pip install vosk",
                 ],
             )
         except Exception as exc:
@@ -322,6 +338,42 @@ class OneShotVoskRealRecognition:
             safety_notes=list(safety_notes or DEFAULT_BLOCKED_SAFETY_NOTES),
             next_steps=list(next_steps or []),
         )
+
+    def _dependency_blocked_result(self, safety_notes):
+        if self.dependency_checker is None:
+            return None
+
+        readiness = self.dependency_checker.check()
+        if readiness.ready:
+            return None
+
+        reasons = []
+        next_steps = []
+        for dependency in readiness.missing_dependencies:
+            reasons.append(self._missing_dependency_reason(dependency.name))
+            next_steps.append(dependency.manual_install_command)
+
+        return self._blocked_result(
+            reasons,
+            safety_notes=safety_notes,
+            next_steps=next_steps,
+        )
+
+    @staticmethod
+    def _missing_dependency_reason(dependency_name):
+        if dependency_name == "numpy":
+            return (
+                "Зависимость NumPy не найдена. One-shot захват микрофона может не работать."
+            )
+        if dependency_name == "sounddevice":
+            return (
+                "Зависимость sounddevice не найдена. One-shot захват микрофона может не работать."
+            )
+        if dependency_name == "vosk":
+            return (
+                "Пакет vosk не найден. Локальное распознавание речи Vosk не будет работать."
+            )
+        return f"Зависимость {dependency_name} не найдена."
 
     def _get_capture_seconds(self, capture_result):
         if isinstance(capture_result, dict):

@@ -216,6 +216,19 @@ class CommandProcessor:
         "тест реального vosk",
         "тест реального распознавания",
     }
+    AUDIO_DEPENDENCY_READINESS_COMMANDS = {
+        "проверка аудио зависимостей",
+        "проверить аудио зависимости",
+        "проверить зависимости микрофона",
+        "диагностика микрофона",
+        "почему не работает микрофон",
+        "проверить numpy",
+        "статус numpy",
+        "проверить sounddevice",
+        "статус sounddevice",
+        "проверить vosk пакет",
+        "статус vosk пакета",
+    }
     VOSK_BACKEND_SELECT_COMMANDS = {
         "выбрать vosk",
         "использовать vosk",
@@ -506,6 +519,7 @@ class CommandProcessor:
         vosk_recognition_dry_run=None,
         one_shot_vosk_recognition_bridge=None,
         one_shot_vosk_real_recognition=None,
+        audio_dependency_readiness_checker=None,
         microphone_listening_mode_manager=None,
         user_profile_manager=None,
     ):
@@ -526,6 +540,7 @@ class CommandProcessor:
         self.vosk_recognition_dry_run = vosk_recognition_dry_run
         self.one_shot_vosk_recognition_bridge = one_shot_vosk_recognition_bridge
         self.one_shot_vosk_real_recognition = one_shot_vosk_real_recognition
+        self.audio_dependency_readiness_checker = audio_dependency_readiness_checker
         if microphone_listening_mode_manager is None:
             from voice.microphone_listening_modes import (
                 MicrophoneListeningModeManager,
@@ -562,6 +577,13 @@ class CommandProcessor:
             return self._result(
                 "speech.backend.status",
                 self.dialogue_manager.speech_backend_status_response(status),
+            )
+
+        if command in self.AUDIO_DEPENDENCY_READINESS_COMMANDS:
+            readiness = self._get_audio_dependency_readiness_checker().check()
+            return self._result(
+                "voice.audio_dependencies.status",
+                self._audio_dependency_readiness_response(readiness),
             )
 
         if command in self.SPEECH_BACKEND_EXPLAIN_COMMANDS:
@@ -1125,6 +1147,25 @@ class CommandProcessor:
 
             self.one_shot_vosk_real_recognition = OneShotVoskRealRecognition()
         return self.one_shot_vosk_real_recognition
+
+    def _get_audio_dependency_readiness_checker(self):
+        if self.audio_dependency_readiness_checker is None:
+            from voice.audio_dependency_readiness import (
+                AudioDependencyReadinessChecker,
+            )
+
+            self.audio_dependency_readiness_checker = (
+                AudioDependencyReadinessChecker()
+            )
+        return self.audio_dependency_readiness_checker
+
+    @staticmethod
+    def _audio_dependency_readiness_response(readiness):
+        from voice.audio_dependency_readiness import (
+            AudioDependencyReadinessChecker,
+        )
+
+        return AudioDependencyReadinessChecker.format_russian(readiness)
 
     @staticmethod
     def _vosk_recognition_status_response(gate_result):

@@ -1,6 +1,8 @@
 import sys
 
 from voice import (
+    AudioDependencyReadinessResult,
+    AudioDependencyStatus,
     OneShotVoskRealRecognition,
     OneShotVoskRealRecognitionResult,
 )
@@ -64,6 +66,33 @@ class FakeRuntime:
 
         def FinalResult(self):
             return '{"text": "' + self.recognized_text + '"}'
+
+
+class FakeDependencyChecker:
+    def __init__(self, missing=()):
+        self.missing = set(missing)
+
+    def check(self):
+        dependencies = []
+        for name in ("numpy", "sounddevice", "vosk"):
+            available = name not in self.missing
+            dependencies.append(
+                AudioDependencyStatus(
+                    name=name,
+                    available=available,
+                    import_error=None if available else f"missing {name}",
+                    manual_install_command=f"python -m pip install {name}",
+                )
+            )
+        available = {dependency.name: dependency.available for dependency in dependencies}
+        return AudioDependencyReadinessResult(
+            dependencies=tuple(dependencies),
+            audio_capture_dependencies_ready=bool(
+                available["numpy"] and available["sounddevice"]
+            ),
+            vosk_recognition_dependencies_ready=bool(available["vosk"]),
+            russian_summary="fake",
+        )
 
 
 def allowed_gate(_model_path):
@@ -151,7 +180,52 @@ def test_blocks_safely_when_vosk_package_is_unavailable():
 
     assert result.blocked is True
     assert "Пакет vosk не установлен или недоступен для текущего Python." in result.reasons
-    assert "Установите Vosk вручную" in result.next_steps[0]
+    assert result.next_steps == ["python -m pip install vosk"]
+    assert capture.calls == 0
+
+
+def test_blocks_with_precise_numpy_install_step_when_numpy_is_missing():
+    capture = FakeCapture()
+    service = create_service(
+        capture_provider=capture,
+        dependency_checker=FakeDependencyChecker(missing={"numpy"}),
+    )
+
+    result = service.run_once(explicit_one_shot_requested=True)
+
+    assert result.blocked is True
+    assert "Зависимость NumPy не найдена" in result.reasons[0]
+    assert result.next_steps == ["python -m pip install numpy"]
+    assert capture.calls == 0
+
+
+def test_blocks_with_precise_sounddevice_install_step_when_sounddevice_is_missing():
+    capture = FakeCapture()
+    service = create_service(
+        capture_provider=capture,
+        dependency_checker=FakeDependencyChecker(missing={"sounddevice"}),
+    )
+
+    result = service.run_once(explicit_one_shot_requested=True)
+
+    assert result.blocked is True
+    assert "Зависимость sounddevice не найдена" in result.reasons[0]
+    assert result.next_steps == ["python -m pip install sounddevice"]
+    assert capture.calls == 0
+
+
+def test_blocks_with_precise_vosk_install_step_when_vosk_is_missing():
+    capture = FakeCapture()
+    service = create_service(
+        capture_provider=capture,
+        dependency_checker=FakeDependencyChecker(missing={"vosk"}),
+    )
+
+    result = service.run_once(explicit_one_shot_requested=True)
+
+    assert result.blocked is True
+    assert "Пакет vosk не найден" in result.reasons[0]
+    assert result.next_steps == ["python -m pip install vosk"]
     assert capture.calls == 0
 
 
@@ -303,7 +377,7 @@ def test_formatter_returns_russian_blocked_message():
     assert formatted.startswith("Реальное распознавание Vosk заблокировано.")
     assert "Причины:" in formatted
     assert "Пакет vosk не установлен" in formatted
-    assert "Следующий шаг: Установите Vosk вручную" in formatted
+    assert "Следующий шаг: python -m pip install vosk" in formatted
     assert "Безопасность:" in formatted
     assert "Микрофон не запускался." in formatted
 
