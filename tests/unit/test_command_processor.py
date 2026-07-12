@@ -352,14 +352,14 @@ def test_one_shot_vosk_real_recognition_command_aliases_return_safe_response():
     ):
         result = processor.process(command)
 
-        assert result["intent"] == "speech.backend.vosk.one_shot_real_recognition"
+        assert result["intent"] == "system.status"
         assert "Распознавание завершено." in result["response"]
-        assert "Я распознал: \"статус системы\"." in result["response"]
-        assert "Выполнить эту команду? Подтвердите: да / нет." in result["response"]
-        assert "Безопасность: команда не выполнена автоматически." in result["response"]
-        assert processor.get_pending_voice_command() == "статус системы"
-        assert "Постоянное прослушивание не использовалось." in result["response"]
-        assert "Аудио не отправлялось в облако." in result["response"]
+        assert "Я распознал безопасную голосовую команду: \"статус системы\"." in result["response"]
+        assert "Выполняю: статус системы" in result["response"]
+        assert "без дополнительного подтверждения" in result["response"]
+        assert "read-only" in result["response"]
+        assert processor.has_pending_voice_command() is False
+        assert "Активных сервисов" in result["response"]
 
     assert recognizer.calls == 3
 
@@ -744,9 +744,9 @@ def test_help_command():
     assert "режимы микрофона" in result["response"]
     assert "Vosk" in result["response"]
     assert "реальное one-shot распознавание Vosk по явной команде" in result["response"]
-    assert "просит подтверждение да / нет" in result["response"]
+    assert "Неизвестные и рискованные голосовые команды всё ещё требуют подтверждения да / нет" in result["response"]
     assert "ожидающую голосовую команду можно проверить или отменить" in result["response"]
-    assert "Распознанный текст не выполняется автоматически" in result["response"]
+    assert "Рискованные действия не обходят безопасность" in result["response"]
     assert "постоянное прослушивание не связано" in result["response"]
     assert "Реальный захват микрофона автоматически не включается" in result["response"]
     assert "будут добавлены позже" not in result["response"]
@@ -759,7 +759,31 @@ def test_help_alias_command():
     assert result["should_exit"] is False
     assert "пробный запуск Vosk" in result["response"]
     assert "симуляция голосовой команды" in result["response"]
+    assert "безопасные голосовые команды" in result["response"]
+    assert "Неизвестные и рискованные голосовые команды" in result["response"]
     assert "Для выхода напишите: выход" in result["response"]
+
+
+def test_safe_voice_command_allowlist_status_commands():
+    processor = CommandProcessor()
+
+    for command in (
+        "список безопасных голосовых команд",
+        "безопасные голосовые команды",
+        "какие голосовые команды без подтверждения",
+    ):
+        result = processor.process(command)
+
+        assert result["intent"] == "voice.safe_allowlist.status"
+        assert "Безопасные голосовые команды без подтверждения" in result["response"]
+        assert "Read-only" in result["response"]
+        assert "статус системы" in result["response"]
+        assert "помощь" in result["response"]
+        assert "Все остальные голосовые команды требуют подтверждения" in result["response"]
+        assert "Рискованные действия не обходят безопасность" in result["response"]
+        assert "- запомни" not in result["response"]
+        assert "удали" not in result["response"]
+        assert "установи" not in result["response"]
 
 
 def test_greeting_command():

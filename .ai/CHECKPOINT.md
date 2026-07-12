@@ -1,10 +1,10 @@
 # JARVIS-OS Checkpoint
 
 - Project: JARVIS-OS
-- Current stable stage: TASK-037A — Audio Capture Dependency Readiness
-- Last stable commit: f167f8f
-- Last stable commit message: Add audio capture dependency diagnostics
-- Next stage: TASK-038 — Voice Recognition Result Confirmation Flow
+- Current stable stage: TASK-038 — Voice Recognition Result Confirmation Flow
+- Last stable commit: a4f109f
+- Last stable commit message: Add voice command confirmation flow
+- Next stage: TASK-039 — Safe Voice Command Allowlist
 - Status: in progress
 
 ## Approved Workflow

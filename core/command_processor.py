@@ -221,6 +221,12 @@ class CommandProcessor:
         "pending voice command",
         "какая голосовая команда ожидает подтверждения",
     }
+    SAFE_VOICE_COMMAND_ALLOWLIST_COMMANDS = {
+        "список безопасных голосовых команд",
+        "безопасные голосовые команды",
+        "voice allowlist",
+        "какие голосовые команды без подтверждения",
+    }
     PENDING_VOICE_COMMAND_CLEAR_COMMANDS = {
         "отменить голосовую команду",
         "сбросить голосовую команду",
@@ -547,6 +553,7 @@ class CommandProcessor:
         audio_dependency_readiness_checker=None,
         microphone_listening_mode_manager=None,
         user_profile_manager=None,
+        safe_voice_command_allowlist=None,
     ):
         self.user_profile = user_profile or {}
         self.dialogue_manager = dialogue_manager or DialogueManager(self.user_profile)
@@ -566,6 +573,7 @@ class CommandProcessor:
         self.one_shot_vosk_recognition_bridge = one_shot_vosk_recognition_bridge
         self.one_shot_vosk_real_recognition = one_shot_vosk_real_recognition
         self.audio_dependency_readiness_checker = audio_dependency_readiness_checker
+        self.safe_voice_command_allowlist = safe_voice_command_allowlist
         self._pending_voice_command = None
         if microphone_listening_mode_manager is None:
             from voice.microphone_listening_modes import (
@@ -651,15 +659,26 @@ class CommandProcessor:
             recognition_result = self._get_one_shot_vosk_real_recognition().run_once(
                 explicit_one_shot_requested=True
             )
+            one_shot_result = self._one_shot_vosk_real_recognition_response(
+                recognition_result
+            )
+            if isinstance(one_shot_result, dict):
+                return one_shot_result
             return self._result(
                 "speech.backend.vosk.one_shot_real_recognition",
-                self._one_shot_vosk_real_recognition_response(recognition_result),
+                one_shot_result,
             )
 
         if command in self.PENDING_VOICE_COMMAND_STATUS_COMMANDS:
             return self._result(
                 "voice.pending_command.status",
                 self._pending_voice_command_status_response(),
+            )
+
+        if command in self.SAFE_VOICE_COMMAND_ALLOWLIST_COMMANDS:
+            return self._result(
+                "voice.safe_allowlist.status",
+                self._safe_voice_command_allowlist_response(),
             )
 
         if command in self.PENDING_VOICE_COMMAND_CLEAR_COMMANDS and self.has_pending_voice_command():
@@ -1201,6 +1220,13 @@ class CommandProcessor:
             )
         return self.audio_dependency_readiness_checker
 
+    def _get_safe_voice_command_allowlist(self):
+        if self.safe_voice_command_allowlist is None:
+            from voice.voice_command_allowlist import SafeVoiceCommandAllowlist
+
+            self.safe_voice_command_allowlist = SafeVoiceCommandAllowlist()
+        return self.safe_voice_command_allowlist
+
     @staticmethod
     def _audio_dependency_readiness_response(readiness):
         from voice.audio_dependency_readiness import (
@@ -1295,9 +1321,32 @@ class CommandProcessor:
             and not recognition_result.blocked
             and recognized_text
         ):
+            decision = self._get_safe_voice_command_allowlist().decide(recognized_text)
+            if decision.allowed:
+                return self._execute_safe_voice_allowlisted_command(
+                    recognized_text,
+                    decision,
+                )
             self.set_pending_voice_command(recognized_text)
 
         return OneShotVoskRealRecognition.format_result(recognition_result)
+
+    def _execute_safe_voice_allowlisted_command(self, recognized_text, decision):
+        self.clear_pending_voice_command()
+        result = self.process(decision.canonical_command)
+        result = dict(result)
+        result["response"] = (
+            "Распознавание завершено.\n"
+            f"Я распознал безопасную голосовую команду: \"{recognized_text}\".\n"
+            "Команда входит в безопасный список и будет выполнена без дополнительного подтверждения.\n"
+            f"Выполняю: {decision.canonical_command}\n"
+            "Безопасность: разрешены только заранее известные read-only команды; рискованные команды всё ещё требуют подтверждения.\n"
+            f"{result['response']}"
+        )
+        result["safe_voice_command_allowed"] = True
+        result["recognized_voice_command"] = recognized_text
+        result["canonical_voice_command"] = decision.canonical_command
+        return result
 
     def has_pending_voice_command(self):
         return self._pending_voice_command is not None
@@ -1348,6 +1397,9 @@ class CommandProcessor:
             "Ожидает подтверждения голосовая команда: "
             f"{self.get_pending_voice_command()}. Ответьте: да / нет."
         )
+
+    def _safe_voice_command_allowlist_response(self):
+        return self._get_safe_voice_command_allowlist().format_read_only_commands()
 
     @staticmethod
     def _vosk_model_readiness_response(readiness):
@@ -1746,9 +1798,10 @@ class CommandProcessor:
             "режимы микрофона; настройка, статус и путь модели Vosk; пробный запуск Vosk на тестовых данных; "
             "реальное one-shot распознавание Vosk по явной команде; симуляция голосовой команды. "
             "Реальный захват микрофона автоматически не включается. "
-            "Реальное one-shot распознавание просит подтверждение да / нет перед выполнением распознанной команды; "
+            "Некоторые заранее известные read-only голосовые команды могут выполняться без подтверждения; список: безопасные голосовые команды. "
+            "Неизвестные и рискованные голосовые команды всё ещё требуют подтверждения да / нет; "
             "ожидающую голосовую команду можно проверить или отменить. "
-            "Распознанный текст не выполняется автоматически, постоянное прослушивание не связано "
+            "Рискованные действия не обходят безопасность, постоянное прослушивание не связано "
             "с реальным распознаванием. "
             "Зрение экрана и автоматизация запланированы позже. "
             "Для выхода напишите: выход."

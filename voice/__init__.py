@@ -49,6 +49,10 @@ from voice.vosk_model_readiness_verifier import (
     VoskModelReadinessResult,
     VoskModelReadinessVerifier,
 )
+from voice.voice_command_allowlist import (
+    SafeVoiceCommandAllowlist,
+    VoiceAllowlistDecision,
+)
 
 __all__ = [
     "DEFAULT_CAPTURE_DURATION_SECONDS",
@@ -81,6 +85,8 @@ __all__ = [
     "VoskModelReadinessVerifier",
     "VoskModelPathStatus",
     "VoskPackageStatus",
+    "SafeVoiceCommandAllowlist",
+    "VoiceAllowlistDecision",
     "check_vosk_model_path_status",
     "check_vosk_package_status",
     "evaluate_vosk_local_recognition_gate",
