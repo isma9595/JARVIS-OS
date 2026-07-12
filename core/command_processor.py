@@ -227,6 +227,27 @@ class CommandProcessor:
         "voice allowlist",
         "какие голосовые команды без подтверждения",
     }
+    LAST_VOICE_RECOGNITION_COMMANDS = {
+        "последнее распознавание",
+        "последнее распознование",
+        "последняя голосовая команда",
+        "что ты услышал",
+        "что ты распознал",
+    }
+    VOICE_COMMAND_HISTORY_COMMANDS = {
+        "история голосовых команд",
+        "покажи историю голоса",
+        "история распознавания",
+        "история распознования",
+    }
+    VOICE_COMMAND_HISTORY_COUNT_COMMANDS = {
+        "сколько голосовых команд",
+    }
+    VOICE_COMMAND_HISTORY_CLEAR_COMMANDS = {
+        "очистить историю голосовых команд",
+        "очисти историю голоса",
+        "сбросить историю распознавания",
+    }
     PENDING_VOICE_COMMAND_CLEAR_COMMANDS = {
         "отменить голосовую команду",
         "сбросить голосовую команду",
@@ -554,6 +575,7 @@ class CommandProcessor:
         microphone_listening_mode_manager=None,
         user_profile_manager=None,
         safe_voice_command_allowlist=None,
+        voice_command_history=None,
     ):
         self.user_profile = user_profile or {}
         self.dialogue_manager = dialogue_manager or DialogueManager(self.user_profile)
@@ -574,6 +596,11 @@ class CommandProcessor:
         self.one_shot_vosk_real_recognition = one_shot_vosk_real_recognition
         self.audio_dependency_readiness_checker = audio_dependency_readiness_checker
         self.safe_voice_command_allowlist = safe_voice_command_allowlist
+        if voice_command_history is None:
+            from voice.voice_command_history import VoiceCommandSessionHistory
+
+            voice_command_history = VoiceCommandSessionHistory()
+        self.voice_command_history = voice_command_history
         self._pending_voice_command = None
         if microphone_listening_mode_manager is None:
             from voice.microphone_listening_modes import (
@@ -681,8 +708,40 @@ class CommandProcessor:
                 self._safe_voice_command_allowlist_response(),
             )
 
+        if command in self.LAST_VOICE_RECOGNITION_COMMANDS:
+            return self._result(
+                "voice.history.last",
+                self._last_voice_recognition_response(),
+            )
+
+        if command in self.VOICE_COMMAND_HISTORY_COMMANDS:
+            return self._result(
+                "voice.history.list",
+                self._voice_command_history_response(),
+            )
+
+        if command in self.VOICE_COMMAND_HISTORY_COUNT_COMMANDS:
+            return self._result(
+                "voice.history.count",
+                self._voice_command_history_count_response(),
+            )
+
+        if command in self.VOICE_COMMAND_HISTORY_CLEAR_COMMANDS:
+            self.voice_command_history.clear()
+            return self._result(
+                "voice.history.cleared",
+                "История голосовых команд за текущую сессию очищена.",
+            )
+
         if command in self.PENDING_VOICE_COMMAND_CLEAR_COMMANDS and self.has_pending_voice_command():
+            pending_command = self.get_pending_voice_command()
             self.clear_pending_voice_command()
+            self._record_voice_history(
+                recognized_text=pending_command,
+                normalized_text=self._normalize(pending_command),
+                status="canceled",
+                reason="pending command cleared",
+            )
             return self._result(
                 "voice.pending_command.cleared",
                 "Ожидающая голосовая команда очищена.",
@@ -1001,21 +1060,55 @@ class CommandProcessor:
 
         if command in self.VOICE_CONFIRMATION_COMMANDS:
             if self.voice_input_manager is None:
+                if self._is_pending_voice_confirmation_word(command):
+                    return self._result(
+                        "voice.pending_command.none",
+                        self._pending_voice_command_none_response(),
+                    )
                 return self._result(
                     "voice.confirmation.none",
                     self.dialogue_manager.voice_confirmation_none_response(),
+                )
+
+            if (
+                self._is_pending_voice_confirmation_word(command)
+                and not self.voice_input_manager.has_pending_confirmation()
+            ):
+                return self._result(
+                    "voice.pending_command.none",
+                    self._pending_voice_command_none_response(),
                 )
 
             return self.voice_input_manager.confirm_pending_action()
 
         if command in self.VOICE_CANCELLATION_COMMANDS:
             if self.voice_input_manager is None:
+                if self._is_pending_voice_confirmation_word(command):
+                    return self._result(
+                        "voice.pending_command.none",
+                        self._pending_voice_command_none_response(),
+                    )
                 return self._result(
                     "voice.confirmation.none",
                     self.dialogue_manager.voice_cancellation_none_response(),
                 )
 
+            if (
+                self._is_pending_voice_confirmation_word(command)
+                and not self.voice_input_manager.has_pending_confirmation()
+            ):
+                return self._result(
+                    "voice.pending_command.none",
+                    self._pending_voice_command_none_response(),
+                )
+
             return self.voice_input_manager.cancel_pending_action()
+
+        if self._is_pending_voice_confirmation_word(command):
+            return self._result(
+                "voice.pending_command.none",
+                self._pending_voice_command_none_response(),
+            )
 
         if command in self.GREETING_COMMANDS:
             return self._result("assistant.greeting", self._greeting_response())
@@ -1314,6 +1407,14 @@ class CommandProcessor:
     def _one_shot_vosk_real_recognition_response(self, recognition_result):
         from voice.one_shot_vosk_real_recognition import OneShotVoskRealRecognition
 
+        if self.has_pending_voice_command():
+            pending_command = self.get_pending_voice_command()
+            self._record_voice_history(
+                recognized_text=pending_command,
+                normalized_text=self._normalize(pending_command),
+                status="canceled",
+                reason="pending command replaced by new recognition",
+            )
         self.clear_pending_voice_command()
         recognized_text = str(recognition_result.recognized_text or "").strip()
         if (
@@ -1329,12 +1430,48 @@ class CommandProcessor:
                     decision,
                 )
             self.set_pending_voice_command(recognized_text)
+            self._record_voice_history(
+                recognized_text=recognized_text,
+                normalized_text=decision.normalized_text,
+                status="pending_confirmation",
+                reason=decision.reason,
+                safety_notes=decision.safety_notes,
+            )
+        elif recognition_result.blocked or not recognition_result.allowed:
+            self._record_voice_history(
+                recognized_text=recognized_text or None,
+                status="blocked",
+                reason=self._join_reasons(getattr(recognition_result, "reasons", None)),
+                safety_notes=getattr(recognition_result, "safety_notes", None),
+            )
+        elif not recognition_result.completed:
+            self._record_voice_history(
+                recognized_text=recognized_text or None,
+                status="failed",
+                reason=self._join_reasons(getattr(recognition_result, "reasons", None)),
+                safety_notes=getattr(recognition_result, "safety_notes", None),
+            )
+        elif not recognized_text:
+            self._record_voice_history(
+                recognized_text=None,
+                status="empty",
+                reason="speech not recognized",
+                safety_notes=getattr(recognition_result, "safety_notes", None),
+            )
 
         return OneShotVoskRealRecognition.format_result(recognition_result)
 
     def _execute_safe_voice_allowlisted_command(self, recognized_text, decision):
         self.clear_pending_voice_command()
         result = self.process(decision.canonical_command)
+        self._record_voice_history(
+            recognized_text=recognized_text,
+            normalized_text=decision.normalized_text,
+            canonical_command=decision.canonical_command,
+            status="allowlisted_executed",
+            reason=decision.reason,
+            safety_notes=decision.safety_notes,
+        )
         result = dict(result)
         result["response"] = (
             "Распознавание завершено.\n"
@@ -1367,9 +1504,18 @@ class CommandProcessor:
         if command in self.PENDING_VOICE_COMMAND_POSITIVE_CONFIRMATIONS:
             self.clear_pending_voice_command()
             result = self.process(pending_command)
+            canonical_command = result.get("canonical_voice_command") or pending_command
+            status = self._confirmed_voice_command_history_status(result)
+            self._record_voice_history(
+                recognized_text=pending_command,
+                normalized_text=self._normalize(pending_command),
+                canonical_command=canonical_command,
+                status=status,
+                reason="typed confirmation accepted",
+            )
             result = dict(result)
             result["response"] = (
-                "Подтверждение получено. Выполняю распознанную команду: "
+                "Подтверждение получено. Передаю распознанную команду в безопасную обработку: "
                 f"{pending_command}\n{result['response']}"
             )
             result["confirmed_voice_command"] = pending_command
@@ -1377,11 +1523,23 @@ class CommandProcessor:
 
         if command in self.PENDING_VOICE_COMMAND_NEGATIVE_CONFIRMATIONS:
             self.clear_pending_voice_command()
+            self._record_voice_history(
+                recognized_text=pending_command,
+                normalized_text=self._normalize(pending_command),
+                status="canceled",
+                reason="typed cancellation accepted",
+            )
             return self._result(
                 "voice.pending_command.cancelled",
                 "Хорошо, распознанная голосовая команда отменена.",
             )
 
+        self._record_voice_history(
+            recognized_text=pending_command,
+            normalized_text=self._normalize(pending_command),
+            status="unknown_confirmation",
+            reason=f"unknown confirmation response: {command}",
+        )
         return self._result(
             "voice.pending_command.awaiting_confirmation",
             (
@@ -1390,9 +1548,29 @@ class CommandProcessor:
             ),
         )
 
+    def _is_pending_voice_confirmation_word(self, command):
+        return (
+            command in self.PENDING_VOICE_COMMAND_POSITIVE_CONFIRMATIONS
+            or command in self.PENDING_VOICE_COMMAND_NEGATIVE_CONFIRMATIONS
+        )
+
+    @staticmethod
+    def _pending_voice_command_none_response():
+        return "Нет голосовой команды, ожидающей подтверждения."
+
+    @staticmethod
+    def _confirmed_voice_command_history_status(result):
+        if (
+            result.get("requires_confirmation") is True
+            or result.get("category") == "confirmation_required"
+            or result.get("intent") == "action.confirmation_required"
+        ):
+            return "confirmed_requires_additional_safety_confirmation"
+        return "confirmed_safe_processing"
+
     def _pending_voice_command_status_response(self):
         if not self.has_pending_voice_command():
-            return "Нет голосовой команды, ожидающей подтверждения."
+            return self._pending_voice_command_none_response()
 
         return (
             "Ожидает подтверждения голосовая команда: "
@@ -1401,6 +1579,94 @@ class CommandProcessor:
 
     def _safe_voice_command_allowlist_response(self):
         return self._get_safe_voice_command_allowlist().format_read_only_commands()
+
+    def _record_voice_history(
+        self,
+        recognized_text=None,
+        normalized_text=None,
+        canonical_command=None,
+        source="one_shot_vosk",
+        status="recognized",
+        reason=None,
+        safety_notes=None,
+    ):
+        return self.voice_command_history.add_entry(
+            recognized_text=recognized_text,
+            normalized_text=normalized_text,
+            canonical_command=canonical_command,
+            source=source,
+            status=status,
+            reason=reason,
+            safety_notes=safety_notes,
+        )
+
+    @staticmethod
+    def _join_reasons(reasons):
+        if not reasons:
+            return None
+        return "; ".join(str(reason) for reason in reasons if str(reason).strip())
+
+    def _last_voice_recognition_response(self):
+        entry = self.voice_command_history.last_entry()
+        if entry is None:
+            return "В этой сессии ещё нет голосовых распознаваний."
+
+        lines = [
+            "Последнее голосовое распознавание:",
+            f"- Распознано: {entry.recognized_text or 'пусто / речь не распознана'}",
+        ]
+        if entry.canonical_command:
+            lines.append(f"- Каноническая команда: {entry.canonical_command}")
+        lines.append(f"- Статус: {self._voice_history_status_label(entry.status)}")
+        lines.append(f"- Источник: {self._voice_history_source_label(entry.source)}")
+        if entry.reason:
+            lines.append(f"- Причина: {entry.reason}")
+        return "\n".join(lines)
+
+    def _voice_command_history_response(self):
+        entries = self.voice_command_history.list_recent(limit=10)
+        if not entries:
+            return "В этой сессии ещё нет голосовых распознаваний."
+
+        lines = ["История голосовых команд за текущую сессию:"]
+        for index, entry in enumerate(entries, start=1):
+            source_text = entry.recognized_text or "пусто / речь не распознана"
+            if entry.canonical_command:
+                source_text = f"{source_text} -> {entry.canonical_command}"
+            lines.append(
+                f"{index}. {source_text} — {self._voice_history_status_label(entry.status)}"
+            )
+        return "\n".join(lines)
+
+    def _voice_command_history_count_response(self):
+        return (
+            "В этой сессии записано голосовых событий: "
+            f"{self.voice_command_history.count()}."
+        )
+
+    @staticmethod
+    def _voice_history_source_label(source):
+        labels = {
+            "one_shot_vosk": "one-shot Vosk",
+        }
+        return labels.get(source, source)
+
+    @staticmethod
+    def _voice_history_status_label(status):
+        labels = {
+            "recognized": "распознано",
+            "allowlisted_executed": "выполнено как безопасная read-only команда",
+            "pending_confirmation": "ожидает подтверждения",
+            "confirmed_executed": "подтверждено и передано в безопасную обработку",
+            "confirmed_safe_processing": "подтверждено и передано в безопасную обработку",
+            "confirmed_requires_additional_safety_confirmation": "требует дополнительного подтверждения безопасности",
+            "canceled": "отменено",
+            "blocked": "заблокировано",
+            "empty": "пусто / речь не распознана",
+            "failed": "ошибка распознавания",
+            "unknown_confirmation": "неизвестный ответ на подтверждение",
+        }
+        return labels.get(status, status)
 
     @staticmethod
     def _vosk_model_readiness_response(readiness):
@@ -1802,6 +2068,7 @@ class CommandProcessor:
             "Некоторые заранее известные read-only голосовые команды могут выполняться без подтверждения; список: безопасные голосовые команды. "
             "Неизвестные и рискованные голосовые команды всё ещё требуют подтверждения да / нет; "
             "ожидающую голосовую команду можно проверить или отменить. "
+            "Можно посмотреть последнее голосовое распознавание, историю голосовых команд за сессию, количество событий и очистить историю голоса. "
             "Рискованные действия не обходят безопасность, постоянное прослушивание не связано "
             "с реальным распознаванием. "
             "Зрение экрана и автоматизация запланированы позже. "

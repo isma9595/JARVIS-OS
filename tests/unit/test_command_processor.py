@@ -746,6 +746,9 @@ def test_help_command():
     assert "реальное one-shot распознавание Vosk по явной команде" in result["response"]
     assert "Неизвестные и рискованные голосовые команды всё ещё требуют подтверждения да / нет" in result["response"]
     assert "ожидающую голосовую команду можно проверить или отменить" in result["response"]
+    assert "последнее голосовое распознавание" in result["response"]
+    assert "историю голосовых команд за сессию" in result["response"]
+    assert "очистить историю голоса" in result["response"]
     assert "Рискованные действия не обходят безопасность" in result["response"]
     assert "постоянное прослушивание не связано" in result["response"]
     assert "Реальный захват микрофона автоматически не включается" in result["response"]
@@ -760,8 +763,47 @@ def test_help_alias_command():
     assert "пробный запуск Vosk" in result["response"]
     assert "симуляция голосовой команды" in result["response"]
     assert "безопасные голосовые команды" in result["response"]
+    assert "последнее голосовое распознавание" in result["response"]
     assert "Неизвестные и рискованные голосовые команды" in result["response"]
     assert "Для выхода напишите: выход" in result["response"]
+
+
+def test_voice_history_commands_return_empty_responses():
+    processor = CommandProcessor()
+
+    for command in (
+        "последнее распознавание",
+        "последняя голосовая команда",
+        "что ты услышал",
+        "что ты распознал",
+    ):
+        result = processor.process(command)
+
+        assert result["intent"] == "voice.history.last"
+        assert result["response"] == "В этой сессии ещё нет голосовых распознаваний."
+
+    history = processor.process("история голосовых команд")
+    assert history["intent"] == "voice.history.list"
+    assert history["response"] == "В этой сессии ещё нет голосовых распознаваний."
+
+    count = processor.process("сколько голосовых команд")
+    assert count["intent"] == "voice.history.count"
+    assert count["response"] == "В этой сессии записано голосовых событий: 0."
+
+
+def test_voice_history_clear_command_returns_success():
+    processor = CommandProcessor()
+    processor.voice_command_history.add_entry(
+        recognized_text="статус системы",
+        canonical_command="статус системы",
+        status="allowlisted_executed",
+    )
+
+    result = processor.process("очистить историю голосовых команд")
+
+    assert result["intent"] == "voice.history.cleared"
+    assert result["response"] == "История голосовых команд за текущую сессию очищена."
+    assert processor.voice_command_history.count() == 0
 
 
 def test_safe_voice_command_allowlist_status_commands():
@@ -982,6 +1024,18 @@ def test_unknown_command():
     assert result["category"] == "idea"
     assert result["risk_level"] == "unknown"
     assert "идею для будущего" in result["response"]
+
+
+def test_confirmation_words_without_pending_do_not_become_ideas():
+    processor = CommandProcessor(sample_profile())
+
+    for command in ("да", "нет"):
+        result = processor.process(command)
+
+        assert result["intent"] == "voice.pending_command.none"
+        assert result["response"] == "Нет голосовой команды, ожидающей подтверждения."
+        assert "идею для будущего" not in result["response"]
+        assert processor.voice_command_history.count() == 0
 
 
 def test_empty_command():

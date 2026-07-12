@@ -1,10 +1,10 @@
 # JARVIS-OS Checkpoint
 
 - Project: JARVIS-OS
-- Current stable stage: TASK-039 — Safe Voice Command Allowlist
-- Last stable commit: e6d2dc9
-- Last stable commit message: Add safe voice command allowlist
-- Next stage: TASK-040 — Conservative Voice Command Normalization & Safe Aliases
+- Current stable stage: TASK-040 — Conservative Voice Command Normalization & Safe Aliases
+- Last stable commit: 2ef5fbb
+- Last stable commit message: Add conservative voice command normalization
+- Next stage: TASK-041 — Voice Command Session History & Last Recognition
 - Status: in progress
 
 ## Approved Workflow

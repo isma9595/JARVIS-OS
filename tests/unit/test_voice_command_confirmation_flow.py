@@ -66,6 +66,10 @@ def test_safe_status_system_auto_executes_without_pending_confirmation():
     assert "Выполняю: статус системы" in result["response"]
     assert "read-only" in result["response"]
     assert "Активных сервисов" in result["response"]
+    entry = processor.voice_command_history.last_entry()
+    assert entry.recognized_text == "статус системы"
+    assert entry.canonical_command == "статус системы"
+    assert entry.status == "allowlisted_executed"
 
 
 def test_safe_status_system_misrecognition_auto_executes_canonical_command():
@@ -142,6 +146,9 @@ def test_unknown_recognition_creates_pending_command_and_asks_confirmation():
     assert "Я распознал: \"расскажи что-нибудь\"." in result["response"]
     assert "Выполнить эту команду? Подтвердите: да / нет." in result["response"]
     assert "без дополнительного подтверждения" not in result["response"]
+    entry = processor.voice_command_history.last_entry()
+    assert entry.recognized_text == "расскажи что-нибудь"
+    assert entry.status == "pending_confirmation"
 
 
 def test_risky_unknown_recognition_creates_pending_command_and_asks_confirmation():
@@ -184,10 +191,11 @@ def test_positive_confirmation_executes_pending_command_through_processor():
     assert processor.has_pending_voice_command() is False
     assert result["intent"] == "system.version"
     assert (
-        "Подтверждение получено. Выполняю распознанную команду: версия"
+        "Подтверждение получено. Передаю распознанную команду в безопасную обработку: версия"
         in result["response"]
     )
     assert "0.2" in result["response"]
+    assert processor.voice_command_history.last_entry().status == "confirmed_safe_processing"
 
 
 def test_positive_aliases_execute_pending_command():
@@ -215,6 +223,7 @@ def test_negative_aliases_cancel_pending_command():
         assert processor.has_pending_voice_command() is False
         assert result["intent"] == "voice.pending_command.cancelled"
         assert result["response"] == "Хорошо, распознанная голосовая команда отменена."
+        assert processor.voice_command_history.last_entry().status == "canceled"
 
 
 def test_typed_yes_no_flow_still_works_for_non_allowlisted_commands():
@@ -230,6 +239,15 @@ def test_typed_yes_no_flow_still_works_for_non_allowlisted_commands():
     assert approve_processor.has_pending_voice_command() is False
     assert approved["intent"] == "action.confirmation_required"
     assert approved["requires_confirmation"] is True
+    assert (
+        approve_processor.voice_command_history.last_entry().status
+        == "confirmed_requires_additional_safety_confirmation"
+    )
+    history = approve_processor.process("история голосовых команд")
+    assert "подтверждено и выполнено" not in history["response"]
+    assert "требует дополнительного подтверждения безопасности" in history["response"]
+    stray_yes = approve_processor.process("да")
+    assert stray_yes["response"] == "Нет голосовой команды, ожидающей подтверждения."
 
     cancel_processor = CommandProcessor(
         one_shot_vosk_real_recognition=FakeRealRecognition(
@@ -244,6 +262,20 @@ def test_typed_yes_no_flow_still_works_for_non_allowlisted_commands():
     assert cancelled["intent"] == "voice.pending_command.cancelled"
 
 
+def test_confirmation_words_without_pending_return_clear_response():
+    processor = CommandProcessor()
+
+    yes = processor.process("да")
+    no = processor.process("нет")
+
+    assert yes["intent"] == "voice.pending_command.none"
+    assert yes["response"] == "Нет голосовой команды, ожидающей подтверждения."
+    assert no["intent"] == "voice.pending_command.none"
+    assert no["response"] == "Нет голосовой команды, ожидающей подтверждения."
+    assert processor.has_pending_voice_command() is False
+    assert processor.voice_command_history.count() == 0
+
+
 def test_unrelated_input_keeps_pending_command_and_asks_yes_no():
     processor = CommandProcessor(
         one_shot_vosk_real_recognition=FakeRealRecognition([success_result()])
@@ -254,6 +286,7 @@ def test_unrelated_input_keeps_pending_command_and_asks_yes_no():
 
     assert processor.get_pending_voice_command() == "версия"
     assert result["intent"] == "voice.pending_command.awaiting_confirmation"
+    assert processor.voice_command_history.last_entry().status == "unknown_confirmation"
     assert (
         "Ожидаю подтверждение для распознанной команды: версия. Ответьте: да / нет."
         == result["response"]
@@ -312,6 +345,7 @@ def test_cancel_command_clears_pending_text():
     assert processor.has_pending_voice_command() is False
     assert result["intent"] == "voice.pending_command.cleared"
     assert result["response"] == "Ожидающая голосовая команда очищена."
+    assert processor.voice_command_history.last_entry().status == "canceled"
 
 
 def test_new_one_shot_recognition_replaces_old_pending_command():
@@ -362,6 +396,7 @@ def test_empty_recognition_does_not_create_pending_command():
 
     assert processor.has_pending_voice_command() is False
     assert "речь не распознана" in result["response"]
+    assert processor.voice_command_history.last_entry().status == "empty"
 
 
 def test_failed_recognition_does_not_create_pending_command():
@@ -373,6 +408,7 @@ def test_failed_recognition_does_not_create_pending_command():
 
     assert processor.has_pending_voice_command() is False
     assert "Реальное распознавание Vosk заблокировано." in result["response"]
+    assert processor.voice_command_history.last_entry().status == "blocked"
 
 
 def test_confirmed_risky_command_still_uses_safety_router():
@@ -401,3 +437,121 @@ def test_confirmation_flow_does_not_recurse_forever_for_confirmation_word():
 
     assert processor.has_pending_voice_command() is False
     assert result["intent"] != "voice.pending_command.awaiting_confirmation"
+
+
+def test_last_recognition_command_shows_last_history_entry():
+    processor = CommandProcessor(
+        one_shot_vosk_real_recognition=FakeRealRecognition(
+            [success_result("статус системы")]
+        )
+    )
+    processor.process("распознай голос один раз")
+
+    result = processor.process("последнее распознавание")
+
+    assert result["intent"] == "voice.history.last"
+    assert "Последнее голосовое распознавание:" in result["response"]
+    assert "Распознано: статус системы" in result["response"]
+    assert "Каноническая команда: статус системы" in result["response"]
+
+
+def test_voice_history_command_shows_recent_entries():
+    processor = CommandProcessor(
+        one_shot_vosk_real_recognition=FakeRealRecognition(
+            [success_result("статус системы"), success_result("открой браузер")]
+        )
+    )
+    processor.process("распознай голос один раз")
+    processor.process("распознай голос один раз")
+
+    result = processor.process("история голосовых команд")
+
+    assert result["intent"] == "voice.history.list"
+    assert "История голосовых команд за текущую сессию:" in result["response"]
+    assert "статус системы -> статус системы" in result["response"]
+    assert "открой браузер" in result["response"]
+    assert "ожидает подтверждения" in result["response"]
+
+
+def test_voice_history_clear_and_count_commands():
+    processor = CommandProcessor(
+        one_shot_vosk_real_recognition=FakeRealRecognition([success_result()])
+    )
+    processor.process("распознай голос один раз")
+
+    count = processor.process("сколько голосовых команд")
+    clear = processor.process("очистить историю голосовых команд")
+    after_clear = processor.process("история голосовых команд")
+
+    assert count["intent"] == "voice.history.count"
+    assert count["response"] == "В этой сессии записано голосовых событий: 1."
+    assert clear["intent"] == "voice.history.cleared"
+    assert processor.voice_command_history.count() == 0
+    assert after_clear["response"] == "В этой сессии ещё нет голосовых распознаваний."
+
+
+def test_history_commands_do_not_bypass_pending_voice_safety():
+    processor = CommandProcessor(
+        one_shot_vosk_real_recognition=FakeRealRecognition(
+            [success_result("открой браузер")]
+        )
+    )
+    processor.process("распознай голос один раз")
+
+    history = processor.process("история голосовых команд")
+
+    assert history["intent"] == "voice.history.list"
+    assert processor.has_pending_voice_command() is True
+    assert processor.get_pending_voice_command() == "открой браузер"
+
+
+def test_voice_diagnostic_commands_bypass_pending_confirmation_without_executing_pending():
+    processor = CommandProcessor(
+        one_shot_vosk_real_recognition=FakeRealRecognition(
+            [success_result("открой браузер")]
+        )
+    )
+    processor.process("распознай голос один раз")
+
+    last = processor.process("последнее распознавание")
+    history = processor.process("история голосовых команд")
+    count = processor.process("сколько голосовых команд")
+    typo_last = processor.process("последнее распознование")
+    typo_history = processor.process("история распознования")
+
+    assert last["intent"] == "voice.history.last"
+    assert history["intent"] == "voice.history.list"
+    assert count["intent"] == "voice.history.count"
+    assert typo_last["intent"] == "voice.history.last"
+    assert typo_history["intent"] == "voice.history.list"
+    assert "Ожидаю подтверждение" not in last["response"]
+    assert "Ожидаю подтверждение" not in history["response"]
+    assert "Ожидаю подтверждение" not in count["response"]
+    assert processor.has_pending_voice_command() is True
+    assert processor.get_pending_voice_command() == "открой браузер"
+
+    cancelled = processor.process("нет")
+
+    assert cancelled["intent"] == "voice.pending_command.cancelled"
+    assert processor.has_pending_voice_command() is False
+
+
+def test_clear_voice_history_while_pending_keeps_pending_command():
+    processor = CommandProcessor(
+        one_shot_vosk_real_recognition=FakeRealRecognition(
+            [success_result("открой браузер")]
+        )
+    )
+    processor.process("распознай голос один раз")
+
+    cleared = processor.process("очистить историю голосовых команд")
+
+    assert cleared["intent"] == "voice.history.cleared"
+    assert processor.voice_command_history.count() == 0
+    assert processor.has_pending_voice_command() is True
+    assert processor.get_pending_voice_command() == "открой браузер"
+
+    cancelled = processor.process("нет")
+
+    assert cancelled["intent"] == "voice.pending_command.cancelled"
+    assert processor.has_pending_voice_command() is False

@@ -53,6 +53,10 @@ from voice.voice_command_allowlist import (
     SafeVoiceCommandAllowlist,
     VoiceAllowlistDecision,
 )
+from voice.voice_command_history import (
+    VoiceCommandHistoryEntry,
+    VoiceCommandSessionHistory,
+)
 
 __all__ = [
     "DEFAULT_CAPTURE_DURATION_SECONDS",
@@ -87,6 +91,8 @@ __all__ = [
     "VoskPackageStatus",
     "SafeVoiceCommandAllowlist",
     "VoiceAllowlistDecision",
+    "VoiceCommandHistoryEntry",
+    "VoiceCommandSessionHistory",
     "check_vosk_model_path_status",
     "check_vosk_package_status",
     "evaluate_vosk_local_recognition_gate",
