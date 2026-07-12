@@ -394,8 +394,9 @@ def test_formatter_returns_russian_success_message():
     formatted = OneShotVoskRealRecognition.format_result(result)
 
     assert "Распознавание завершено." in formatted
-    assert "Распознанный текст: статус системы" in formatted
-    assert "Команда не выполнялась автоматически." in formatted
+    assert "Я распознал: \"статус системы\"." in formatted
+    assert "Выполнить эту команду? Подтвердите: да / нет." in formatted
+    assert "Безопасность: команда не выполнена автоматически." in formatted
 
 
 def test_no_real_vosk_import_is_required_in_tests(monkeypatch):

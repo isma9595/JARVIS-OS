@@ -1,10 +1,10 @@
 # JARVIS-OS Checkpoint
 
 - Project: JARVIS-OS
-- Current stable stage: TASK-037 — First Real One-Shot Vosk Recognition
-- Last stable commit: f0d429b
-- Last stable commit message: Fix one-shot Vosk audio payload extraction
-- Next stage: TASK-037A — Audio Capture Dependency Readiness
+- Current stable stage: TASK-037A — Audio Capture Dependency Readiness
+- Last stable commit: f167f8f
+- Last stable commit message: Add audio capture dependency diagnostics
+- Next stage: TASK-038 — Voice Recognition Result Confirmation Flow
 - Status: in progress
 
 ## Approved Workflow

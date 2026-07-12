@@ -216,6 +216,31 @@ class CommandProcessor:
         "тест реального vosk",
         "тест реального распознавания",
     }
+    PENDING_VOICE_COMMAND_STATUS_COMMANDS = {
+        "ожидающая голосовая команда",
+        "pending voice command",
+        "какая голосовая команда ожидает подтверждения",
+    }
+    PENDING_VOICE_COMMAND_CLEAR_COMMANDS = {
+        "отменить голосовую команду",
+        "сбросить голосовую команду",
+    }
+    PENDING_VOICE_COMMAND_POSITIVE_CONFIRMATIONS = {
+        "да",
+        "подтверждаю",
+        "выполнить",
+        "выполни",
+        "ок",
+        "ага",
+        "yes",
+    }
+    PENDING_VOICE_COMMAND_NEGATIVE_CONFIRMATIONS = {
+        "нет",
+        "отмена",
+        "отмени",
+        "не надо",
+        "no",
+    }
     AUDIO_DEPENDENCY_READINESS_COMMANDS = {
         "проверка аудио зависимостей",
         "проверить аудио зависимости",
@@ -541,6 +566,7 @@ class CommandProcessor:
         self.one_shot_vosk_recognition_bridge = one_shot_vosk_recognition_bridge
         self.one_shot_vosk_real_recognition = one_shot_vosk_real_recognition
         self.audio_dependency_readiness_checker = audio_dependency_readiness_checker
+        self._pending_voice_command = None
         if microphone_listening_mode_manager is None:
             from voice.microphone_listening_modes import (
                 MicrophoneListeningModeManager,
@@ -629,6 +655,22 @@ class CommandProcessor:
                 "speech.backend.vosk.one_shot_real_recognition",
                 self._one_shot_vosk_real_recognition_response(recognition_result),
             )
+
+        if command in self.PENDING_VOICE_COMMAND_STATUS_COMMANDS:
+            return self._result(
+                "voice.pending_command.status",
+                self._pending_voice_command_status_response(),
+            )
+
+        if command in self.PENDING_VOICE_COMMAND_CLEAR_COMMANDS and self.has_pending_voice_command():
+            self.clear_pending_voice_command()
+            return self._result(
+                "voice.pending_command.cleared",
+                "Ожидающая голосовая команда очищена.",
+            )
+
+        if self.has_pending_voice_command():
+            return self._process_pending_voice_command_confirmation(command)
 
         if command in self.VOSK_BACKEND_STATUS_COMMANDS:
             status = (
@@ -1242,11 +1284,70 @@ class CommandProcessor:
         )
         return "\n".join(lines)
 
-    @staticmethod
-    def _one_shot_vosk_real_recognition_response(recognition_result):
+    def _one_shot_vosk_real_recognition_response(self, recognition_result):
         from voice.one_shot_vosk_real_recognition import OneShotVoskRealRecognition
 
+        self.clear_pending_voice_command()
+        recognized_text = str(recognition_result.recognized_text or "").strip()
+        if (
+            recognition_result.allowed
+            and recognition_result.completed
+            and not recognition_result.blocked
+            and recognized_text
+        ):
+            self.set_pending_voice_command(recognized_text)
+
         return OneShotVoskRealRecognition.format_result(recognition_result)
+
+    def has_pending_voice_command(self):
+        return self._pending_voice_command is not None
+
+    def get_pending_voice_command(self):
+        return self._pending_voice_command
+
+    def set_pending_voice_command(self, recognized_text):
+        normalized = str(recognized_text or "").strip()
+        self._pending_voice_command = normalized or None
+
+    def clear_pending_voice_command(self):
+        self._pending_voice_command = None
+
+    def _process_pending_voice_command_confirmation(self, command):
+        pending_command = self.get_pending_voice_command()
+        if command in self.PENDING_VOICE_COMMAND_POSITIVE_CONFIRMATIONS:
+            self.clear_pending_voice_command()
+            result = self.process(pending_command)
+            result = dict(result)
+            result["response"] = (
+                "Подтверждение получено. Выполняю распознанную команду: "
+                f"{pending_command}\n{result['response']}"
+            )
+            result["confirmed_voice_command"] = pending_command
+            return result
+
+        if command in self.PENDING_VOICE_COMMAND_NEGATIVE_CONFIRMATIONS:
+            self.clear_pending_voice_command()
+            return self._result(
+                "voice.pending_command.cancelled",
+                "Хорошо, распознанная голосовая команда отменена.",
+            )
+
+        return self._result(
+            "voice.pending_command.awaiting_confirmation",
+            (
+                "Ожидаю подтверждение для распознанной команды: "
+                f"{pending_command}. Ответьте: да / нет."
+            ),
+        )
+
+    def _pending_voice_command_status_response(self):
+        if not self.has_pending_voice_command():
+            return "Нет голосовой команды, ожидающей подтверждения."
+
+        return (
+            "Ожидает подтверждения голосовая команда: "
+            f"{self.get_pending_voice_command()}. Ответьте: да / нет."
+        )
 
     @staticmethod
     def _vosk_model_readiness_response(readiness):
@@ -1645,8 +1746,10 @@ class CommandProcessor:
             "режимы микрофона; настройка, статус и путь модели Vosk; пробный запуск Vosk на тестовых данных; "
             "реальное one-shot распознавание Vosk по явной команде; симуляция голосовой команды. "
             "Реальный захват микрофона автоматически не включается. "
-            "Распознанный текст пока не выполняется автоматически, постоянное прослушивание не связано "
-            "с реальным распознаванием, выполнение команд голосом будет подключено позже. "
+            "Реальное one-shot распознавание просит подтверждение да / нет перед выполнением распознанной команды; "
+            "ожидающую голосовую команду можно проверить или отменить. "
+            "Распознанный текст не выполняется автоматически, постоянное прослушивание не связано "
+            "с реальным распознаванием. "
             "Зрение экрана и автоматизация запланированы позже. "
             "Для выхода напишите: выход."
         )

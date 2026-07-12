@@ -230,8 +230,9 @@ class OneShotVoskRealRecognition:
         if result.recognized_text:
             lines = [
                 "Распознавание завершено.",
-                f"Распознанный текст: {result.recognized_text}",
-                "Команда не выполнялась автоматически.",
+                f"Я распознал: \"{result.recognized_text}\".",
+                "Выполнить эту команду? Подтвердите: да / нет.",
+                "Безопасность: команда не выполнена автоматически.",
                 f"Безопасность: {safety}",
             ]
             return "\n".join(lines)

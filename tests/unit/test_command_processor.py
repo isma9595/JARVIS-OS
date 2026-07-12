@@ -354,8 +354,10 @@ def test_one_shot_vosk_real_recognition_command_aliases_return_safe_response():
 
         assert result["intent"] == "speech.backend.vosk.one_shot_real_recognition"
         assert "Распознавание завершено." in result["response"]
-        assert "Распознанный текст: статус системы" in result["response"]
-        assert "Команда не выполнялась автоматически." in result["response"]
+        assert "Я распознал: \"статус системы\"." in result["response"]
+        assert "Выполнить эту команду? Подтвердите: да / нет." in result["response"]
+        assert "Безопасность: команда не выполнена автоматически." in result["response"]
+        assert processor.get_pending_voice_command() == "статус системы"
         assert "Постоянное прослушивание не использовалось." in result["response"]
         assert "Аудио не отправлялось в облако." in result["response"]
 
@@ -742,10 +744,11 @@ def test_help_command():
     assert "режимы микрофона" in result["response"]
     assert "Vosk" in result["response"]
     assert "реальное one-shot распознавание Vosk по явной команде" in result["response"]
-    assert "Распознанный текст пока не выполняется автоматически" in result["response"]
+    assert "просит подтверждение да / нет" in result["response"]
+    assert "ожидающую голосовую команду можно проверить или отменить" in result["response"]
+    assert "Распознанный текст не выполняется автоматически" in result["response"]
     assert "постоянное прослушивание не связано" in result["response"]
     assert "Реальный захват микрофона автоматически не включается" in result["response"]
-    assert "выполнение команд голосом будет подключено позже" in result["response"]
     assert "будут добавлены позже" not in result["response"]
 
 
