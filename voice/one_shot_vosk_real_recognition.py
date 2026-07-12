@@ -284,9 +284,24 @@ class OneShotVoskRealRecognition:
     @staticmethod
     def _extract_audio_payload(capture_result):
         if isinstance(capture_result, dict):
-            if not capture_result.get("audio_captured", True):
+            if capture_result.get("audio_captured", True) is False:
                 return None
-            return capture_result.get("audio") or capture_result.get("audio_payload")
+            if "audio" in capture_result and capture_result["audio"] is not None:
+                return capture_result["audio"]
+            if (
+                "audio_payload" in capture_result
+                and capture_result["audio_payload"] is not None
+            ):
+                return capture_result["audio_payload"]
+            return None
+        if getattr(capture_result, "audio_captured", True) is False:
+            return None
+        audio = getattr(capture_result, "audio", None)
+        if audio is not None:
+            return audio
+        audio_payload = getattr(capture_result, "audio_payload", None)
+        if audio_payload is not None:
+            return audio_payload
         return capture_result
 
     def _blocked_result(

@@ -88,6 +88,14 @@ def fake_runtime_factory():
     return FakeRuntime
 
 
+class BoolRaisingAudio:
+    def __bool__(self):
+        raise ValueError("ambiguous truth value")
+
+    def __bytes__(self):
+        return b"fake-array-audio"
+
+
 def create_service(**overrides):
     defaults = {
         "settings_manager": FakeSettings("C:/fake/vosk-model"),
@@ -188,6 +196,65 @@ def test_completes_with_fake_capture_provider_and_fake_recognizer():
     result = service.run_once(explicit_one_shot_requested=True)
 
     assert result.allowed is True
+    assert result.completed is True
+    assert result.blocked is False
+    assert capture.calls == 1
+
+
+def test_extract_audio_payload_prefers_audio_without_truthiness_check():
+    audio = BoolRaisingAudio()
+    fallback = b"fallback-audio"
+
+    payload = OneShotVoskRealRecognition._extract_audio_payload(
+        {
+            "audio_captured": True,
+            "audio": audio,
+            "audio_payload": fallback,
+        }
+    )
+
+    assert payload is audio
+
+
+def test_extract_audio_payload_uses_audio_payload_when_audio_is_none():
+    fallback = BoolRaisingAudio()
+
+    payload = OneShotVoskRealRecognition._extract_audio_payload(
+        {
+            "audio_captured": True,
+            "audio": None,
+            "audio_payload": fallback,
+        }
+    )
+
+    assert payload is fallback
+
+
+def test_extract_audio_payload_returns_none_when_payload_is_missing():
+    payload = OneShotVoskRealRecognition._extract_audio_payload(
+        {
+            "audio_captured": True,
+            "duration_seconds": 2.0,
+        }
+    )
+
+    assert payload is None
+
+
+def test_run_once_handles_array_like_audio_without_truthiness_check():
+    audio = BoolRaisingAudio()
+    capture = FakeCapture(
+        result={
+            "audio_captured": True,
+            "audio": audio,
+            "duration_seconds": 2.0,
+            "stored_on_disk": False,
+        }
+    )
+    service = create_service(capture_provider=capture)
+
+    result = service.run_once(explicit_one_shot_requested=True)
+
     assert result.completed is True
     assert result.blocked is False
     assert capture.calls == 1
