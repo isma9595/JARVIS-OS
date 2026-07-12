@@ -12,6 +12,28 @@ from voice import (
 )
 
 
+class InMemoryVoskSettingsManager:
+    def __init__(self):
+        self._settings = {}
+
+    def load_settings(self):
+        return dict(self._settings)
+
+    def set_model_path(self, model_path):
+        self._settings["model_path"] = model_path
+        self._settings.setdefault("language", "ru")
+        return dict(self._settings)
+
+    def clear_model_path(self):
+        self._settings["model_path"] = None
+        self._settings.setdefault("language", "ru")
+        return dict(self._settings)
+
+    def set_language(self, language):
+        self._settings["language"] = language
+        return dict(self._settings)
+
+
 def test_speech_backend_commands():
     processor = CommandProcessor()
 
@@ -1064,9 +1086,10 @@ def test_memory_delete_command_forget_all_does_not_delete():
 
 def create_voice_enabled_processor(tmp_path=None):
     processor = CommandProcessor(sample_profile())
-    settings_manager = None
     if tmp_path is not None:
         settings_manager = VoskSettingsManager(tmp_path / "vosk_settings.json")
+    else:
+        settings_manager = InMemoryVoskSettingsManager()
     manager = VoiceInputManager(
         command_processor=processor,
         dialogue_manager=processor.dialogue_manager,
@@ -1709,7 +1732,7 @@ def test_vosk_installation_information_commands():
 
 
 def test_vosk_model_readiness_commands_return_safe_diagnostics():
-    processor = CommandProcessor()
+    processor, _manager = create_voice_enabled_processor()
 
     for command in (
         "проверить модель vosk",
