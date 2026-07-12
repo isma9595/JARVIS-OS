@@ -688,6 +688,14 @@ class CommandProcessor:
                 "Ожидающая голосовая команда очищена.",
             )
 
+        if command in self.EXIT_COMMANDS:
+            self.clear_pending_voice_command()
+            return self._result(
+                "system.exit",
+                self.dialogue_manager.exit_response(),
+                should_exit=True,
+            )
+
         if self.has_pending_voice_command():
             return self._process_pending_voice_command_confirmation(command)
 
@@ -1087,13 +1095,6 @@ class CommandProcessor:
             return self._result(
                 "assistant.help",
                 self._help_response(),
-            )
-
-        if command in self.EXIT_COMMANDS:
-            return self._result(
-                "system.exit",
-                self.dialogue_manager.exit_response(),
-                should_exit=True,
             )
 
         if command in self.MEMORY_DELETE_COMMANDS:

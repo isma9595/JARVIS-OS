@@ -1,6 +1,7 @@
 """Safe read-only allowlist for one-shot voice command auto-execution."""
 
 from dataclasses import dataclass
+import re
 
 
 @dataclass(frozen=True)
@@ -24,18 +25,29 @@ class SafeVoiceCommandAllowlist:
     _ALIASES_BY_CANONICAL = {
         "статус системы": {
             "статус",
+            "статус систем",
+            "статус система",
+            "статусе систем",
+            "статусе системы",
             "статус системы",
+            "статую система",
+            "статуя система",
+            "статуя системы",
             "как система",
             "состояние системы",
         },
         "помощь": {
             "помощь",
+            "помоги",
+            "справка",
             "help",
             "команды",
             "что ты умеешь",
             "покажи возможности",
         },
         "статус vosk": {
+            "статус воск",
+            "статус воска",
             "статус vosk",
             "проверить vosk",
             "готов ли vosk",
@@ -50,10 +62,9 @@ class SafeVoiceCommandAllowlist:
             "проверка модели vosk",
         },
         "проверка аудио зависимостей": {
+            "проверка аудио зависимости",
             "проверка аудио зависимостей",
             "проверить аудио зависимости",
-        },
-        "проверить зависимости микрофона": {
             "проверить зависимости микрофона",
         },
         "диагностика микрофона": {
@@ -74,6 +85,8 @@ class SafeVoiceCommandAllowlist:
         },
         "как тебя зовут": {
             "как тебя зовут",
+            "как твое имя",
+            "как твоё имя",
             "как зовут ассистента",
             "кто ты",
             "твое имя",
@@ -118,6 +131,7 @@ class SafeVoiceCommandAllowlist:
         "браузер",
         "включи постоянное прослушивание",
         "выполни",
+        "добавь",
         "запомни",
         "запусти",
         "измени",
@@ -125,6 +139,7 @@ class SafeVoiceCommandAllowlist:
         "очисти",
         "открой",
         "отправь",
+        "cmd",
         "powershell",
         "скачай",
         "удали",
@@ -135,14 +150,18 @@ class SafeVoiceCommandAllowlist:
 
     def __init__(self):
         self._canonical_by_alias = {}
+        self._normalized_canonicals = set()
         for canonical, aliases in self._ALIASES_BY_CANONICAL.items():
-            self._canonical_by_alias[self.normalize(canonical)] = canonical
+            normalized_canonical = self.normalize(canonical)
+            self._normalized_canonicals.add(normalized_canonical)
+            self._canonical_by_alias[normalized_canonical] = canonical
             for alias in aliases:
                 self._canonical_by_alias[self.normalize(alias)] = canonical
 
     @classmethod
     def normalize(cls, text):
         normalized = str(text or "").strip().lower().replace("ё", "е")
+        normalized = re.sub(r"[^\w\s]+", " ", normalized, flags=re.UNICODE)
         return " ".join(normalized.split())
 
     def decide(self, text):
@@ -173,22 +192,44 @@ class SafeVoiceCommandAllowlist:
             allowed=True,
             normalized_text=normalized,
             canonical_command=canonical,
-            reason="known_read_only_command",
+            reason=(
+                "allowlist_match"
+                if normalized in self._normalized_canonicals
+                else "explicit_safe_alias"
+            ),
             safety_notes=list(self.READ_ONLY_SAFETY_NOTES),
         )
 
     def read_only_commands(self):
         return tuple(self._ALIASES_BY_CANONICAL.keys())
 
+    def read_only_aliases(self, canonical_command):
+        aliases = self._ALIASES_BY_CANONICAL.get(canonical_command, set())
+        normalized_canonical = self.normalize(canonical_command)
+        return tuple(
+            sorted(
+                alias
+                for alias in aliases
+                if self.normalize(alias) != normalized_canonical
+            )
+        )
+
     def format_read_only_commands(self):
         lines = [
             "Безопасные голосовые команды без подтверждения:",
             "Read-only:",
         ]
-        lines.extend(f"- {command}" for command in self.read_only_commands())
+        for command in self.read_only_commands():
+            lines.append(f"- {command}")
+            aliases = self.read_only_aliases(command)
+            if aliases:
+                lines.append(f"  Алиасы: {', '.join(aliases)}")
         lines.extend(
             [
+                "Safe aliases: только явные варианты для read-only команд из списка.",
+                "Широкое угадывание и fuzzy matching для рискованных команд не используются.",
                 "Все остальные голосовые команды требуют подтверждения.",
+                "Все неизвестные и рискованные голосовые команды всё ещё требуют подтверждения.",
                 "Рискованные действия не обходят безопасность и всё равно проходят CommandProcessor и ActionRouter.",
             ]
         )
