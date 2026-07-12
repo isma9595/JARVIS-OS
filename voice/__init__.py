@@ -35,6 +35,10 @@ from voice.vosk_local_recognition_dry_run import (
     VoskLocalRecognitionDryRun,
     VoskLocalRecognitionDryRunResult,
 )
+from voice.vosk_model_readiness_verifier import (
+    VoskModelReadinessResult,
+    VoskModelReadinessVerifier,
+)
 
 __all__ = [
     "DEFAULT_CAPTURE_DURATION_SECONDS",
@@ -57,6 +61,8 @@ __all__ = [
     "VoskLocalRecognitionGateResult",
     "VoskLocalRecognitionDryRun",
     "VoskLocalRecognitionDryRunResult",
+    "VoskModelReadinessResult",
+    "VoskModelReadinessVerifier",
     "VoskModelPathStatus",
     "VoskPackageStatus",
     "check_vosk_model_path_status",

@@ -1706,3 +1706,44 @@ def test_vosk_installation_information_commands():
     plan = processor.process("безопасно подключить vosk")
     assert plan["intent"] == "speech.backend.vosk.enablement.plan"
     assert "только план" in plan["response"]
+
+
+def test_vosk_model_readiness_commands_return_safe_diagnostics():
+    processor = CommandProcessor()
+
+    for command in (
+        "проверить модель vosk",
+        "готовность модели vosk",
+        "диагностика модели vosk",
+        "модель vosk статус",
+        "проверка модели vosk",
+        "проверить установленную модель vosk",
+    ):
+        result = processor.process(command)
+
+        assert result["intent"] == "speech.backend.vosk.model.status"
+        assert "Путь к модели Vosk пока не указан." in result["response"]
+        assert "модель не загружалась" in result["response"]
+        assert "микрофон не запускался" in result["response"]
+        assert "распознавание не выполнялось" in result["response"]
+
+
+def test_vosk_model_installation_guidance_commands_are_manual_only():
+    processor = CommandProcessor()
+
+    for command in (
+        "как установить модель vosk",
+        "инструкция установки модели vosk",
+        "куда положить модель vosk",
+    ):
+        result = processor.process(command)
+
+        assert result["intent"] == "speech.backend.vosk.model.installation.guide"
+        assert "Модель Vosk нужно скачать и распаковать вручную." in result["response"]
+        assert r"C:\JARVIS-OS\models\<model-folder>" in result["response"]
+        assert "установи путь модели vosk" in result["response"]
+        assert "проверить модель vosk" in result["response"]
+        assert "ничего не скачивает автоматически" in result["response"]
+        assert "ничего не устанавливает автоматически" in result["response"]
+        assert "модель не загружает" in result["response"]
+        assert "микрофон не запускает" in result["response"]

@@ -243,6 +243,11 @@ class CommandProcessor:
         "модель vosk",
         "статус модели vosk",
         "проверить модель vosk",
+        "готовность модели vosk",
+        "диагностика модели vosk",
+        "модель vosk статус",
+        "проверка модели vosk",
+        "проверить установленную модель vosk",
         "модель воск",
         "статус модели воск",
     }
@@ -293,6 +298,11 @@ class CommandProcessor:
         "инструкция по установке vosk",
         "настройка распознавания",
         "vosk installation guide",
+    }
+    VOSK_MODEL_INSTALLATION_GUIDE_COMMANDS = {
+        "как установить модель vosk",
+        "инструкция установки модели vosk",
+        "куда положить модель vosk",
     }
     VOSK_PYTHON_COMPATIBILITY_COMMANDS = {
         "совместимость vosk",
@@ -664,6 +674,12 @@ class CommandProcessor:
                 ),
             )
 
+        if command in self.VOSK_MODEL_INSTALLATION_GUIDE_COMMANDS:
+            return self._result(
+                "speech.backend.vosk.model.installation.guide",
+                self._vosk_model_installation_guidance_response(),
+            )
+
         if command in self.VOSK_PYTHON_COMPATIBILITY_COMMANDS:
             guide = self._get_vosk_installation_guide()
             return self._result(
@@ -718,10 +734,10 @@ class CommandProcessor:
             )
 
         if command in self.VOSK_MODEL_STATUS_COMMANDS:
-            status = self._get_vosk_model_status()
+            readiness = self._get_vosk_model_readiness()
             return self._result(
                 "speech.backend.vosk.model.status",
-                self.dialogue_manager.vosk_model_status_response(status),
+                self._vosk_model_readiness_response(readiness),
             )
 
         if command in self.VOSK_MODEL_PATH_STATUS_COMMANDS:
@@ -1038,6 +1054,12 @@ class CommandProcessor:
             return VoskLocalBackend().get_status()
         return self.voice_input_manager.get_vosk_backend_status()
 
+    def _get_vosk_model_readiness(self):
+        from voice.vosk_model_readiness_verifier import VoskModelReadinessVerifier
+
+        status = self._get_vosk_model_status()
+        return VoskModelReadinessVerifier().verify(status.get("model_path"))
+
     def _get_vosk_recognition_gate_result(self):
         from voice.vosk_local_recognition_gate import (
             evaluate_vosk_local_recognition_gate,
@@ -1148,6 +1170,18 @@ class CommandProcessor:
             "Это только проверка bridge/coordinator: реальное распознавание и выполнение команд будут подключаться отдельной задачей."
         )
         return "\n".join(lines)
+
+    @staticmethod
+    def _vosk_model_readiness_response(readiness):
+        from voice.vosk_model_readiness_verifier import VoskModelReadinessVerifier
+
+        return VoskModelReadinessVerifier.format_russian(readiness)
+
+    @staticmethod
+    def _vosk_model_installation_guidance_response():
+        from voice.vosk_model_readiness_verifier import VoskModelReadinessVerifier
+
+        return VoskModelReadinessVerifier.INSTALLATION_GUIDANCE
 
     @staticmethod
     def _vosk_model_path_status_response(status):

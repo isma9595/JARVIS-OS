@@ -1,11 +1,11 @@
 # JARVIS-OS Checkpoint
 
 - Project: JARVIS-OS
-- Current stable stage: TASK-033 — Assistant Name Configuration Commands
-- Last stable commit: 6358b76
-- Last stable commit message: Add assistant name configuration commands
-- Next stage: TASK-034 — One-Shot Capture to Vosk Recognition Bridge
-- Status for TASK-034: in progress
+- Current stable stage: TASK-034 — One-Shot Capture to Vosk Recognition Bridge
+- Last stable commit: 6d707f7
+- Last stable commit message: Add one-shot Vosk recognition bridge
+- Next stage: TASK-035 — Vosk Model Installation & Readiness Verification
+- Status for TASK-035: in progress
 
 ## Approved Workflow
 
@@ -21,6 +21,6 @@ ChatGPT plans -> User approves -> Codex executes -> User verifies -> Commit only
 
 ## Notes
 
-TASK-034 adds only a safe bridge/coordinator for future one-shot Vosk recognition. It must not enable real microphone capture, continuous listening, real Vosk recognition, command execution from recognized text, downloads, installs, or cloud audio.
+TASK-035 adds safe manual Vosk model installation guidance and readiness verification only. It must not enable real recognition, microphone capture, model loading, downloads, installs, cloud audio, continuous listening, or command execution from recognized text.
 
 JARVIS remains Russian-first for user-facing functionality, with future multilingual switching planned.
