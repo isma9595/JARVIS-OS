@@ -3,7 +3,13 @@ from voice.speech_recognition_backend import (
     NoSpeechRecognitionBackend,
     SpeechRecognitionBackend,
 )
+from voice.speech_synthesis_backend import (
+    DryRunSpeechSynthesisBackend,
+    SpeechSynthesisBackend,
+    SpeechSynthesisResult,
+)
 from voice.voice_input_manager import VoiceInputManager
+from voice.voice_output_manager import VoiceOutputManager
 from voice.audio_dependency_readiness import (
     AudioDependencyReadinessChecker,
     AudioDependencyReadinessResult,
@@ -80,8 +86,12 @@ __all__ = [
     "OneShotVoskRealRecognitionResult",
     "PcmOneShotCaptureProvider",
     "SpeechRecognitionBackend",
+    "SpeechSynthesisBackend",
+    "SpeechSynthesisResult",
     "SoundDeviceOneShotCaptureAdapter",
     "VoiceInputManager",
+    "VoiceOutputManager",
+    "DryRunSpeechSynthesisBackend",
     "VoskLocalBackend",
     "VoskInstallationGuide",
     "VoskRuntimeLoader",

@@ -139,6 +139,109 @@ def test_audio_dependency_status_alias_commands_return_safe_responses():
         assert "JARVIS ничего не устанавливает автоматически" in result["response"]
 
 
+def test_voice_output_status_command():
+    processor = CommandProcessor()
+
+    result = processor.process("статус голосового ответа")
+
+    assert result["intent"] == "voice.output.status"
+    assert "Голосовой ответ отключён." in result["response"]
+    assert "Режим: OFF." in result["response"]
+    assert "облачный TTS не используется" in result["response"]
+    assert "аудиофайлы не сохраняются" in result["response"]
+
+
+def test_voice_output_enable_dry_run_command():
+    processor = CommandProcessor()
+
+    result = processor.process("включить тестовый голос")
+
+    assert result["intent"] == "voice.output.dry_run.enabled"
+    assert "Тестовый голосовой режим включён." in result["response"]
+    assert "Режим: DRY_RUN." in result["response"]
+    assert processor.voice_output_manager.mode == "DRY_RUN"
+
+
+def test_voice_output_disable_command():
+    processor = CommandProcessor()
+    processor.process("включить тестовый голос")
+
+    result = processor.process("выключить голос")
+
+    assert result["intent"] == "voice.output.disabled"
+    assert result["response"] == "Голосовой ответ отключён."
+    assert processor.voice_output_manager.mode == "OFF"
+
+
+def test_voice_output_say_command_while_off():
+    processor = CommandProcessor()
+
+    result = processor.process("скажи: тест")
+
+    assert result["intent"] == "voice.output.disabled"
+    assert result["response"] == (
+        "Голосовой ответ отключён. Включите тестовый режим командой: "
+        "включить тестовый голос."
+    )
+
+
+def test_voice_output_say_command_while_dry_run():
+    processor = CommandProcessor()
+    processor.process("включить тестовый голос")
+
+    result = processor.process("скажи: тест")
+
+    assert result["intent"] == "voice.output.spoken"
+    assert "Тестовая озвучка:" in result["response"]
+    assert "[TTS dry-run] тест" in result["response"]
+    assert "реальный звук не воспроизводился" in result["response"]
+    assert "облако не использовалось" in result["response"]
+    assert "аудиофайл не сохранялся" in result["response"]
+
+
+def test_voice_output_say_aliases_while_dry_run():
+    processor = CommandProcessor()
+    processor.process("включить тестовый голос")
+
+    for command in ("произнеси: тест", "озвучь: тест"):
+        result = processor.process(command)
+
+        assert result["intent"] == "voice.output.spoken"
+        assert "[TTS dry-run] тест" in result["response"]
+
+
+def test_voice_output_test_voice_command():
+    processor = CommandProcessor()
+    processor.process("включить тестовый голос")
+
+    result = processor.process("тест голоса")
+
+    assert result["intent"] == "voice.output.test"
+    assert "[TTS dry-run] Исмаил, голосовой ответ JARVIS готов к тестированию." in result["response"]
+
+
+def test_voice_output_empty_say_command():
+    processor = CommandProcessor()
+
+    result = processor.process("скажи:")
+
+    assert result["intent"] == "voice.output.empty"
+    assert result["response"] == "Укажите текст для озвучки."
+
+
+def test_help_mentions_voice_output_commands():
+    processor = CommandProcessor()
+
+    result = processor.process("помощь")
+
+    assert result["intent"] == "assistant.help"
+    assert "статус голосового ответа" in result["response"]
+    assert "включить тестовый голос" in result["response"]
+    assert "выключить голос" in result["response"]
+    assert "скажи: <текст>" in result["response"]
+    assert "тест голоса" in result["response"]
+
+
 def test_vosk_real_commands_and_selection_flow():
     processor, manager = create_voice_enabled_processor()
     original_use_vosk_backend = manager.use_vosk_backend
@@ -1009,8 +1112,9 @@ def test_voice_status_command():
 def test_voice_status_alias_command():
     result = CommandProcessor(sample_profile()).process("статус голоса")
 
-    assert result["intent"] == "voice.status"
+    assert result["intent"] == "voice.output.status"
     assert result["should_exit"] is False
+    assert "Голосовой ответ отключён." in result["response"]
 
 
 def test_voice_enable_command():

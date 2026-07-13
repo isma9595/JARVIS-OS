@@ -88,6 +88,34 @@ class CommandProcessor:
         "отключи голос",
         "отключить голосовой ввод",
     }
+    VOICE_OUTPUT_STATUS_COMMANDS = {
+        "статус голосового ответа",
+        "статус голоса",
+        "голосовой ответ статус",
+    }
+    VOICE_OUTPUT_DRY_RUN_ENABLE_COMMANDS = {
+        "включить тестовый голос",
+        "включи тестовый голос",
+        "режим голоса dry run",
+        "режим голоса тест",
+    }
+    VOICE_OUTPUT_DISABLE_COMMANDS = {
+        "выключить голос",
+        "выключи голос",
+        "отключить голосовой ответ",
+    }
+    VOICE_OUTPUT_SAY_PREFIXES = (
+        "скажи:",
+        "произнеси:",
+        "озвучь:",
+    )
+    VOICE_OUTPUT_TEST_COMMANDS = {
+        "тест голоса",
+        "проверка голоса",
+    }
+    VOICE_OUTPUT_CAPABILITIES_COMMANDS = {
+        "что ты можешь сказать голосом",
+    }
     MICROPHONE_STATUS_COMMANDS = {
         "статус микрофона",
         "режим микрофона",
@@ -605,6 +633,7 @@ class CommandProcessor:
         safe_voice_command_allowlist=None,
         voice_command_history=None,
         voice_recognition_correction_manager=None,
+        voice_output_manager=None,
     ):
         self.user_profile = user_profile or {}
         self.dialogue_manager = dialogue_manager or DialogueManager(self.user_profile)
@@ -619,6 +648,11 @@ class CommandProcessor:
             dialogue_manager=self.dialogue_manager,
         )
         self.voice_input_manager = None
+        if voice_output_manager is None:
+            from voice.voice_output_manager import VoiceOutputManager
+
+            voice_output_manager = VoiceOutputManager()
+        self.voice_output_manager = voice_output_manager
         self.vosk_runtime_loader = vosk_runtime_loader
         self.vosk_recognition_dry_run = vosk_recognition_dry_run
         self.one_shot_vosk_recognition_bridge = one_shot_vosk_recognition_bridge
@@ -652,6 +686,9 @@ class CommandProcessor:
 
     def set_voice_input_manager(self, voice_input_manager):
         self.voice_input_manager = voice_input_manager
+
+    def set_voice_output_manager(self, voice_output_manager):
+        self.voice_output_manager = voice_output_manager
 
     def process(self, command_text):
         command = self._normalize(command_text)
@@ -713,6 +750,33 @@ class CommandProcessor:
         if typed_simulation_text is not None:
             return self._process_typed_voice_recognition_simulation(
                 typed_simulation_text
+            )
+
+        voice_output_text = self._extract_voice_output_text(command_text, command)
+        if voice_output_text is not None:
+            return self._voice_output_speak_result(voice_output_text)
+
+        if command in self.VOICE_OUTPUT_STATUS_COMMANDS:
+            return self._result(
+                "voice.output.status",
+                self.voice_output_manager.status_message(),
+            )
+
+        if command in self.VOICE_OUTPUT_DRY_RUN_ENABLE_COMMANDS:
+            result = self.voice_output_manager.enable_dry_run()
+            return self._result("voice.output.dry_run.enabled", result["message"])
+
+        if command in self.VOICE_OUTPUT_DISABLE_COMMANDS:
+            result = self.voice_output_manager.disable()
+            return self._result("voice.output.disabled", result["message"])
+
+        if command in self.VOICE_OUTPUT_TEST_COMMANDS:
+            return self._voice_output_test_result()
+
+        if command in self.VOICE_OUTPUT_CAPABILITIES_COMMANDS:
+            return self._result(
+                "voice.output.capabilities",
+                self.voice_output_manager.capabilities_message(),
             )
 
         if command in self.VOSK_RECOGNITION_DRY_RUN_COMMANDS:
@@ -2137,6 +2201,30 @@ class CommandProcessor:
                 return original[len(marker) :].strip()
         return None
 
+    def _extract_voice_output_text(self, command_text, normalized_command):
+        for prefix in self.VOICE_OUTPUT_SAY_PREFIXES:
+            if normalized_command == prefix:
+                return ""
+            if normalized_command.startswith(prefix):
+                original = str(command_text or "").strip()
+                return original[len(prefix) :].strip()
+        return None
+
+    def _voice_output_speak_result(self, text):
+        speak_result = self.voice_output_manager.speak(text, source="command")
+        return self._result(speak_result["intent"], speak_result["message"])
+
+    def _voice_output_test_result(self):
+        if not self.voice_output_manager.is_enabled():
+            speak_result = self.voice_output_manager.speak(
+                "Исмаил, голосовой ответ JARVIS готов к тестированию.",
+                source="test",
+            )
+            return self._result(speak_result["intent"], speak_result["message"])
+
+        speak_result = self.voice_output_manager.test_voice()
+        return self._result("voice.output.test", speak_result["message"])
+
     def _process_voice_simulation(self, command):
         recognized_text = self._extract_prefixed_text(
             command,
@@ -2351,6 +2439,8 @@ class CommandProcessor:
             "реальное one-shot распознавание Vosk по явной команде; симуляция голосовой команды. "
             "Для проверки голосового pipeline без микрофона используйте: симулируй распознавание: <текст>. "
             "Реальный захват микрофона автоматически не включается. "
+            "Голосовой ответ доступен явно и безопасно: статус голосового ответа; включить тестовый голос; выключить голос; скажи: <текст>; тест голоса. "
+            "В тестовом режиме звук не воспроизводится, облако не используется, аудиофайлы не сохраняются. "
             "Некоторые заранее известные read-only голосовые команды могут выполняться без подтверждения; список: безопасные голосовые команды. "
             "Неизвестные и рискованные голосовые команды всё ещё требуют подтверждения да / нет; "
             "ожидающую голосовую команду можно проверить или отменить. "
