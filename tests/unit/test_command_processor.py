@@ -1358,7 +1358,7 @@ def test_voice_history_commands_return_empty_responses():
         result = processor.process(command)
 
         assert result["intent"] == "voice.history.last"
-        assert result["response"] == "В этой сессии ещё нет голосовых распознаваний."
+        assert result["response"] == "В этой сессии ещё нет распознанной голосовой команды."
 
     history = processor.process("история голосовых команд")
     assert history["intent"] == "voice.history.list"
@@ -2514,6 +2514,216 @@ def test_voice_confirmation_command_without_pending():
     result = processor.process("подтвердить голосовую команду")
 
     assert result["intent"] == "voice.confirmation.none"
+
+
+def test_what_jarvis_said_returns_no_last_response_when_empty():
+    processor = CommandProcessor()
+
+    result = processor.process("что ты сказал")
+
+    assert result["intent"] == "assistant.last_response.empty"
+    assert "ещё нет ответа JARVIS" in result["response"]
+
+
+def test_what_jarvis_said_shows_last_meaningful_response():
+    processor = CommandProcessor()
+    processor.process("статус системы")
+
+    result = processor.process("что ты сказал")
+
+    assert result["intent"] == "assistant.last_response"
+    assert "Последний ответ JARVIS:" in result["response"]
+    assert "Активных сервисов" in result["response"]
+
+
+def test_repeat_while_voice_output_off_returns_text_and_disabled_message():
+    processor = CommandProcessor()
+    processor.process("статус системы")
+
+    result = processor.process("повтори")
+
+    assert result["intent"] == "assistant.speak_last_response.disabled"
+    assert "Последний ответ JARVIS:" in result["response"]
+    assert "Активных сервисов" in result["response"]
+    assert "Голосовой ответ отключён" in result["response"]
+
+
+def test_repeat_dry_run_speaks_last_response():
+    backend = FakeDryRunTtsBackend()
+    manager = VoiceOutputManager(backend=backend)
+    processor = CommandProcessor(voice_output_manager=manager)
+    processor.process("статус системы")
+    processor.process("включить тестовый голос")
+
+    result = processor.process("повтори")
+
+    assert result["intent"] == "assistant.speak_last_response.dry_run"
+    assert backend.calls
+    assert backend.calls[-1][1] == "DRY_RUN"
+    assert "Активных сервисов" in backend.calls[-1][0]
+
+
+def test_repeat_respects_mute():
+    backend = FakeDryRunTtsBackend()
+    manager = VoiceOutputManager(backend=backend)
+    processor = CommandProcessor(voice_output_manager=manager)
+    processor.process("статус системы")
+    processor.process("включить тестовый голос")
+    processor.process("замолчи")
+
+    result = processor.process("повтори")
+
+    assert result["intent"] == "assistant.speak_last_response.muted"
+    assert backend.calls == []
+
+
+def test_skip_next_skips_repeat_once_and_clears():
+    backend = FakeDryRunTtsBackend()
+    manager = VoiceOutputManager(backend=backend)
+    processor = CommandProcessor(voice_output_manager=manager)
+    processor.process("статус системы")
+    processor.process("включить тестовый голос")
+    processor.process("не озвучивай следующий ответ")
+
+    skipped = processor.process("повтори")
+    spoken = processor.process("повтори")
+
+    assert skipped["intent"] == "assistant.speak_last_response.skipped"
+    assert manager.safety_controller.status().skip_next is False
+    assert spoken["intent"] == "assistant.speak_last_response.dry_run"
+    assert len(backend.calls) == 1
+
+
+def test_repeat_command_does_not_overwrite_last_meaningful_response():
+    processor = CommandProcessor()
+    processor.process("статус системы")
+    processor.process("повтори")
+
+    result = processor.process("что ты сказал")
+
+    assert result["intent"] == "assistant.last_response"
+    assert "Голосовой ответ отключён" not in result["response"]
+    assert "Активных сервисов" in result["response"]
+
+
+def test_what_user_said_returns_no_voice_history_when_empty():
+    processor = CommandProcessor()
+
+    result = processor.process("что я сказал")
+
+    assert result["intent"] == "voice.history.last"
+    assert result["response"] == "В этой сессии ещё нет распознанной голосовой команды."
+
+
+def test_what_user_said_after_typed_simulation_shows_summary():
+    processor = CommandProcessor()
+    processor.process("симулируй распознавание: статус системы")
+
+    result = processor.process("что я сказал")
+
+    assert result["intent"] == "voice.history.last"
+    assert "Распознано: статус системы" in result["response"]
+    assert "Каноническая команда: статус системы" in result["response"]
+    assert "Источник: текстовая симуляция" in result["response"]
+    assert "Статус: выполнено как безопасная read-only команда" in result["response"]
+
+
+def test_repeat_last_voice_command_does_not_execute_it():
+    processor = CommandProcessor()
+    processor.process("симулируй распознавание: статус системы")
+
+    result = processor.process("повтори последнюю голосовую команду")
+
+    assert result["intent"] == "voice.history.repeat.disabled"
+    assert "статус системы" in result["response"]
+    assert "Команда не выполнялась повторно." in result["response"]
+
+
+def test_repeat_last_voice_command_dry_run_speaks_command_text_only():
+    backend = FakeDryRunTtsBackend()
+    manager = VoiceOutputManager(backend=backend)
+    processor = CommandProcessor(voice_output_manager=manager)
+    processor.process("симулируй распознавание: статус системы")
+    processor.process("включить тестовый голос")
+
+    result = processor.process("повтори последнюю голосовую команду")
+
+    assert result["intent"] == "voice.history.repeat.dry_run"
+    assert backend.calls == [("статус системы", "DRY_RUN")]
+    assert "Команда не выполнялась повторно." in result["response"]
+
+
+def test_repeat_last_voice_command_respects_mute():
+    backend = FakeDryRunTtsBackend()
+    manager = VoiceOutputManager(backend=backend)
+    processor = CommandProcessor(voice_output_manager=manager)
+    processor.process("симулируй распознавание: статус системы")
+    processor.process("включить тестовый голос")
+    processor.process("замолчи")
+
+    result = processor.process("повтори последнюю голосовую команду")
+
+    assert result["intent"] == "voice.history.repeat.muted"
+    assert backend.calls == []
+    assert "Команда не выполнялась повторно." in result["response"]
+
+
+def test_clarify_commands_return_local_shortened_versions():
+    processor = CommandProcessor()
+    processor.assistant_response_history.add_response(
+        "Первое предложение достаточно короткое. Второе предложение не должно попасть в короткую версию.",
+        source_command="fixture",
+    )
+
+    short = processor.process("объясни короче")
+    simple = processor.process("скажи проще")
+
+    assert short["intent"] == "assistant.clarify.short"
+    assert short["response"].startswith("Коротко:\nПервое предложение")
+    assert "без AI-переформулирования" in short["response"]
+    assert simple["intent"] == "assistant.clarify.simple"
+    assert simple["response"].startswith("Проще:\nПервое предложение")
+
+
+def test_clarify_commands_do_not_execute_actions():
+    processor = CommandProcessor()
+    processor.process("статус системы")
+
+    result = processor.process("короче")
+
+    assert result["intent"] == "assistant.clarify.short"
+    assert "Коротко:" in result["response"]
+    assert "requires_confirmation" not in result
+
+
+def test_manual_voice_dialogue_does_not_auto_speak_control_commands():
+    backend = FakeDryRunTtsBackend()
+    manager = VoiceOutputManager(backend=backend)
+    processor = CommandProcessor(voice_output_manager=manager)
+    processor.process("включить тестовый голос")
+    processor.process("включить голосовой диалог")
+    processor.process("статус системы")
+    backend.calls.clear()
+
+    processor.process("что ты сказал")
+    processor.process("что я сказал")
+    processor.process("объясни короче")
+
+    assert backend.calls == []
+
+
+def test_help_mentions_repeat_and_clarify_commands():
+    processor = CommandProcessor()
+
+    response = processor.process("помощь")["response"]
+
+    assert "что ты сказал" in response
+    assert "повтори" in response
+    assert "что я сказал" in response
+    assert "последнюю голосовую команду" in response
+    assert "объясни короче" in response
+    assert "скажи проще" in response
+    assert "не выполняет команду повторно" in response
 
 
 def run_tests():

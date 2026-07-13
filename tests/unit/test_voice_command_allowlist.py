@@ -77,6 +77,20 @@ def test_voice_output_safety_commands_are_allowed():
     )
 
 
+def test_voice_interaction_info_commands_are_allowed_without_replay_execution():
+    allowlist = SafeVoiceCommandAllowlist()
+
+    assert allowlist.decide("что ты сказал").canonical_command == "что ты сказал"
+    assert allowlist.decide("что я сказал").canonical_command == "последнее распознавание"
+    assert (
+        allowlist.decide("покажи последнюю голосовую команду").canonical_command
+        == "последнее распознавание"
+    )
+    assert allowlist.decide("объясни короче").canonical_command == "объясни короче"
+    assert allowlist.decide("скажи проще").canonical_command == "скажи проще"
+    assert allowlist.decide("повтори последнюю голосовую команду").allowed is False
+
+
 def test_unknown_command_is_not_allowed():
     decision = SafeVoiceCommandAllowlist().decide("расскажи что-нибудь")
 

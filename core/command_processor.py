@@ -1,7 +1,12 @@
 from pathlib import Path
 
 from core.action_router import SafeActionRouter
-from dialogue import AssistantResponseHistory, DialogueManager, VoiceDialogueModeManager
+from dialogue import (
+    AssistantResponseHistory,
+    DialogueManager,
+    VoiceDialogueModeManager,
+    VoiceInteractionControls,
+)
 from ideas import IdeaManager
 from memory import LocalMemoryManager
 from users.user_profile import UserProfileManager
@@ -170,19 +175,40 @@ class CommandProcessor:
     ASSISTANT_LAST_RESPONSE_COMMANDS = {
         "последний ответ",
         "покажи последний ответ",
+        "что ты сказал",
         "что ты ответил",
         "что ты сказал последний раз",
+        "повтори текстом",
+        "повтори последний ответ текстом",
         "последний ответ jarvis",
         "последний ответ джарвис",
     }
     ASSISTANT_SPEAK_LAST_RESPONSE_COMMANDS = {
+        "повтори",
+        "повтори ещё раз",
+        "повтори еще раз",
         "озвучь последний ответ",
         "скажи последний ответ",
         "произнеси последний ответ",
         "повтори голосом",
         "повтори последний ответ голосом",
+        "скажи ещё раз",
+        "скажи еще раз",
+        "озвучь ещё раз",
+        "озвучь еще раз",
         "скажи это голосом",
         "озвучь это",
+    }
+    ASSISTANT_CLARIFY_SHORT_COMMANDS = {
+        "объясни короче",
+        "скажи короче",
+        "коротко",
+        "короче",
+    }
+    ASSISTANT_CLARIFY_SIMPLE_COMMANDS = {
+        "скажи проще",
+        "объясни проще",
+        "проще",
     }
     ASSISTANT_RESPONSE_HISTORY_COMMANDS = {
         "история ответов",
@@ -366,8 +392,15 @@ class CommandProcessor:
         "последнее распознавание",
         "последнее распознование",
         "последняя голосовая команда",
+        "покажи последнюю голосовую команду",
+        "что я сказал",
         "что ты услышал",
         "что ты распознал",
+    }
+    REPEAT_LAST_VOICE_COMMAND_COMMANDS = {
+        "повтори последнюю голосовую команду",
+        "повтори что я сказал голосом",
+        "озвучь последнюю голосовую команду",
     }
     VOICE_COMMAND_HISTORY_COMMANDS = {
         "история голосовых команд",
@@ -771,6 +804,10 @@ class CommandProcessor:
 
             voice_command_history = VoiceCommandSessionHistory()
         self.voice_command_history = voice_command_history
+        self.voice_interaction_controls = VoiceInteractionControls(
+            self.assistant_response_history,
+            self.voice_command_history,
+        )
         if voice_recognition_correction_manager is None:
             from voice.voice_recognition_corrections import (
                 VoiceRecognitionCorrectionManager,
@@ -977,6 +1014,12 @@ class CommandProcessor:
                 speakable=False,
             )
 
+        if command in self.ASSISTANT_CLARIFY_SHORT_COMMANDS:
+            return self._short_last_assistant_response_result()
+
+        if command in self.ASSISTANT_CLARIFY_SIMPLE_COMMANDS:
+            return self._simple_last_assistant_response_result()
+
         if command in self.VOICE_DIALOGUE_STATUS_COMMANDS:
             return self._result(
                 "voice.dialogue.status",
@@ -1043,8 +1086,12 @@ class CommandProcessor:
         if command in self.LAST_VOICE_RECOGNITION_COMMANDS:
             return self._result(
                 "voice.history.last",
-                self._last_voice_recognition_response(),
+                self.voice_interaction_controls.format_last_voice_command_for_display(),
+                speakable=False,
             )
+
+        if command in self.REPEAT_LAST_VOICE_COMMAND_COMMANDS:
+            return self._repeat_last_voice_command_result()
 
         if command in self.VOICE_COMMAND_HISTORY_COMMANDS:
             return self._result(
@@ -2495,8 +2542,8 @@ class CommandProcessor:
         )
 
     def _last_assistant_response_result(self):
-        entry = self.assistant_response_history.last_speakable_response()
-        if entry is None:
+        text = self.voice_interaction_controls.get_last_assistant_response()
+        if text is None:
             return self._result(
                 "assistant.last_response.empty",
                 "В этой сессии ещё нет ответа JARVIS для повторения.",
@@ -2504,13 +2551,13 @@ class CommandProcessor:
             )
         return self._result(
             "assistant.last_response",
-            f"Последний ответ JARVIS:\n{entry.text}",
+            f"Последний ответ JARVIS:\n{text}",
             speakable=False,
         )
 
     def _speak_last_assistant_response_result(self):
-        entry = self.assistant_response_history.last_speakable_response()
-        if entry is None:
+        text = self.voice_interaction_controls.get_last_assistant_response()
+        if text is None:
             return self._result(
                 "assistant.speak_last_response.empty",
                 "В этой сессии ещё нет ответа JARVIS для повторения.",
@@ -2518,8 +2565,8 @@ class CommandProcessor:
             )
 
         speak_result = self.voice_output_manager.speak(
-            entry.text,
-            source="speak_last_response",
+            text,
+            source="repeat_last_response",
         )
         mode = speak_result["mode"]
         if speak_result["intent"] in {"voice.output.muted", "voice.output.skipped"}:
@@ -2531,6 +2578,8 @@ class CommandProcessor:
             )
         elif mode == self.voice_output_manager.OFF:
             response = (
+                "Последний ответ JARVIS:\n"
+                f"{text}\n\n"
                 "Голосовой ответ отключён. Включите тестовый режим командой: "
                 "включить тестовый голос или локальный голос командой: "
                 "включить локальный голос."
@@ -2560,6 +2609,106 @@ class CommandProcessor:
             intent = "assistant.speak_last_response.failed"
 
         return self._result(intent, response, speakable=False)
+
+    def _repeat_last_voice_command_result(self):
+        summary = self.voice_interaction_controls.get_last_voice_recognition_summary()
+        if summary is None:
+            return self._result(
+                "voice.history.repeat.empty",
+                "В этой сессии ещё нет распознанной голосовой команды.",
+                speakable=False,
+            )
+
+        recognized_text = summary.recognized_text or "пусто / речь не распознана"
+        speak_result = self.voice_output_manager.speak(
+            recognized_text,
+            source="repeat_last_voice_command",
+        )
+        if speak_result["intent"] in {"voice.output.muted", "voice.output.skipped"}:
+            response = (
+                f"{speak_result['message']}\n"
+                f"Последняя распознанная голосовая команда: {recognized_text}\n"
+                "Команда не выполнялась повторно."
+            )
+            intent = (
+                "voice.history.repeat.muted"
+                if speak_result["intent"] == "voice.output.muted"
+                else "voice.history.repeat.skipped"
+            )
+        elif speak_result["mode"] == self.voice_output_manager.OFF:
+            response = (
+                f"Последняя распознанная голосовая команда: {recognized_text}\n"
+                "Команда не выполнялась повторно.\n\n"
+                "Голосовой ответ отключён. Включите тестовый режим командой: "
+                "включить тестовый голос или локальный голос командой: "
+                "включить локальный голос."
+            )
+            intent = "voice.history.repeat.disabled"
+        elif speak_result["mode"] == self.voice_output_manager.DRY_RUN:
+            response = (
+                "Озвучиваю последнюю распознанную голосовую команду:\n"
+                f"[TTS dry-run] {speak_result['spoken_text']}\n"
+                "Команда не выполнялась повторно.\n"
+                "Безопасность: реальный звук не воспроизводился, облако не использовалось, аудиофайл не сохранялся."
+            )
+            intent = "voice.history.repeat.dry_run"
+        elif speak_result.get("success"):
+            response = (
+                "Последняя распознанная голосовая команда озвучена локально.\n"
+                "Команда не выполнялась повторно.\n"
+                "Безопасность: облако не использовалось, аудиофайл не сохранялся."
+            )
+            intent = "voice.history.repeat.windows_local"
+        else:
+            safe_error = str(speak_result.get("error") or "неизвестная ошибка").strip()
+            response = (
+                "Не удалось озвучить последнюю распознанную голосовую команду локально.\n"
+                f"Причина: {safe_error}.\n"
+                "Команда не выполнялась повторно."
+            )
+            intent = "voice.history.repeat.failed"
+
+        return self._result(intent, response, speakable=False)
+
+    def _short_last_assistant_response_result(self):
+        text = self.voice_interaction_controls.get_short_last_assistant_response(
+            max_chars=180
+        )
+        if text is None:
+            return self._result(
+                "assistant.clarify.empty",
+                "Пока нет последнего ответа, который можно упростить.",
+                speakable=False,
+            )
+        return self._result(
+            "assistant.clarify.short",
+            (
+                "Коротко:\n"
+                f"{text}\n\n"
+                "Примечание: это безопасное локальное сокращение без AI-переформулирования."
+            ),
+            speakable=False,
+        )
+
+    def _simple_last_assistant_response_result(self):
+        text = self.voice_interaction_controls.get_simple_last_assistant_response(
+            max_chars=220
+        )
+        if text is None:
+            return self._result(
+                "assistant.clarify.empty",
+                "Пока нет последнего ответа, который можно упростить.",
+                speakable=False,
+            )
+        return self._result(
+            "assistant.clarify.simple",
+            (
+                "Проще:\n"
+                f"{text}\n\n"
+                "Примечание: это безопасное локальное сокращение без AI-переформулирования."
+            ),
+            speakable=False,
+        )
 
     def _assistant_response_history_result(self):
         entries = self.assistant_response_history.list_recent(limit=5)
@@ -2698,6 +2847,7 @@ class CommandProcessor:
             "assistant.last_response",
             "assistant.speak_last_response",
             "assistant.response_history",
+            "assistant.clarify",
         )
         return not str(intent).startswith(non_speakable_prefixes)
 
@@ -2920,14 +3070,16 @@ class CommandProcessor:
             "озвучь: <текст>; тест голоса; тест локального голоса. "
             "Управление безопасностью озвучки: замолчи; снова говори; не озвучивай следующий ответ; статус голосовой безопасности. "
             "Последний ответ за текущую сессию можно посмотреть или озвучить явно: последний ответ; "
-            "озвучь последний ответ; повтори голосом; история ответов; статус голосового диалога. "
+            "что ты сказал; повтори текстом; повтори; озвучь последний ответ; повтори голосом; "
+            "объясни короче; скажи проще; история ответов; статус голосового диалога. "
             "Ручной голосовой диалог можно включить только после голосового ответа: включить голосовой диалог; выключить голосовой диалог; статус голосового диалога. "
             "Для ручного режима сначала включите тестовый или локальный голос; постоянное прослушивание не включается. "
             "Команды стоп/тихий режим не включают постоянное прослушивание. В тестовом режиме звук не воспроизводится; в локальном режиме используется Windows TTS. Облако не используется, аудиофайлы не сохраняются. "
             "Некоторые заранее известные read-only голосовые команды могут выполняться без подтверждения; список: безопасные голосовые команды. "
             "Неизвестные и рискованные голосовые команды всё ещё требуют подтверждения да / нет; "
             "ожидающую голосовую команду можно проверить или отменить. "
-            "Можно посмотреть последнее голосовое распознавание, историю голосовых команд за сессию, количество событий и очистить историю голоса. "
+            "Можно посмотреть последнее голосовое распознавание, что я сказал, последнюю голосовую команду, историю голосовых команд за сессию, количество событий и очистить историю голоса. "
+            "Команда повтори последнюю голосовую команду может озвучить распознанный текст, но не выполняет команду повторно. "
             "Можно добавить исправление распознавания: я сказал не X, а Y; исправления действуют только в текущей сессии, их можно посмотреть или очистить. "
             "Рискованные действия не обходят безопасность, постоянное прослушивание не связано "
             "с реальным распознаванием. "

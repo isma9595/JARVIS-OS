@@ -1,10 +1,10 @@
 # JARVIS-OS Checkpoint
 
 - Project: JARVIS-OS
-- Current stable stage: TASK-047 — Voice Dialogue Manual Mode / Speak Current Response Gate
-- Last stable commit: ad8ffd8
-- Last stable commit message: Add manual voice dialogue mode
-- Next stage: TASK-048 — Voice Dialogue Stop / Mute / Output Safety Controls
+- Current stable stage: TASK-048 — Voice Dialogue Stop / Mute / Output Safety Controls
+- Last stable commit: 3b45d93
+- Last stable commit message: Add voice output safety controls
+- Next stage: TASK-049 — Voice Dialogue Repeat / Clarify / Last Voice Interaction Controls
 - Status: in progress
 
 ## Approved Workflow

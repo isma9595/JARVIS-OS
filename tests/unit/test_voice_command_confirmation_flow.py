@@ -560,7 +560,7 @@ def test_last_recognition_command_shows_last_history_entry():
     result = processor.process("последнее распознавание")
 
     assert result["intent"] == "voice.history.last"
-    assert "Последнее голосовое распознавание:" in result["response"]
+    assert "Последняя распознанная голосовая команда:" in result["response"]
     assert "Распознано: статус системы" in result["response"]
     assert "Каноническая команда: статус системы" in result["response"]
 
