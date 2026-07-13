@@ -103,6 +103,24 @@ class FakeWindowsLocalTtsBackend:
         )
 
 
+class FailingWindowsLocalTtsBackend(FakeWindowsLocalTtsBackend):
+    def synthesize(self, text, mode="WINDOWS_LOCAL"):
+        self.calls.append((text, mode))
+        return SpeechSynthesisResult(
+            success=False,
+            spoken_text=text,
+            backend_name=self.get_name(),
+            mode=mode,
+            safety_notes=[
+                "Облачный TTS не использовался.",
+                "Аудиофайл не сохранялся.",
+            ],
+            error="local failure",
+            played_audio=False,
+            backend_available=True,
+        )
+
+
 def test_speech_backend_commands():
     processor = CommandProcessor()
 
@@ -489,9 +507,10 @@ def test_voice_dialogue_status_command():
     result = processor.process("статус голосового диалога")
 
     assert result["intent"] == "voice.dialogue.status"
-    assert "ручном безопасном режиме" in result["response"]
-    assert "не озвучивает все ответы автоматически" in result["response"]
-    assert "озвучь последний ответ / повтори голосом" in result["response"]
+    assert "Голосовой диалог отключён" in result["response"]
+    assert "Режим: OFF" in result["response"]
+    assert "не озвучивает текущие ответы автоматически" in result["response"]
+    assert "включить голосовой диалог" in result["response"]
 
 
 def test_help_mentions_speak_last_response_commands():

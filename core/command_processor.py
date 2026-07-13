@@ -1,7 +1,7 @@
 from pathlib import Path
 
 from core.action_router import SafeActionRouter
-from dialogue import AssistantResponseHistory, DialogueManager
+from dialogue import AssistantResponseHistory, DialogueManager, VoiceDialogueModeManager
 from ideas import IdeaManager
 from memory import LocalMemoryManager
 from users.user_profile import UserProfileManager
@@ -165,6 +165,22 @@ class CommandProcessor:
     VOICE_DIALOGUE_STATUS_COMMANDS = {
         "статус голосового диалога",
         "режим голосового диалога",
+    }
+    VOICE_DIALOGUE_ENABLE_COMMANDS = {
+        "включить голосовой диалог",
+        "включи голосовой диалог",
+        "включить ручной голосовой диалог",
+        "включи ручной голосовой диалог",
+        "говори ответы голосом",
+        "озвучивай ответы",
+        "озвучивай текущие ответы",
+    }
+    VOICE_DIALOGUE_DISABLE_COMMANDS = {
+        "выключить голосовой диалог",
+        "выключи голосовой диалог",
+        "отключить голосовой диалог",
+        "не озвучивай ответы",
+        "перестань озвучивать ответы",
     }
     MICROPHONE_STATUS_COMMANDS = {
         "статус микрофона",
@@ -685,6 +701,7 @@ class CommandProcessor:
         voice_recognition_correction_manager=None,
         voice_output_manager=None,
         assistant_response_history=None,
+        voice_dialogue_mode_manager=None,
     ):
         self.user_profile = user_profile or {}
         self.dialogue_manager = dialogue_manager or DialogueManager(self.user_profile)
@@ -706,6 +723,9 @@ class CommandProcessor:
         self.voice_output_manager = voice_output_manager
         self.assistant_response_history = (
             assistant_response_history or AssistantResponseHistory()
+        )
+        self.voice_dialogue_mode_manager = (
+            voice_dialogue_mode_manager or VoiceDialogueModeManager()
         )
         self.vosk_runtime_loader = vosk_runtime_loader
         self.vosk_recognition_dry_run = vosk_recognition_dry_run
@@ -836,7 +856,14 @@ class CommandProcessor:
 
         if command in self.VOICE_OUTPUT_DISABLE_COMMANDS:
             result = self.voice_output_manager.disable()
-            return self._result("voice.output.disabled", result["message"])
+            response = result["message"]
+            if self.voice_dialogue_mode_manager.is_manual_enabled():
+                self.voice_dialogue_mode_manager.disable()
+                response = (
+                    "Голосовой ответ отключён.\n"
+                    "Голосовой диалог также отключён."
+                )
+            return self._result("voice.output.disabled", response)
 
         if command in self.VOICE_OUTPUT_LOCAL_TEST_COMMANDS:
             return self._voice_output_local_test_result()
@@ -875,6 +902,20 @@ class CommandProcessor:
             return self._result(
                 "voice.dialogue.status",
                 self._voice_dialogue_status_response(),
+                speakable=False,
+            )
+
+        if command in self.VOICE_DIALOGUE_ENABLE_COMMANDS:
+            return self._enable_voice_dialogue_result()
+
+        if command in self.VOICE_DIALOGUE_DISABLE_COMMANDS:
+            self.voice_dialogue_mode_manager.disable()
+            return self._result(
+                "voice.dialogue.disabled",
+                (
+                    "Голосовой диалог отключён.\n"
+                    "JARVIS больше не будет озвучивать текущие ответы автоматически."
+                ),
                 speakable=False,
             )
 
@@ -2202,7 +2243,15 @@ class CommandProcessor:
                 return original[len(prefix) :].strip()
         return None
 
-    def _result(self, intent, response, should_exit=False, speakable=None):
+    def _result(
+        self,
+        intent,
+        response,
+        should_exit=False,
+        speakable=None,
+        allow_manual_dialogue=True,
+    ):
+        original_response = response
         result = {
             "intent": intent,
             "response": response,
@@ -2216,6 +2265,17 @@ class CommandProcessor:
                 source_command=getattr(self, "_current_source_command", None),
                 speakable=True,
                 source="command_processor",
+            )
+        if (
+            allow_manual_dialogue
+            and self.voice_dialogue_mode_manager.should_speak_response(
+                original_response,
+                source_command=getattr(self, "_current_source_command", None),
+                speakable=speakable,
+            )
+        ):
+            result["response"] = self._append_manual_voice_dialogue_note(
+                original_response
             )
         return result
 
@@ -2433,13 +2493,75 @@ class CommandProcessor:
             speakable=False,
         )
 
-    @staticmethod
-    def _voice_dialogue_status_response():
-        return (
-            "Голосовой диалог пока работает в ручном безопасном режиме.\n"
-            "JARVIS не озвучивает все ответы автоматически.\n"
-            "Можно использовать: озвучь последний ответ / повтори голосом."
+    def _enable_voice_dialogue_result(self):
+        if not self.voice_output_manager.is_enabled():
+            return self._result(
+                "voice.dialogue.enable_failed.voice_output_off",
+                (
+                    "Сначала включите голосовой ответ: включить тестовый голос или включить локальный голос.\n"
+                    "Голосовой диалог не включён."
+                ),
+                speakable=False,
+            )
+
+        self.voice_dialogue_mode_manager.enable_manual()
+        if self.voice_output_manager.mode == self.voice_output_manager.WINDOWS_LOCAL:
+            mode_line = "Текущие подходящие ответы будут озвучиваться локальным голосом Windows."
+        else:
+            mode_line = "Текущие подходящие ответы будут озвучиваться в тестовом режиме."
+        return self._result(
+            "voice.dialogue.manual.enabled",
+            (
+                "Ручной голосовой диалог включён.\n"
+                "Режим: MANUAL.\n"
+                f"{mode_line}\n"
+                "Безопасность: постоянное прослушивание не включено, облако не используется, аудиофайлы не сохраняются."
+            ),
+            speakable=False,
         )
+
+    def _voice_dialogue_status_response(self):
+        if self.voice_dialogue_mode_manager.is_manual_enabled():
+            return (
+                "Голосовой диалог включён в ручном режиме.\n"
+                "Режим: MANUAL.\n"
+                "JARVIS озвучивает только подходящие текущие ответы и только через включённый голосовой режим."
+            )
+        return (
+            "Голосовой диалог отключён.\n"
+            "Режим: OFF.\n"
+            "JARVIS не озвучивает текущие ответы автоматически.\n"
+            "Можно включить ручной режим командой: включить голосовой диалог."
+        )
+
+    def _append_manual_voice_dialogue_note(self, response):
+        speak_result = self.voice_output_manager.speak(
+            response,
+            source="voice_dialogue_manual_mode",
+        )
+        if speak_result["mode"] == self.voice_output_manager.DRY_RUN:
+            note = (
+                "Голосовой диалог:\n"
+                f"[TTS dry-run] {speak_result['spoken_text']}\n"
+                "Безопасность: реальный звук не воспроизводился, облако не использовалось, аудиофайл не сохранялся."
+            )
+        elif speak_result.get("success"):
+            note = (
+                "Голосовой диалог: текущий ответ озвучен локально.\n"
+                "Безопасность: облако не использовалось, аудиофайл не сохранялся."
+            )
+        else:
+            safe_error = str(
+                speak_result.get("error")
+                or speak_result.get("message")
+                or "неизвестная ошибка"
+            ).strip()
+            note = (
+                "Голосовой диалог: не удалось озвучить текущий ответ локально.\n"
+                f"Причина: {safe_error}.\n"
+                "JARVIS продолжает работу."
+            )
+        return f"{response}\n\n{note}"
 
     @staticmethod
     def _short_response_text(text, max_length=120):
@@ -2681,6 +2803,8 @@ class CommandProcessor:
             "озвучь: <текст>; тест голоса; тест локального голоса. "
             "Последний ответ за текущую сессию можно посмотреть или озвучить явно: последний ответ; "
             "озвучь последний ответ; повтори голосом; история ответов; статус голосового диалога. "
+            "Ручной голосовой диалог можно включить только после голосового ответа: включить голосовой диалог; выключить голосовой диалог; статус голосового диалога. "
+            "Для ручного режима сначала включите тестовый или локальный голос; постоянное прослушивание не включается. "
             "В тестовом режиме звук не воспроизводится; в локальном режиме используется Windows TTS. Облако не используется, аудиофайлы не сохраняются. "
             "Некоторые заранее известные read-only голосовые команды могут выполняться без подтверждения; список: безопасные голосовые команды. "
             "Неизвестные и рискованные голосовые команды всё ещё требуют подтверждения да / нет; "
