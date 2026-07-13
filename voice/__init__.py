@@ -8,6 +8,7 @@ from voice.speech_synthesis_backend import (
     SpeechSynthesisBackend,
     SpeechSynthesisResult,
 )
+from voice.windows_local_tts_backend import WindowsLocalSpeechSynthesisBackend
 from voice.voice_input_manager import VoiceInputManager
 from voice.voice_output_manager import VoiceOutputManager
 from voice.audio_dependency_readiness import (
@@ -92,6 +93,7 @@ __all__ = [
     "VoiceInputManager",
     "VoiceOutputManager",
     "DryRunSpeechSynthesisBackend",
+    "WindowsLocalSpeechSynthesisBackend",
     "VoskLocalBackend",
     "VoskInstallationGuide",
     "VoskRuntimeLoader",

@@ -1,10 +1,10 @@
 # JARVIS-OS Checkpoint
 
 - Project: JARVIS-OS
-- Current stable stage: TASK-043 — Voice Recognition Typed Simulation
-- Last stable commit: 73abe1b
-- Last stable commit message: Add voice recognition typed simulation
-- Next stage: TASK-044 — Voice Output / Text-to-Speech Foundation
+- Current stable stage: TASK-044 — Voice Output / Text-to-Speech Foundation
+- Last stable commit: 35a6f14
+- Last stable commit message: Add voice output TTS foundation
+- Next stage: TASK-045 — Windows Local TTS Backend / Real Voice Playback Gate
 - Status: in progress
 
 ## Approved Workflow

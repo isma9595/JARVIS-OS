@@ -9,6 +9,9 @@ class SpeechSynthesisResult:
     mode: str
     safety_notes: list[str] = field(default_factory=list)
     error: str | None = None
+    played_audio: bool = False
+    backend_available: bool = True
+    error_code: str | None = None
 
 
 class SpeechSynthesisBackend:

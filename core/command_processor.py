@@ -99,6 +99,20 @@ class CommandProcessor:
         "режим голоса dry run",
         "режим голоса тест",
     }
+    VOICE_OUTPUT_LOCAL_STATUS_COMMANDS = {
+        "диагностика локального голоса",
+        "проверить локальный голос",
+        "проверить голос windows",
+        "статус локального голоса windows",
+        "доступен ли голос windows",
+    }
+    VOICE_OUTPUT_LOCAL_ENABLE_COMMANDS = {
+        "включить локальный голос",
+        "включить голос windows",
+        "включи локальный голос",
+        "режим голоса windows",
+        "режим голоса локальный",
+    }
     VOICE_OUTPUT_DISABLE_COMMANDS = {
         "выключить голос",
         "выключи голос",
@@ -112,6 +126,10 @@ class CommandProcessor:
     VOICE_OUTPUT_TEST_COMMANDS = {
         "тест голоса",
         "проверка голоса",
+    }
+    VOICE_OUTPUT_LOCAL_TEST_COMMANDS = {
+        "тест локального голоса",
+        "проверка локального голоса",
     }
     VOICE_OUTPUT_CAPABILITIES_COMMANDS = {
         "что ты можешь сказать голосом",
@@ -766,9 +784,25 @@ class CommandProcessor:
             result = self.voice_output_manager.enable_dry_run()
             return self._result("voice.output.dry_run.enabled", result["message"])
 
+        if command in self.VOICE_OUTPUT_LOCAL_STATUS_COMMANDS:
+            result = self.voice_output_manager.local_tts_status()
+            return self._result("voice.output.local.status", result["message"])
+
+        if command in self.VOICE_OUTPUT_LOCAL_ENABLE_COMMANDS:
+            result = self.voice_output_manager.enable_windows_local()
+            intent = (
+                "voice.output.windows_local.enabled"
+                if result["enabled"]
+                else "voice.output.windows_local.unavailable"
+            )
+            return self._result(intent, result["message"])
+
         if command in self.VOICE_OUTPUT_DISABLE_COMMANDS:
             result = self.voice_output_manager.disable()
             return self._result("voice.output.disabled", result["message"])
+
+        if command in self.VOICE_OUTPUT_LOCAL_TEST_COMMANDS:
+            return self._voice_output_local_test_result()
 
         if command in self.VOICE_OUTPUT_TEST_COMMANDS:
             return self._voice_output_test_result()
@@ -2225,6 +2259,10 @@ class CommandProcessor:
         speak_result = self.voice_output_manager.test_voice()
         return self._result("voice.output.test", speak_result["message"])
 
+    def _voice_output_local_test_result(self):
+        speak_result = self.voice_output_manager.test_local_voice()
+        return self._result(speak_result["intent"], speak_result["message"])
+
     def _process_voice_simulation(self, command):
         recognized_text = self._extract_prefixed_text(
             command,
@@ -2439,8 +2477,10 @@ class CommandProcessor:
             "реальное one-shot распознавание Vosk по явной команде; симуляция голосовой команды. "
             "Для проверки голосового pipeline без микрофона используйте: симулируй распознавание: <текст>. "
             "Реальный захват микрофона автоматически не включается. "
-            "Голосовой ответ доступен явно и безопасно: статус голосового ответа; включить тестовый голос; выключить голос; скажи: <текст>; тест голоса. "
-            "В тестовом режиме звук не воспроизводится, облако не используется, аудиофайлы не сохраняются. "
+            "Голосовой ответ доступен явно и безопасно: статус голосового ответа; диагностика локального голоса; "
+            "включить тестовый голос; включить локальный голос; выключить голос; скажи: <текст>; произнеси: <текст>; "
+            "озвучь: <текст>; тест голоса; тест локального голоса. "
+            "В тестовом режиме звук не воспроизводится; в локальном режиме используется Windows TTS. Облако не используется, аудиофайлы не сохраняются. "
             "Некоторые заранее известные read-only голосовые команды могут выполняться без подтверждения; список: безопасные голосовые команды. "
             "Неизвестные и рискованные голосовые команды всё ещё требуют подтверждения да / нет; "
             "ожидающую голосовую команду можно проверить или отменить. "

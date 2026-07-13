@@ -11,6 +11,8 @@ from voice import (
     OneShotVoskRecognitionBridgeResult,
     OneShotVoskRealRecognitionResult,
     VoiceInputManager,
+    VoiceOutputManager,
+    SpeechSynthesisResult,
     VoskSettingsManager,
 )
 
@@ -67,6 +69,37 @@ class FakeAudioDependencyReadinessChecker:
             russian_summary=AudioDependencyReadinessChecker.format_russian_dependencies(
                 dependencies
             ),
+        )
+
+
+class FakeWindowsLocalTtsBackend:
+    def __init__(self, available=True):
+        self.available = available
+        self.calls = []
+
+    def get_name(self):
+        return "windows_local_tts"
+
+    def availability_diagnostics(self):
+        return {
+            "available": self.available,
+            "reason": "ok" if self.available else "not available",
+            "backend_name": self.get_name(),
+        }
+
+    def synthesize(self, text, mode="WINDOWS_LOCAL"):
+        self.calls.append((text, mode))
+        return SpeechSynthesisResult(
+            success=True,
+            spoken_text=text,
+            backend_name=self.get_name(),
+            mode=mode,
+            safety_notes=[
+                "Облачный TTS не использовался.",
+                "Аудиофайл не сохранялся.",
+            ],
+            played_audio=True,
+            backend_available=True,
         )
 
 
@@ -162,6 +195,98 @@ def test_voice_output_enable_dry_run_command():
     assert processor.voice_output_manager.mode == "DRY_RUN"
 
 
+def test_voice_output_local_diagnostics_command():
+    local_backend = FakeWindowsLocalTtsBackend(available=True)
+    processor = CommandProcessor(
+        voice_output_manager=VoiceOutputManager(windows_local_backend=local_backend)
+    )
+
+    result = processor.process("диагностика локального голоса")
+
+    assert result["intent"] == "voice.output.local.status"
+    assert "Локальный голос Windows доступен." in result["response"]
+    assert "Backend: windows_local_tts." in result["response"]
+
+
+def test_voice_output_windows_diagnostics_alias_command():
+    local_backend = FakeWindowsLocalTtsBackend(available=False)
+    processor = CommandProcessor(
+        voice_output_manager=VoiceOutputManager(windows_local_backend=local_backend)
+    )
+
+    result = processor.process("проверить голос windows")
+
+    assert result["intent"] == "voice.output.local.status"
+    assert "Локальный голос Windows недоступен." in result["response"]
+    assert "Можно использовать тестовый режим" in result["response"]
+
+
+def test_voice_output_enable_local_command_when_available():
+    local_backend = FakeWindowsLocalTtsBackend(available=True)
+    processor = CommandProcessor(
+        voice_output_manager=VoiceOutputManager(windows_local_backend=local_backend)
+    )
+
+    result = processor.process("включить локальный голос")
+
+    assert result["intent"] == "voice.output.windows_local.enabled"
+    assert "Локальный голос Windows включён." in result["response"]
+    assert processor.voice_output_manager.mode == "WINDOWS_LOCAL"
+
+
+def test_voice_output_enable_local_command_when_unavailable():
+    local_backend = FakeWindowsLocalTtsBackend(available=False)
+    processor = CommandProcessor(
+        voice_output_manager=VoiceOutputManager(windows_local_backend=local_backend)
+    )
+
+    result = processor.process("включить локальный голос")
+
+    assert result["intent"] == "voice.output.windows_local.unavailable"
+    assert "Локальный голос Windows недоступен." in result["response"]
+    assert processor.voice_output_manager.mode == "OFF"
+
+
+def test_voice_output_test_local_voice_command():
+    local_backend = FakeWindowsLocalTtsBackend(available=True)
+    manager = VoiceOutputManager(windows_local_backend=local_backend)
+    processor = CommandProcessor(voice_output_manager=manager)
+    processor.process("включить локальный голос")
+
+    result = processor.process("тест локального голоса")
+
+    assert result["intent"] == "voice.output.spoken"
+    assert local_backend.calls == [("Исмаил, локальный голос JARVIS работает.", "WINDOWS_LOCAL")]
+    assert "Голосовая озвучка выполнена локально." in result["response"]
+
+
+def test_voice_output_status_shows_windows_local_mode():
+    local_backend = FakeWindowsLocalTtsBackend(available=True)
+    processor = CommandProcessor(
+        voice_output_manager=VoiceOutputManager(windows_local_backend=local_backend)
+    )
+    processor.process("включить локальный голос")
+
+    result = processor.process("статус голосового ответа")
+
+    assert result["intent"] == "voice.output.status"
+    assert "Режим: WINDOWS_LOCAL." in result["response"]
+
+
+def test_voice_output_say_command_while_windows_local():
+    local_backend = FakeWindowsLocalTtsBackend(available=True)
+    processor = CommandProcessor(
+        voice_output_manager=VoiceOutputManager(windows_local_backend=local_backend)
+    )
+    processor.process("включить локальный голос")
+
+    result = processor.process("скажи: Ассаламу алайкум Исмаил")
+
+    assert result["intent"] == "voice.output.spoken"
+    assert local_backend.calls == [("Ассаламу алайкум Исмаил", "WINDOWS_LOCAL")]
+    assert "Голосовая озвучка выполнена локально." in result["response"]
+
+
 def test_voice_output_disable_command():
     processor = CommandProcessor()
     processor.process("включить тестовый голос")
@@ -179,10 +304,9 @@ def test_voice_output_say_command_while_off():
     result = processor.process("скажи: тест")
 
     assert result["intent"] == "voice.output.disabled"
-    assert result["response"] == (
-        "Голосовой ответ отключён. Включите тестовый режим командой: "
-        "включить тестовый голос."
-    )
+    assert "Голосовой ответ отключён." in result["response"]
+    assert "включить тестовый голос" in result["response"]
+    assert "включить локальный голос" in result["response"]
 
 
 def test_voice_output_say_command_while_dry_run():
@@ -240,6 +364,9 @@ def test_help_mentions_voice_output_commands():
     assert "выключить голос" in result["response"]
     assert "скажи: <текст>" in result["response"]
     assert "тест голоса" in result["response"]
+    assert "диагностика локального голоса" in result["response"]
+    assert "включить локальный голос" in result["response"]
+    assert "тест локального голоса" in result["response"]
 
 
 def test_vosk_real_commands_and_selection_flow():
