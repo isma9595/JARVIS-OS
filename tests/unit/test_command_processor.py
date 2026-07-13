@@ -1863,6 +1863,45 @@ def test_voice_simulation_requires_confirmation():
     assert manager.get_pending_confirmation()["text"] == "отправь письмо"
 
 
+def test_typed_recognition_simulation_command_parsing_safe_status():
+    processor = CommandProcessor()
+
+    result = processor.process("симулируй распознавание: статус системы")
+
+    assert result["intent"] == "system.status"
+    assert result["recognized_voice_command"] == "статус системы"
+    assert result["voice_recognition_source"] == "typed_simulation"
+
+
+def test_typed_recognition_simulation_test_alias_parsing():
+    processor = CommandProcessor()
+
+    result = processor.process("тестовое распознавание: статус системы")
+
+    assert result["intent"] == "system.status"
+    assert result["recognized_voice_command"] == "статус системы"
+    assert result["voice_recognition_source"] == "typed_simulation"
+
+
+def test_typed_recognition_simulation_check_voice_command_alias_parsing():
+    processor = CommandProcessor()
+
+    result = processor.process("проверить голосовую команду: статус системы")
+
+    assert result["intent"] == "system.status"
+    assert result["recognized_voice_command"] == "статус системы"
+    assert result["voice_recognition_source"] == "typed_simulation"
+
+
+def test_typed_recognition_simulation_empty_command_parsing():
+    processor = CommandProcessor()
+
+    result = processor.process("проверить голосовую команду:")
+
+    assert result["intent"] == "voice.recognition.typed_simulation.empty"
+    assert result["response"] == "Укажите текст для симуляции распознавания."
+
+
 def test_voice_alias_requires_confirmation():
     processor, manager = create_voice_enabled_processor()
 
