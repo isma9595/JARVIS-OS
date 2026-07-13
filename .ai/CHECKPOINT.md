@@ -1,10 +1,10 @@
 # JARVIS-OS Checkpoint
 
 - Project: JARVIS-OS
-- Current stable stage: TASK-044 — Voice Output / Text-to-Speech Foundation
-- Last stable commit: 35a6f14
-- Last stable commit message: Add voice output TTS foundation
-- Next stage: TASK-045 — Windows Local TTS Backend / Real Voice Playback Gate
+- Current stable stage: TASK-045 — Windows Local TTS Backend / Real Voice Playback Gate
+- Last stable commit: 5940dec
+- Last stable commit message: Add Windows local TTS backend gate
+- Next stage: TASK-046 — Voice Dialogue Mode / Speak Last Response Gate
 - Status: in progress
 
 ## Approved Workflow

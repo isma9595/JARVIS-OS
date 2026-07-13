@@ -122,6 +122,17 @@ def test_speak_while_dry_run_returns_dry_run_result():
     assert "[TTS dry-run] Исмаил, система работает." in result["message"]
 
 
+def test_speak_last_response_source_metadata_is_preserved():
+    backend = TrackingBackend()
+    manager = VoiceOutputManager(backend=backend)
+    manager.enable_dry_run()
+
+    result = manager.speak("последний ответ", source="speak_last_response")
+
+    assert result["source"] == "speak_last_response"
+    assert backend.calls == [("последний ответ", "DRY_RUN")]
+
+
 def test_empty_text_is_rejected():
     backend = TrackingBackend()
     manager = VoiceOutputManager(backend=backend)

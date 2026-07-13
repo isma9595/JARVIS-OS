@@ -1,7 +1,7 @@
 from pathlib import Path
 
 from core.action_router import SafeActionRouter
-from dialogue import DialogueManager
+from dialogue import AssistantResponseHistory, DialogueManager
 from ideas import IdeaManager
 from memory import LocalMemoryManager
 from users.user_profile import UserProfileManager
@@ -133,6 +133,38 @@ class CommandProcessor:
     }
     VOICE_OUTPUT_CAPABILITIES_COMMANDS = {
         "что ты можешь сказать голосом",
+    }
+    ASSISTANT_LAST_RESPONSE_COMMANDS = {
+        "последний ответ",
+        "покажи последний ответ",
+        "что ты ответил",
+        "что ты сказал последний раз",
+        "последний ответ jarvis",
+        "последний ответ джарвис",
+    }
+    ASSISTANT_SPEAK_LAST_RESPONSE_COMMANDS = {
+        "озвучь последний ответ",
+        "скажи последний ответ",
+        "произнеси последний ответ",
+        "повтори голосом",
+        "повтори последний ответ голосом",
+        "скажи это голосом",
+        "озвучь это",
+    }
+    ASSISTANT_RESPONSE_HISTORY_COMMANDS = {
+        "история ответов",
+        "история ответов jarvis",
+    }
+    ASSISTANT_RESPONSE_HISTORY_COUNT_COMMANDS = {
+        "сколько ответов",
+    }
+    ASSISTANT_RESPONSE_HISTORY_CLEAR_COMMANDS = {
+        "очистить историю ответов",
+        "очисти историю ответов",
+    }
+    VOICE_DIALOGUE_STATUS_COMMANDS = {
+        "статус голосового диалога",
+        "режим голосового диалога",
     }
     MICROPHONE_STATUS_COMMANDS = {
         "статус микрофона",
@@ -652,6 +684,7 @@ class CommandProcessor:
         voice_command_history=None,
         voice_recognition_correction_manager=None,
         voice_output_manager=None,
+        assistant_response_history=None,
     ):
         self.user_profile = user_profile or {}
         self.dialogue_manager = dialogue_manager or DialogueManager(self.user_profile)
@@ -671,6 +704,9 @@ class CommandProcessor:
 
             voice_output_manager = VoiceOutputManager()
         self.voice_output_manager = voice_output_manager
+        self.assistant_response_history = (
+            assistant_response_history or AssistantResponseHistory()
+        )
         self.vosk_runtime_loader = vosk_runtime_loader
         self.vosk_recognition_dry_run = vosk_recognition_dry_run
         self.one_shot_vosk_recognition_bridge = one_shot_vosk_recognition_bridge
@@ -709,6 +745,7 @@ class CommandProcessor:
         self.voice_output_manager = voice_output_manager
 
     def process(self, command_text):
+        self._current_source_command = str(command_text or "").strip()
         command = self._normalize(command_text)
 
         if not command:
@@ -811,6 +848,34 @@ class CommandProcessor:
             return self._result(
                 "voice.output.capabilities",
                 self.voice_output_manager.capabilities_message(),
+                speakable=False,
+            )
+
+        if command in self.ASSISTANT_LAST_RESPONSE_COMMANDS:
+            return self._last_assistant_response_result()
+
+        if command in self.ASSISTANT_SPEAK_LAST_RESPONSE_COMMANDS:
+            return self._speak_last_assistant_response_result()
+
+        if command in self.ASSISTANT_RESPONSE_HISTORY_COMMANDS:
+            return self._assistant_response_history_result()
+
+        if command in self.ASSISTANT_RESPONSE_HISTORY_COUNT_COMMANDS:
+            return self._assistant_response_history_count_result()
+
+        if command in self.ASSISTANT_RESPONSE_HISTORY_CLEAR_COMMANDS:
+            self.assistant_response_history.clear()
+            return self._result(
+                "assistant.response_history.clear",
+                "История ответов JARVIS за текущую сессию очищена.",
+                speakable=False,
+            )
+
+        if command in self.VOICE_DIALOGUE_STATUS_COMMANDS:
+            return self._result(
+                "voice.dialogue.status",
+                self._voice_dialogue_status_response(),
+                speakable=False,
             )
 
         if command in self.VOSK_RECOGNITION_DRY_RUN_COMMANDS:
@@ -2137,12 +2202,22 @@ class CommandProcessor:
                 return original[len(prefix) :].strip()
         return None
 
-    def _result(self, intent, response, should_exit=False):
-        return {
+    def _result(self, intent, response, should_exit=False, speakable=None):
+        result = {
             "intent": intent,
             "response": response,
             "should_exit": should_exit,
         }
+        if speakable is None:
+            speakable = self._is_result_speakable(intent)
+        if speakable:
+            self.assistant_response_history.add_response(
+                response,
+                source_command=getattr(self, "_current_source_command", None),
+                speakable=True,
+                source="command_processor",
+            )
+        return result
 
     def _default_system_status(self):
         return {
@@ -2246,7 +2321,11 @@ class CommandProcessor:
 
     def _voice_output_speak_result(self, text):
         speak_result = self.voice_output_manager.speak(text, source="command")
-        return self._result(speak_result["intent"], speak_result["message"])
+        return self._result(
+            speak_result["intent"],
+            speak_result["message"],
+            speakable=False,
+        )
 
     def _voice_output_test_result(self):
         if not self.voice_output_manager.is_enabled():
@@ -2254,14 +2333,134 @@ class CommandProcessor:
                 "Исмаил, голосовой ответ JARVIS готов к тестированию.",
                 source="test",
             )
-            return self._result(speak_result["intent"], speak_result["message"])
+            return self._result(
+                speak_result["intent"],
+                speak_result["message"],
+                speakable=False,
+            )
 
         speak_result = self.voice_output_manager.test_voice()
-        return self._result("voice.output.test", speak_result["message"])
+        return self._result("voice.output.test", speak_result["message"], speakable=False)
 
     def _voice_output_local_test_result(self):
         speak_result = self.voice_output_manager.test_local_voice()
-        return self._result(speak_result["intent"], speak_result["message"])
+        return self._result(
+            speak_result["intent"],
+            speak_result["message"],
+            speakable=False,
+        )
+
+    def _last_assistant_response_result(self):
+        entry = self.assistant_response_history.last_speakable_response()
+        if entry is None:
+            return self._result(
+                "assistant.last_response.empty",
+                "В этой сессии ещё нет ответа JARVIS для повторения.",
+                speakable=False,
+            )
+        return self._result(
+            "assistant.last_response",
+            f"Последний ответ JARVIS:\n{entry.text}",
+            speakable=False,
+        )
+
+    def _speak_last_assistant_response_result(self):
+        entry = self.assistant_response_history.last_speakable_response()
+        if entry is None:
+            return self._result(
+                "assistant.speak_last_response.empty",
+                "В этой сессии ещё нет ответа JARVIS для повторения.",
+                speakable=False,
+            )
+
+        speak_result = self.voice_output_manager.speak(
+            entry.text,
+            source="speak_last_response",
+        )
+        mode = speak_result["mode"]
+        if mode == self.voice_output_manager.OFF:
+            response = (
+                "Голосовой ответ отключён. Включите тестовый режим командой: "
+                "включить тестовый голос или локальный голос командой: "
+                "включить локальный голос."
+            )
+            intent = "assistant.speak_last_response.disabled"
+        elif mode == self.voice_output_manager.DRY_RUN:
+            response = (
+                "Озвучиваю последний ответ JARVIS:\n"
+                f"[TTS dry-run] {speak_result['spoken_text']}\n"
+                "Безопасность: реальный звук не воспроизводился, облако не "
+                "использовалось, аудиофайл не сохранялся."
+            )
+            intent = "assistant.speak_last_response.dry_run"
+        elif speak_result["success"]:
+            response = (
+                "Последний ответ JARVIS озвучен локально.\n"
+                "Безопасность: облако не использовалось, аудиофайл не сохранялся."
+            )
+            intent = "assistant.speak_last_response.windows_local"
+        else:
+            safe_error = str(speak_result.get("error") or "неизвестная ошибка").strip()
+            response = (
+                "Не удалось озвучить последний ответ локально.\n"
+                f"Причина: {safe_error}.\n"
+                "Можно переключиться в тестовый режим: включить тестовый голос."
+            )
+            intent = "assistant.speak_last_response.failed"
+
+        return self._result(intent, response, speakable=False)
+
+    def _assistant_response_history_result(self):
+        entries = self.assistant_response_history.list_recent(limit=5)
+        if not entries:
+            response = "История ответов JARVIS за текущую сессию пуста."
+        else:
+            lines = ["История ответов JARVIS за текущую сессию:"]
+            for index, entry in enumerate(entries, start=1):
+                lines.append(f"{index}. {self._short_response_text(entry.text)}")
+            response = "\n".join(lines)
+        return self._result(
+            "assistant.response_history.list",
+            response,
+            speakable=False,
+        )
+
+    def _assistant_response_history_count_result(self):
+        count = self.assistant_response_history.count()
+        return self._result(
+            "assistant.response_history.count",
+            f"В этой сессии записано ответов JARVIS: {count}.",
+            speakable=False,
+        )
+
+    @staticmethod
+    def _voice_dialogue_status_response():
+        return (
+            "Голосовой диалог пока работает в ручном безопасном режиме.\n"
+            "JARVIS не озвучивает все ответы автоматически.\n"
+            "Можно использовать: озвучь последний ответ / повтори голосом."
+        )
+
+    @staticmethod
+    def _short_response_text(text, max_length=120):
+        normalized = " ".join(str(text or "").split())
+        if len(normalized) <= max_length:
+            return normalized
+        return normalized[: max_length - 3].rstrip() + "..."
+
+    @staticmethod
+    def _is_result_speakable(intent):
+        if not intent:
+            return False
+        non_speakable_prefixes = (
+            "voice.",
+            "speech.backend.",
+            "microphone.",
+            "assistant.last_response",
+            "assistant.speak_last_response",
+            "assistant.response_history",
+        )
+        return not str(intent).startswith(non_speakable_prefixes)
 
     def _process_voice_simulation(self, command):
         recognized_text = self._extract_prefixed_text(
@@ -2480,6 +2679,8 @@ class CommandProcessor:
             "Голосовой ответ доступен явно и безопасно: статус голосового ответа; диагностика локального голоса; "
             "включить тестовый голос; включить локальный голос; выключить голос; скажи: <текст>; произнеси: <текст>; "
             "озвучь: <текст>; тест голоса; тест локального голоса. "
+            "Последний ответ за текущую сессию можно посмотреть или озвучить явно: последний ответ; "
+            "озвучь последний ответ; повтори голосом; история ответов; статус голосового диалога. "
             "В тестовом режиме звук не воспроизводится; в локальном режиме используется Windows TTS. Облако не используется, аудиофайлы не сохраняются. "
             "Некоторые заранее известные read-only голосовые команды могут выполняться без подтверждения; список: безопасные голосовые команды. "
             "Неизвестные и рискованные голосовые команды всё ещё требуют подтверждения да / нет; "

@@ -369,6 +369,141 @@ def test_help_mentions_voice_output_commands():
     assert "тест локального голоса" in result["response"]
 
 
+def test_last_response_returns_empty_when_no_response():
+    processor = CommandProcessor()
+
+    result = processor.process("последний ответ")
+
+    assert result["intent"] == "assistant.last_response.empty"
+    assert result["response"] == "В этой сессии ещё нет ответа JARVIS для повторения."
+
+
+def test_normal_command_stores_response_and_last_response_displays_it():
+    processor = CommandProcessor()
+
+    status = processor.process("статус системы")
+    last = processor.process("последний ответ")
+
+    assert status["intent"] == "system.status"
+    assert processor.assistant_response_history.count() == 1
+    assert last["intent"] == "assistant.last_response"
+    assert last["response"] == f"Последний ответ JARVIS:\n{status['response']}"
+    assert processor.assistant_response_history.count() == 1
+
+
+def test_speak_last_response_while_voice_off_gives_disabled_message():
+    processor = CommandProcessor()
+    processor.process("статус системы")
+
+    result = processor.process("озвучь последний ответ")
+
+    assert result["intent"] == "assistant.speak_last_response.disabled"
+    assert "Голосовой ответ отключён." in result["response"]
+    assert "включить тестовый голос" in result["response"]
+    assert "включить локальный голос" in result["response"]
+
+
+def test_speak_last_response_dry_run_uses_previous_meaningful_response():
+    processor = CommandProcessor()
+    status = processor.process("статус системы")
+    processor.process("включить тестовый голос")
+
+    result = processor.process("озвучь последний ответ")
+
+    assert result["intent"] == "assistant.speak_last_response.dry_run"
+    assert "Озвучиваю последний ответ JARVIS:" in result["response"]
+    assert f"[TTS dry-run] {status['response']}" in result["response"]
+    assert "реальный звук не воспроизводился" in result["response"]
+    assert "облако не использовалось" in result["response"]
+    assert "аудиофайл не сохранялся" in result["response"]
+
+
+def test_speak_last_command_does_not_replace_last_meaningful_response():
+    processor = CommandProcessor()
+    status = processor.process("статус системы")
+    processor.process("озвучь последний ответ")
+
+    last = processor.process("последний ответ")
+
+    assert last["response"] == f"Последний ответ JARVIS:\n{status['response']}"
+    assert "Голосовой ответ отключён" not in last["response"]
+
+
+def test_repeat_by_voice_alias_speaks_last_response():
+    processor = CommandProcessor()
+    status = processor.process("статус системы")
+    processor.process("включить тестовый голос")
+
+    result = processor.process("повтори голосом")
+
+    assert result["intent"] == "assistant.speak_last_response.dry_run"
+    assert f"[TTS dry-run] {status['response']}" in result["response"]
+
+
+def test_speak_last_response_windows_local_uses_voice_output_manager_backend():
+    local_backend = FakeWindowsLocalTtsBackend(available=True)
+    processor = CommandProcessor(
+        voice_output_manager=VoiceOutputManager(windows_local_backend=local_backend)
+    )
+    status = processor.process("статус системы")
+    processor.process("включить локальный голос")
+
+    result = processor.process("озвучь последний ответ")
+
+    assert result["intent"] == "assistant.speak_last_response.windows_local"
+    assert local_backend.calls == [(status["response"], "WINDOWS_LOCAL")]
+    assert "Последний ответ JARVIS озвучен локально." in result["response"]
+
+
+def test_response_history_commands_work():
+    processor = CommandProcessor()
+    processor.process("статус системы")
+    processor.process("версия")
+
+    history = processor.process("история ответов")
+    count = processor.process("сколько ответов")
+
+    assert history["intent"] == "assistant.response_history.list"
+    assert "История ответов JARVIS за текущую сессию:" in history["response"]
+    assert "1. " in history["response"]
+    assert "2. " in history["response"]
+    assert count["response"] == "В этой сессии записано ответов JARVIS: 2."
+
+
+def test_clear_response_history_command_works():
+    processor = CommandProcessor()
+    processor.process("статус системы")
+
+    result = processor.process("очистить историю ответов")
+    last = processor.process("последний ответ")
+
+    assert result["intent"] == "assistant.response_history.clear"
+    assert result["response"] == "История ответов JARVIS за текущую сессию очищена."
+    assert processor.assistant_response_history.count() == 0
+    assert last["intent"] == "assistant.last_response.empty"
+
+
+def test_voice_dialogue_status_command():
+    processor = CommandProcessor()
+
+    result = processor.process("статус голосового диалога")
+
+    assert result["intent"] == "voice.dialogue.status"
+    assert "ручном безопасном режиме" in result["response"]
+    assert "не озвучивает все ответы автоматически" in result["response"]
+    assert "озвучь последний ответ / повтори голосом" in result["response"]
+
+
+def test_help_mentions_speak_last_response_commands():
+    response = CommandProcessor().process("помощь")["response"]
+
+    assert "последний ответ" in response
+    assert "озвучь последний ответ" in response
+    assert "повтори голосом" in response
+    assert "история ответов" in response
+    assert "статус голосового диалога" in response
+
+
 def test_vosk_real_commands_and_selection_flow():
     processor, manager = create_voice_enabled_processor()
     original_use_vosk_backend = manager.use_vosk_backend
