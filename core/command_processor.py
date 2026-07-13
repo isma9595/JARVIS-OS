@@ -118,6 +118,39 @@ class CommandProcessor:
         "выключи голос",
         "отключить голосовой ответ",
     }
+    VOICE_OUTPUT_MUTE_COMMANDS = {
+        "замолчи",
+        "тихо",
+        "стоп голос",
+        "останови голос",
+        "остановить голос",
+        "перестань говорить",
+        "не говори",
+        "отключи речь",
+        "выключи речь",
+    }
+    VOICE_OUTPUT_UNMUTE_COMMANDS = {
+        "снова говори",
+        "можешь говорить",
+        "включи речь",
+        "разреши голос",
+        "выключи тихий режим",
+        "отключи тихий режим",
+        "размутить голос",
+    }
+    VOICE_OUTPUT_SKIP_NEXT_COMMANDS = {
+        "не озвучивай следующий ответ",
+        "пропусти следующую озвучку",
+        "следующий ответ не озвучивай",
+        "один ответ без голоса",
+    }
+    VOICE_OUTPUT_SAFETY_STATUS_COMMANDS = {
+        "статус голосовой безопасности",
+        "статус тихого режима",
+        "статус mute",
+        "голос заблокирован?",
+        "можно ли говорить голосом",
+    }
     VOICE_OUTPUT_SAY_PREFIXES = (
         "скажи:",
         "произнеси:",
@@ -835,6 +868,52 @@ class CommandProcessor:
             return self._result(
                 "voice.output.status",
                 self.voice_output_manager.status_message(),
+            )
+
+        if command in self.VOICE_OUTPUT_MUTE_COMMANDS:
+            self.voice_output_manager.safety_controller.request_stop()
+            self.voice_dialogue_mode_manager.disable()
+            return self._result(
+                "voice.output.safety.muted",
+                (
+                    "Голосовая озвучка остановлена для следующих ответов.\n"
+                    "Тихий режим: включён.\n"
+                    "Голосовой диалог отключён.\n"
+                    "Примечание: уже запущенная синхронная речь Windows может завершиться сама; "
+                    "мгновенное прерывание будет отдельным этапом."
+                ),
+                speakable=False,
+                allow_manual_dialogue=False,
+            )
+
+        if command in self.VOICE_OUTPUT_UNMUTE_COMMANDS:
+            self.voice_output_manager.safety_controller.unmute()
+            return self._result(
+                "voice.output.safety.unmuted",
+                (
+                    "Тихий режим отключён.\n"
+                    "Голосовая озвучка снова разрешена.\n"
+                    "Чтобы JARVIS озвучивал текущие ответы, включите голосовой диалог отдельно."
+                ),
+                speakable=False,
+            )
+
+        if command in self.VOICE_OUTPUT_SKIP_NEXT_COMMANDS:
+            self.voice_output_manager.safety_controller.skip_next_speech()
+            return self._result(
+                "voice.output.safety.skip_next",
+                (
+                    "Следующая голосовая озвучка будет пропущена.\n"
+                    "После этого обычные настройки голоса сохранятся."
+                ),
+                speakable=False,
+            )
+
+        if command in self.VOICE_OUTPUT_SAFETY_STATUS_COMMANDS:
+            return self._result(
+                "voice.output.safety.status",
+                self._voice_output_safety_status_response(),
+                speakable=False,
             )
 
         if command in self.VOICE_OUTPUT_DRY_RUN_ENABLE_COMMANDS:
@@ -2400,7 +2479,12 @@ class CommandProcessor:
             )
 
         speak_result = self.voice_output_manager.test_voice()
-        return self._result("voice.output.test", speak_result["message"], speakable=False)
+        intent = (
+            speak_result["intent"]
+            if not speak_result.get("backend_called", False)
+            else "voice.output.test"
+        )
+        return self._result(intent, speak_result["message"], speakable=False)
 
     def _voice_output_local_test_result(self):
         speak_result = self.voice_output_manager.test_local_voice()
@@ -2438,7 +2522,14 @@ class CommandProcessor:
             source="speak_last_response",
         )
         mode = speak_result["mode"]
-        if mode == self.voice_output_manager.OFF:
+        if speak_result["intent"] in {"voice.output.muted", "voice.output.skipped"}:
+            response = speak_result["message"]
+            intent = (
+                "assistant.speak_last_response.muted"
+                if speak_result["intent"] == "voice.output.muted"
+                else "assistant.speak_last_response.skipped"
+            )
+        elif mode == self.voice_output_manager.OFF:
             response = (
                 "Голосовой ответ отключён. Включите тестовый режим командой: "
                 "включить тестовый голос или локальный голос командой: "
@@ -2520,6 +2611,27 @@ class CommandProcessor:
             speakable=False,
         )
 
+    def _voice_output_safety_status_response(self):
+        safety_status = self.voice_output_manager.safety_controller.status()
+        dialogue_mode = self.voice_dialogue_mode_manager.mode
+        voice_mode = self.voice_output_manager.mode
+        if safety_status.muted:
+            return (
+                "Голосовая безопасность:\n"
+                "Тихий режим: включён.\n"
+                "Голосовая озвучка заблокирована до команды: снова говори.\n"
+                f"Пропуск следующей озвучки: {'да' if safety_status.skip_next else 'нет'}.\n"
+                f"Голосовой диалог: {dialogue_mode}.\n"
+                f"Голосовой ответ: {voice_mode}."
+            )
+        return (
+            "Голосовая безопасность:\n"
+            "Тихий режим: выключен.\n"
+            f"Пропуск следующей озвучки: {'да' if safety_status.skip_next else 'нет'}.\n"
+            f"Голосовой диалог: {dialogue_mode}.\n"
+            f"Голосовой ответ: {voice_mode}."
+        )
+
     def _voice_dialogue_status_response(self):
         if self.voice_dialogue_mode_manager.is_manual_enabled():
             return (
@@ -2539,7 +2651,12 @@ class CommandProcessor:
             response,
             source="voice_dialogue_manual_mode",
         )
-        if speak_result["mode"] == self.voice_output_manager.DRY_RUN:
+        if speak_result["intent"] in {"voice.output.muted", "voice.output.skipped"}:
+            note = (
+                "Голосовой диалог: текущий ответ не озвучен.\n"
+                f"Причина: {speak_result['message']}"
+            )
+        elif speak_result["mode"] == self.voice_output_manager.DRY_RUN:
             note = (
                 "Голосовой диалог:\n"
                 f"[TTS dry-run] {speak_result['spoken_text']}\n"
@@ -2801,11 +2918,12 @@ class CommandProcessor:
             "Голосовой ответ доступен явно и безопасно: статус голосового ответа; диагностика локального голоса; "
             "включить тестовый голос; включить локальный голос; выключить голос; скажи: <текст>; произнеси: <текст>; "
             "озвучь: <текст>; тест голоса; тест локального голоса. "
+            "Управление безопасностью озвучки: замолчи; снова говори; не озвучивай следующий ответ; статус голосовой безопасности. "
             "Последний ответ за текущую сессию можно посмотреть или озвучить явно: последний ответ; "
             "озвучь последний ответ; повтори голосом; история ответов; статус голосового диалога. "
             "Ручной голосовой диалог можно включить только после голосового ответа: включить голосовой диалог; выключить голосовой диалог; статус голосового диалога. "
             "Для ручного режима сначала включите тестовый или локальный голос; постоянное прослушивание не включается. "
-            "В тестовом режиме звук не воспроизводится; в локальном режиме используется Windows TTS. Облако не используется, аудиофайлы не сохраняются. "
+            "Команды стоп/тихий режим не включают постоянное прослушивание. В тестовом режиме звук не воспроизводится; в локальном режиме используется Windows TTS. Облако не используется, аудиофайлы не сохраняются. "
             "Некоторые заранее известные read-only голосовые команды могут выполняться без подтверждения; список: безопасные голосовые команды. "
             "Неизвестные и рискованные голосовые команды всё ещё требуют подтверждения да / нет; "
             "ожидающую голосовую команду можно проверить или отменить. "

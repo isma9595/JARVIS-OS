@@ -61,6 +61,22 @@ def test_safe_aliases_map_to_canonical_commands():
     assert allowlist.decide("как твое имя").canonical_command == "как тебя зовут"
 
 
+def test_voice_output_safety_commands_are_allowed():
+    allowlist = SafeVoiceCommandAllowlist()
+
+    assert allowlist.decide("замолчи").canonical_command == "замолчи"
+    assert allowlist.decide("стоп голос").canonical_command == "замолчи"
+    assert allowlist.decide("снова говори").canonical_command == "снова говори"
+    assert (
+        allowlist.decide("не озвучивай следующий ответ").canonical_command
+        == "не озвучивай следующий ответ"
+    )
+    assert (
+        allowlist.decide("статус голосовой безопасности").canonical_command
+        == "статус голосовой безопасности"
+    )
+
+
 def test_unknown_command_is_not_allowed():
     decision = SafeVoiceCommandAllowlist().decide("расскажи что-нибудь")
 

@@ -1,4 +1,4 @@
-"""Safe read-only allowlist for one-shot voice command auto-execution."""
+"""Safe allowlist for one-shot voice command auto-execution."""
 
 from dataclasses import dataclass
 import re
@@ -14,7 +14,7 @@ class VoiceAllowlistDecision:
 
 
 class SafeVoiceCommandAllowlist:
-    """Match only known low-risk read-only voice commands."""
+    """Match only known low-risk read-only and safety-control voice commands."""
 
     READ_ONLY_SAFETY_NOTES = [
         "Разрешены только заранее известные read-only команды.",
@@ -140,6 +140,39 @@ class SafeVoiceCommandAllowlist:
         },
         "сколько голосовых команд": {
             "сколько голосовых команд",
+        },
+        "замолчи": {
+            "замолчи",
+            "тихо",
+            "стоп голос",
+            "останови голос",
+            "остановить голос",
+            "перестань говорить",
+            "не говори",
+            "отключи речь",
+            "выключи речь",
+        },
+        "снова говори": {
+            "снова говори",
+            "можешь говорить",
+            "включи речь",
+            "разреши голос",
+            "выключи тихий режим",
+            "отключи тихий режим",
+            "размутить голос",
+        },
+        "не озвучивай следующий ответ": {
+            "не озвучивай следующий ответ",
+            "пропусти следующую озвучку",
+            "следующий ответ не озвучивай",
+            "один ответ без голоса",
+        },
+        "статус голосовой безопасности": {
+            "статус голосовой безопасности",
+            "статус тихого режима",
+            "статус mute",
+            "голос заблокирован",
+            "можно ли говорить голосом",
         },
     }
 

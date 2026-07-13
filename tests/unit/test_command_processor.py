@@ -103,6 +103,28 @@ class FakeWindowsLocalTtsBackend:
         )
 
 
+class FakeDryRunTtsBackend:
+    def __init__(self):
+        self.calls = []
+
+    def get_name(self):
+        return "dry_run"
+
+    def synthesize(self, text, mode="DRY_RUN"):
+        self.calls.append((text, mode))
+        return SpeechSynthesisResult(
+            success=True,
+            spoken_text=text,
+            backend_name=self.get_name(),
+            mode=mode,
+            safety_notes=[
+                "Реальный звук не воспроизводился.",
+                "Облачный TTS не использовался.",
+                "Аудиофайл не сохранялся.",
+            ],
+        )
+
+
 class FailingWindowsLocalTtsBackend(FakeWindowsLocalTtsBackend):
     def synthesize(self, text, mode="WINDOWS_LOCAL"):
         self.calls.append((text, mode))
@@ -371,6 +393,133 @@ def test_voice_output_empty_say_command():
     assert result["response"] == "Укажите текст для озвучки."
 
 
+def test_voice_output_mute_command_enables_mute_and_disables_manual_dialogue():
+    backend = FakeDryRunTtsBackend()
+    manager = VoiceOutputManager(backend=backend)
+    processor = CommandProcessor(voice_output_manager=manager)
+    processor.process("включить тестовый голос")
+    processor.process("включить голосовой диалог")
+
+    result = processor.process("замолчи")
+
+    assert result["intent"] == "voice.output.safety.muted"
+    assert manager.safety_controller.status().muted is True
+    assert processor.voice_dialogue_mode_manager.is_manual_enabled() is False
+    assert "Тихий режим: включён." in result["response"]
+    assert "Голосовой диалог отключён." in result["response"]
+    assert "синхронная речь Windows может завершиться сама" in result["response"]
+
+
+def test_voice_output_mute_aliases_work():
+    for command in ("тихо", "стоп голос"):
+        processor = CommandProcessor()
+
+        result = processor.process(command)
+
+        assert result["intent"] == "voice.output.safety.muted"
+        assert processor.voice_output_manager.safety_controller.status().muted is True
+
+
+def test_voice_output_unmute_command_disables_mute_without_enabling_dialogue():
+    processor = CommandProcessor()
+    processor.process("включить тестовый голос")
+    processor.process("включить голосовой диалог")
+    processor.process("замолчи")
+
+    result = processor.process("снова говори")
+
+    assert result["intent"] == "voice.output.safety.unmuted"
+    assert processor.voice_output_manager.safety_controller.status().muted is False
+    assert processor.voice_dialogue_mode_manager.is_manual_enabled() is False
+    assert "включите голосовой диалог отдельно" in result["response"]
+
+
+def test_voice_output_skip_next_command_sets_skip_flag():
+    processor = CommandProcessor()
+
+    result = processor.process("не озвучивай следующий ответ")
+
+    assert result["intent"] == "voice.output.safety.skip_next"
+    assert processor.voice_output_manager.safety_controller.status().skip_next is True
+    assert "Следующая голосовая озвучка будет пропущена." in result["response"]
+
+
+def test_voice_output_safety_status_reports_normal_and_muted_states():
+    processor = CommandProcessor()
+
+    normal = processor.process("статус голосовой безопасности")
+    processor.process("замолчи")
+    muted = processor.process("статус голосовой безопасности")
+
+    assert normal["intent"] == "voice.output.safety.status"
+    assert "Тихий режим: выключен." in normal["response"]
+    assert "Голосовой диалог: OFF." in normal["response"]
+    assert "Голосовой ответ: OFF." in normal["response"]
+    assert "Тихий режим: включён." in muted["response"]
+    assert "Голосовая озвучка заблокирована до команды: снова говори." in muted["response"]
+
+
+def test_explicit_say_while_muted_does_not_call_backend():
+    backend = FakeDryRunTtsBackend()
+    manager = VoiceOutputManager(backend=backend)
+    processor = CommandProcessor(voice_output_manager=manager)
+    processor.process("включить тестовый голос")
+    processor.process("замолчи")
+
+    result = processor.process("скажи: тест")
+
+    assert result["intent"] == "voice.output.muted"
+    assert "Голосовая озвучка заблокирована" in result["response"]
+    assert backend.calls == []
+
+
+def test_speak_last_while_muted_is_blocked():
+    backend = FakeDryRunTtsBackend()
+    manager = VoiceOutputManager(backend=backend)
+    processor = CommandProcessor(voice_output_manager=manager)
+    processor.process("статус системы")
+    processor.process("включить тестовый голос")
+    processor.process("замолчи")
+
+    result = processor.process("озвучь последний ответ")
+
+    assert result["intent"] == "assistant.speak_last_response.muted"
+    assert "Голосовая озвучка заблокирована" in result["response"]
+    assert backend.calls == []
+
+
+def test_manual_dialogue_while_muted_does_not_speak_current_response():
+    backend = FakeDryRunTtsBackend()
+    manager = VoiceOutputManager(backend=backend)
+    processor = CommandProcessor(voice_output_manager=manager)
+    processor.process("включить тестовый голос")
+    processor.voice_dialogue_mode_manager.enable_manual()
+    manager.safety_controller.mute()
+
+    result = processor.process("статус системы")
+
+    assert "Голосовой диалог: текущий ответ не озвучен." in result["response"]
+    assert "Голосовая озвучка заблокирована" in result["response"]
+    assert backend.calls == []
+
+
+def test_skip_next_prevents_one_manual_dialogue_speech_and_clears():
+    backend = FakeDryRunTtsBackend()
+    manager = VoiceOutputManager(backend=backend)
+    processor = CommandProcessor(voice_output_manager=manager)
+    processor.process("включить тестовый голос")
+    processor.process("включить голосовой диалог")
+    processor.process("не озвучивай следующий ответ")
+
+    first = processor.process("статус системы")
+    second = processor.process("статус системы")
+
+    assert "Следующая голосовая озвучка пропущена" in first["response"]
+    assert manager.safety_controller.status().skip_next is False
+    assert "Голосовой диалог:\n[TTS dry-run]" in second["response"]
+    assert len(backend.calls) == 1
+
+
 def test_help_mentions_voice_output_commands():
     processor = CommandProcessor()
 
@@ -385,6 +534,10 @@ def test_help_mentions_voice_output_commands():
     assert "диагностика локального голоса" in result["response"]
     assert "включить локальный голос" in result["response"]
     assert "тест локального голоса" in result["response"]
+    assert "замолчи" in result["response"]
+    assert "снова говори" in result["response"]
+    assert "не озвучивай следующий ответ" in result["response"]
+    assert "статус голосовой безопасности" in result["response"]
 
 
 def test_last_response_returns_empty_when_no_response():

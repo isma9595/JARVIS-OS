@@ -11,6 +11,11 @@ from voice.speech_synthesis_backend import (
 from voice.windows_local_tts_backend import WindowsLocalSpeechSynthesisBackend
 from voice.voice_input_manager import VoiceInputManager
 from voice.voice_output_manager import VoiceOutputManager
+from voice.voice_output_safety import (
+    VoiceOutputSafetyController,
+    VoiceOutputSafetyDecision,
+    VoiceOutputSafetyStatus,
+)
 from voice.audio_dependency_readiness import (
     AudioDependencyReadinessChecker,
     AudioDependencyReadinessResult,
@@ -92,6 +97,9 @@ __all__ = [
     "SoundDeviceOneShotCaptureAdapter",
     "VoiceInputManager",
     "VoiceOutputManager",
+    "VoiceOutputSafetyController",
+    "VoiceOutputSafetyDecision",
+    "VoiceOutputSafetyStatus",
     "DryRunSpeechSynthesisBackend",
     "WindowsLocalSpeechSynthesisBackend",
     "VoskLocalBackend",

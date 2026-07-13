@@ -1,4 +1,4 @@
-from voice import SpeechSynthesisResult, VoiceOutputManager
+from voice import SpeechSynthesisResult, VoiceOutputManager, VoiceOutputSafetyController
 
 
 class TrackingBackend:
@@ -225,3 +225,80 @@ def test_no_automatic_speaking_behavior_on_status_or_enable():
     manager.enable_windows_local()
 
     assert local_backend.calls == []
+
+
+def test_speak_while_muted_does_not_call_backend():
+    backend = TrackingBackend()
+    safety = VoiceOutputSafetyController()
+    manager = VoiceOutputManager(backend=backend, safety_controller=safety)
+    manager.enable_dry_run()
+    safety.mute()
+
+    result = manager.speak("не произносить")
+
+    assert result["intent"] == "voice.output.muted"
+    assert result["backend_called"] is False
+    assert backend.calls == []
+    assert result["message"] == "Голосовая озвучка заблокирована: включён тихий режим."
+    assert "Тихий режим блокирует голосовую озвучку." in result["safety_notes"]
+
+
+def test_speak_with_skip_next_does_not_call_backend_and_clears_flag():
+    backend = TrackingBackend()
+    safety = VoiceOutputSafetyController()
+    manager = VoiceOutputManager(backend=backend, safety_controller=safety)
+    manager.enable_dry_run()
+    safety.skip_next_speech()
+
+    result = manager.speak("пропустить")
+
+    assert result["intent"] == "voice.output.skipped"
+    assert result["backend_called"] is False
+    assert backend.calls == []
+    assert safety.status().skip_next is False
+    assert "Следующая озвучка пропускается один раз." in result["safety_notes"]
+
+
+def test_next_speak_after_skip_works():
+    backend = TrackingBackend()
+    safety = VoiceOutputSafetyController()
+    manager = VoiceOutputManager(backend=backend, safety_controller=safety)
+    manager.enable_dry_run()
+    safety.skip_next_speech()
+
+    first = manager.speak("первый")
+    second = manager.speak("второй")
+
+    assert first["intent"] == "voice.output.skipped"
+    assert second["intent"] == "voice.output.spoken"
+    assert backend.calls == [("второй", "DRY_RUN")]
+
+
+def test_off_behavior_still_ignores_safety_skip():
+    backend = TrackingBackend()
+    safety = VoiceOutputSafetyController()
+    manager = VoiceOutputManager(backend=backend, safety_controller=safety)
+    safety.skip_next_speech()
+
+    result = manager.speak("off")
+
+    assert result["intent"] == "voice.output.disabled"
+    assert result["backend_called"] is False
+    assert safety.status().skip_next is True
+    assert backend.calls == []
+
+
+def test_windows_local_behavior_still_works_when_allowed():
+    local_backend = LocalTrackingBackend()
+    safety = VoiceOutputSafetyController()
+    manager = VoiceOutputManager(
+        windows_local_backend=local_backend,
+        safety_controller=safety,
+    )
+    manager.enable_windows_local()
+
+    result = manager.speak("локально")
+
+    assert result["intent"] == "voice.output.spoken"
+    assert result["backend_called"] is True
+    assert local_backend.calls == [("локально", "WINDOWS_LOCAL")]

@@ -1,4 +1,5 @@
 from voice.speech_synthesis_backend import DryRunSpeechSynthesisBackend
+from voice.voice_output_safety import VoiceOutputSafetyController
 from voice.windows_local_tts_backend import WindowsLocalSpeechSynthesisBackend
 
 
@@ -8,9 +9,16 @@ class VoiceOutputManager:
     WINDOWS_LOCAL = "WINDOWS_LOCAL"
     MAX_TEXT_LENGTH = 500
 
-    def __init__(self, backend=None, mode=OFF, windows_local_backend=None):
+    def __init__(
+        self,
+        backend=None,
+        mode=OFF,
+        windows_local_backend=None,
+        safety_controller=None,
+    ):
         self.backend = backend or DryRunSpeechSynthesisBackend()
         self.windows_local_backend = windows_local_backend or WindowsLocalSpeechSynthesisBackend()
+        self.safety_controller = safety_controller or VoiceOutputSafetyController()
         self.mode = self._normalize_mode(mode)
 
     def status(self):
@@ -18,6 +26,8 @@ class VoiceOutputManager:
             "mode": self.mode,
             "enabled": self.is_enabled(),
             "backend_name": self._active_backend().get_name(),
+            "muted": self.safety_controller.status().muted,
+            "skip_next": self.safety_controller.status().skip_next,
             "safety_notes": self._safety_notes(),
             "message": self.status_message(),
         }
@@ -141,6 +151,26 @@ class VoiceOutputManager:
                 "safety_notes": self._safety_notes(),
             }
 
+        safety_decision = self.safety_controller.can_speak(source=source)
+        if not safety_decision.allowed:
+            if safety_decision.reason == "skip_next":
+                self.safety_controller.consume_skip_if_needed()
+                message = "Следующая голосовая озвучка пропущена по команде пользователя."
+                intent = "voice.output.skipped"
+            else:
+                message = "Голосовая озвучка заблокирована: включён тихий режим."
+                intent = "voice.output.muted"
+            return {
+                "success": False,
+                "intent": intent,
+                "mode": self.mode,
+                "source": source,
+                "spoken_text": normalized_text,
+                "backend_called": False,
+                "message": message,
+                "safety_notes": safety_decision.safety_notes,
+            }
+
         result = self._active_backend().synthesize(normalized_text, mode=self.mode)
         if self.mode == self.WINDOWS_LOCAL:
             message = self._windows_local_message(result)
@@ -235,6 +265,11 @@ class VoiceOutputManager:
             "Облачный TTS не используется.",
             "Аудиофайлы не сохраняются.",
         ]
+        safety_status = self.safety_controller.status()
+        if safety_status.muted:
+            notes.append("Тихий режим включён: голосовая озвучка блокируется.")
+        if safety_status.skip_next:
+            notes.append("Следующая голосовая озвучка будет пропущена один раз.")
         if self.mode == self.WINDOWS_LOCAL:
             notes.append("Реальное воспроизведение запускается только для явных команд озвучки.")
         else:
