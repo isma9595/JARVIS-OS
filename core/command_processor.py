@@ -84,6 +84,16 @@ class CommandProcessor:
         "голосовой ввод",
         "голосовой режим",
     }
+    VOICE_CYCLE_STATUS_COMMANDS = {
+        "статус голосового цикла",
+        "голосовой цикл статус",
+        "итог голосового цикла",
+        "что умеет голос",
+        "список голосовых возможностей",
+    }
+    VOICE_COMMAND_MAP_COMMANDS = {
+        "карта голосовых команд",
+    }
     VOICE_ENABLE_COMMANDS = {
         "включи голос",
         "включить голосовой ввод",
@@ -950,6 +960,24 @@ class CommandProcessor:
             return self._result(
                 "voice.output.safety.status",
                 self._voice_output_safety_status_response(),
+                speakable=False,
+            )
+
+        if command in self.VOICE_CYCLE_STATUS_COMMANDS:
+            from voice.voice_command_index import VoiceCommandIndex
+
+            return self._result(
+                "voice.cycle.status",
+                VoiceCommandIndex.get_voice_cycle_summary(),
+                speakable=False,
+            )
+
+        if command in self.VOICE_COMMAND_MAP_COMMANDS:
+            from voice.voice_command_index import VoiceCommandIndex
+
+            return self._result(
+                "voice.cycle.command_map",
+                VoiceCommandIndex.get_voice_command_map(),
                 speakable=False,
             )
 
@@ -3065,6 +3093,7 @@ class CommandProcessor:
             "реальное one-shot распознавание Vosk по явной команде; симуляция голосовой команды. "
             "Для проверки голосового pipeline без микрофона используйте: симулируй распознавание: <текст>. "
             "Реальный захват микрофона автоматически не включается. "
+            "Финальные голосовые команды: статус голосового цикла; карта голосовых команд. "
             "Голосовой ответ доступен явно и безопасно: статус голосового ответа; диагностика локального голоса; "
             "включить тестовый голос; включить локальный голос; выключить голос; скажи: <текст>; произнеси: <текст>; "
             "озвучь: <текст>; тест голоса; тест локального голоса. "

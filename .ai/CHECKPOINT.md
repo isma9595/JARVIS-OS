@@ -1,10 +1,10 @@
 # JARVIS-OS Checkpoint
 
 - Project: JARVIS-OS
-- Current stable stage: TASK-048 — Voice Dialogue Stop / Mute / Output Safety Controls
-- Last stable commit: 3b45d93
-- Last stable commit message: Add voice output safety controls
-- Next stage: TASK-049 — Voice Dialogue Repeat / Clarify / Last Voice Interaction Controls
+- Current stable stage: TASK-049 — Voice Dialogue Repeat / Clarify / Last Voice Interaction Controls
+- Last stable commit: d5bcd36
+- Last stable commit message: Add voice interaction repeat controls
+- Next stage: TASK-050 — Voice Cycle Final Polish / Stability Review
 - Status: in progress
 
 ## Approved Workflow
@@ -30,3 +30,5 @@ TASK-037 allows real microphone capture only after an explicit one-shot recognit
 TASK-037A is diagnostics only. It must not install packages automatically and must not change microphone safety behavior.
 
 JARVIS remains Russian-first for user-facing functionality, with future multilingual switching planned.
+
+TASK-050 is in progress. The voice cycle is nearing final review completion, pending verification.
