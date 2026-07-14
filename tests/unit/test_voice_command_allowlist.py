@@ -242,6 +242,36 @@ def test_gemini_guard_status_and_model_commands_are_allowlisted_but_requests_are
         assert allowlist.decide(command).allowed is False
 
 
+def test_groq_status_key_guard_limits_and_model_commands_are_allowlisted_but_requests_are_not():
+    allowlist = SafeVoiceCommandAllowlist()
+
+    for command, canonical in (
+        ("статус groq", "статус groq"),
+        ("статус грок", "статус groq"),
+        ("проверить groq ключ", "проверить groq ключ"),
+        ("проверить ключ groq", "проверить groq ключ"),
+        ("статус groq guard", "статус groq guard"),
+        ("статус groq cost guard", "статус groq guard"),
+        ("лимиты groq", "статус groq guard"),
+        ("groq модель", "groq модель"),
+        ("groq model", "groq модель"),
+    ):
+        decision = allowlist.decide(command)
+        assert decision.allowed is True
+        assert decision.canonical_command == canonical
+
+    for command in (
+        "спроси groq: привет",
+        "groq: привет",
+        "groq реальный запрос: привет",
+        "реальный groq запрос: привет",
+        "groq one shot: hello",
+        "установи groq ключ abc123",
+        "установи groq модель llama-3.3-70b-versatile",
+    ):
+        assert allowlist.decide(command).allowed is False
+
+
 def test_voice_interaction_info_commands_are_allowed_without_replay_execution():
     allowlist = SafeVoiceCommandAllowlist()
 

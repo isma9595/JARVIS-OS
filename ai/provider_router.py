@@ -14,6 +14,7 @@ from ai.provider_contracts import (
 )
 from ai.providers.dry_run_provider import DryRunAIProvider
 from ai.providers.gemini_provider import GeminiProvider
+from ai.providers.groq_provider import GroqProvider
 from ai.providers.openai_provider import OpenAIProvider
 
 
@@ -121,6 +122,7 @@ class AIProviderRouter:
             "- Внешние провайдеры из конфигурации остаются выключенными по умолчанию.\n"
             "- OpenAI зарегистрирован как disabled external provider; сеть для него выключена, пока явно не разрешена.\n"
             "- Gemini зарегистрирован как disabled external provider; сеть выключена кроме явного one-shot.\n"
+            "- Groq зарегистрирован как disabled external provider; сеть выключена кроме явного one-shot.\n"
             "- Слой конфигурации проверяет только наличие переменных окружения и не показывает ключи.\n"
             "- Реальные внешние AI-провайдеры не активны по умолчанию.\n"
             "- Сеть не используется.\n"
@@ -142,6 +144,7 @@ class AIProviderRouter:
             [
                 "OpenAI виден как внешний провайдер, но выключен по умолчанию; сеть не используется без явного разрешения.",
                 "Gemini виден как внешний провайдер, но выключен по умолчанию; сеть не используется кроме явного one-shot.",
+                "Groq виден как внешний провайдер, но выключен по умолчанию; сеть не используется кроме явного one-shot.",
                 "API-ключи не печатаются.",
             ]
         )
@@ -149,12 +152,15 @@ class AIProviderRouter:
 
     def _default_providers(self):
         providers: list[AIProvider] = [DryRunAIProvider()]
-        gemini_config = self.config_manager.get_config("gemini")
-        if gemini_config is not None:
-            providers.append(GeminiProvider(config=gemini_config))
         openai_config = self.config_manager.get_config("openai")
         if openai_config is not None:
             providers.append(OpenAIProvider(config=openai_config))
+        gemini_config = self.config_manager.get_config("gemini")
+        if gemini_config is not None:
+            providers.append(GeminiProvider(config=gemini_config))
+        groq_config = self.config_manager.get_config("groq")
+        if groq_config is not None:
+            providers.append(GroqProvider(config=groq_config))
         return providers
 
     @staticmethod

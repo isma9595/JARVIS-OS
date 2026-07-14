@@ -96,3 +96,7 @@ OpenAI one-shot model selection is controlled only by the temporary environment 
 Gemini now has a disabled provider adapter and one-shot request gate. The default model is `gemini-2.5-flash-lite`, and the key must come from `GEMINI_API_KEY`.
 
 The adapter remains disabled by default. `dry_run` remains default. Free tier, quota, rate limits, and available models may vary by account, region, and model.
+
+## TASK-058 Update
+
+Groq uses `GROQ_API_KEY` for the API key and optional `GROQ_MODEL` for one-shot model selection. The default Groq model is `llama-3.1-8b-instant`. Groq remains disabled by default, `dry_run` remains default, and key/status checks stay offline and never print key values.

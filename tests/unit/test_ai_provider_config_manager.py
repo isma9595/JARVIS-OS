@@ -106,3 +106,22 @@ def test_check_openai_key_status_present_without_value():
     assert "PRESENT" in text
     assert "OPENAI_API_KEY" in text
     assert secret not in text
+
+
+def test_groq_status_safe_with_default_model_and_key_states():
+    missing = AIProviderConfigManager(environ={})
+    present_secret = "groq-secret-that-must-stay-hidden"
+    present = AIProviderConfigManager(environ={"GROQ_API_KEY": present_secret})
+
+    assert missing.status_for("groq").key_status == AIProviderKeyStatus.MISSING
+    assert present.status_for("groq").key_status == AIProviderKeyStatus.PRESENT
+    text = "\n".join(
+        [
+            present.format_status_ru(),
+            present.format_provider_list_ru(),
+            present.check_provider_key_text_ru("groq"),
+        ]
+    )
+    assert "llama-3.1-8b-instant" in text
+    assert "GROQ_API_KEY" in text
+    assert present_secret not in text

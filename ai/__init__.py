@@ -30,6 +30,13 @@ from ai.gemini_cost_guard import (
 )
 from ai.gemini_request_gate import GeminiRequestGate, GeminiRequestGateStatus
 from ai.providers.gemini_provider import GeminiProvider
+from ai.groq_cost_guard import (
+    GroqRequestCostGuard,
+    GroqRequestGuardConfig,
+    GroqRequestGuardResult,
+)
+from ai.groq_request_gate import GroqRequestGate, GroqRequestGateStatus
+from ai.providers.groq_provider import GroqProvider
 
 __all__ = [
     "AIProvider",
@@ -50,6 +57,12 @@ __all__ = [
     "GeminiRequestGateStatus",
     "GeminiRequestGuardConfig",
     "GeminiRequestGuardResult",
+    "GroqProvider",
+    "GroqRequestCostGuard",
+    "GroqRequestGate",
+    "GroqRequestGateStatus",
+    "GroqRequestGuardConfig",
+    "GroqRequestGuardResult",
     "OpenAIRequestCostGuard",
     "OpenAIRequestGate",
     "OpenAIRequestGateStatus",

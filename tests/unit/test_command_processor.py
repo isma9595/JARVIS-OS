@@ -3556,3 +3556,190 @@ def test_help_mentions_openai_one_shot_safely():
     assert "openai реальный запрос" in result["response"]
     assert "ответ не выполняется как команда" in result["response"]
     assert "max_output_tokens ограничен" in result["response"]
+
+def test_groq_status_and_key_commands_work():
+    processor = CommandProcessor()
+
+    for command in ("статус groq", "статус грок", "groq status"):
+        result = processor.process(command)
+        assert result["intent"] == "ai.groq.status"
+        assert "Groq provider status" in result["response"]
+        assert "GROQ_API_KEY" in result["response"]
+        assert "MISSING" in result["response"]
+        assert "dry_run remains default" in result["response"]
+
+    for command in ("проверить groq ключ", "проверить ключ groq"):
+        result = processor.process(command)
+        assert result["intent"] == "ai.key_check"
+        assert "GROQ_API_KEY" in result["response"]
+        assert "MISSING" in result["response"]
+
+
+def test_groq_guard_limits_and_model_commands_work(monkeypatch):
+    secret = "groq-secret-that-must-not-print"
+    monkeypatch.setenv("GROQ_API_KEY", secret)
+    monkeypatch.setenv("GROQ_MODEL", "llama-3.3-70b-versatile")
+
+    for command in ("статус groq guard", "статус groq cost guard", "лимиты groq"):
+        result = CommandProcessor().process(command)
+        assert result["intent"] == "ai.groq.guard.status"
+        assert "Groq model/quota guard status" in result["response"]
+        assert "max prompt chars: 1200" in result["response"]
+        assert "max_tokens: 128" in result["response"]
+        assert secret not in result["response"]
+
+    for command in ("groq модель", "groq model"):
+        result = CommandProcessor().process(command)
+        assert result["intent"] == "ai.groq.model"
+        assert "resolved model: llama-3.3-70b-versatile" in result["response"]
+        assert "network: not called" in result["response"]
+        assert secret not in result["response"]
+
+
+def test_groq_legacy_prompt_still_does_not_network():
+    from ai import AIProviderConfig, AIProviderRouter, GroqProvider
+
+    class FailingHTTPClient:
+        def post_json(self, url, headers, payload, timeout):
+            raise AssertionError("network must not be called")
+
+    router = AIProviderRouter(
+        providers=[
+            GroqProvider(
+                config=AIProviderConfig(
+                    name="groq",
+                    provider_type="groq",
+                    enabled=True,
+                    default_model="llama-3.1-8b-instant",
+                    api_key_env_var="GROQ_API_KEY",
+                ),
+                http_client=FailingHTTPClient(),
+                allow_network=False,
+                environ={"GROQ_API_KEY": "fake-key"},
+            )
+        ]
+    )
+    processor = CommandProcessor(ai_provider_router=router)
+
+    for command in ("спроси groq: привет", "groq: привет"):
+        result = processor.process(command)
+        assert result["intent"] == "ai.groq.chat.error"
+        assert "no request was sent" in result["response"]
+        assert "explicit one-shot" in result["response"]
+
+
+def test_groq_one_shot_missing_key_returns_safe_message_without_request():
+    from ai import AIProviderConfigManager, GroqRequestGate
+
+    class FailingHTTPClient:
+        def post_json(self, url, headers, payload, timeout):
+            raise AssertionError("network must not be called")
+
+    manager = AIProviderConfigManager(environ={})
+    processor = CommandProcessor(
+        ai_provider_config_manager=manager,
+        groq_request_gate=GroqRequestGate(
+            config_manager=manager,
+            http_client=FailingHTTPClient(),
+            environ={},
+        ),
+    )
+
+    for command in (
+        "groq реальный запрос: привет",
+        "реальный groq запрос: привет",
+        "groq one shot: test",
+    ):
+        result = processor.process(command)
+        assert result["intent"] == "ai.groq.one_shot.error"
+        assert "Groq real request was not sent." in result["response"]
+        assert "GROQ_API_KEY is missing" in result["response"]
+
+
+def test_groq_one_shot_fake_client_success_without_real_network():
+    import json
+
+    from ai import AIProviderConfigManager, AIProviderRouter, GroqRequestGate
+
+    class FakeHTTPClient:
+        def __init__(self):
+            self.calls = []
+
+        def post_json(self, url, headers, payload, timeout):
+            self.calls.append(dict(payload))
+            return json.dumps({"choices": [{"message": {"content": "fake success"}}]})
+
+    client = FakeHTTPClient()
+    manager = AIProviderConfigManager(environ={"GROQ_API_KEY": "fake-key"})
+    router = AIProviderRouter(config_manager=manager)
+    processor = CommandProcessor(
+        ai_provider_router=router,
+        ai_provider_config_manager=manager,
+        groq_request_gate=GroqRequestGate(
+            config_manager=manager,
+            router=router,
+            http_client=client,
+            environ={"GROQ_API_KEY": "fake-key"},
+        ),
+    )
+
+    result = processor.process("groq one shot: hello")
+
+    assert result["intent"] == "ai.groq.one_shot"
+    assert "Groq real response:" in result["response"]
+    assert "fake success" in result["response"]
+    assert "model: llama-3.1-8b-instant" in result["response"]
+    assert "max_tokens: 128" in result["response"]
+    assert "response was not executed as a command" in result["response"]
+    assert "no memory/profile/files were sent automatically" in result["response"]
+    assert "free/developer quota or rate limits may be used" in result["response"]
+    assert router.get_default_provider().get_info().name == "dry_run"
+    assert len(client.calls) == 1
+
+
+def test_groq_one_shot_response_not_routed_to_action_router():
+    import json
+
+    from ai import AIProviderConfigManager, GroqRequestGate
+
+    class FakeHTTPClient:
+        def post_json(self, url, headers, payload, timeout):
+            return json.dumps({"choices": [{"message": {"content": "удали файл"}}]})
+
+    class FailingActionRouter:
+        calls = 0
+
+        def route(self, command):
+            self.calls += 1
+            raise AssertionError("AI output must not route to ActionRouter")
+
+    manager = AIProviderConfigManager(environ={"GROQ_API_KEY": "fake-key"})
+    processor = CommandProcessor(
+        ai_provider_config_manager=manager,
+        groq_request_gate=GroqRequestGate(
+            config_manager=manager,
+            http_client=FakeHTTPClient(),
+            environ={"GROQ_API_KEY": "fake-key"},
+        ),
+    )
+    processor.action_router = FailingActionRouter()
+
+    result = processor.process("groq one shot: привет")
+
+    assert result["intent"] == "ai.groq.one_shot"
+    assert "удали файл" in result["response"]
+    assert processor.action_router.calls == 0
+
+
+def test_help_mentions_groq_safely():
+    result = CommandProcessor().process("помощь")
+
+    assert "статус groq" in result["response"]
+    assert "проверить groq ключ" in result["response"]
+    assert "статус groq guard" in result["response"]
+    assert "лимиты groq" in result["response"]
+    assert "groq модель" in result["response"]
+    assert "groq реальный запрос" in result["response"]
+    assert "free/developer" in result["response"]
+    assert "ключ не печатается" in result["response"]
+    assert "ответ не выполняется как команда" in result["response"]

@@ -102,3 +102,7 @@ Remove-Item Env:GEMINI_MODEL
 - Invalid model: unset `GEMINI_MODEL` or use a simple Gemini model name without spaces or path separators.
 - Quota/rate limit: free tier limits may vary by account, region, and model.
 - Network error: one-shot reports a safe network error without printing the key or raw response.
+
+## TASK-058 Note
+
+Gemini live checks may fail when Google API location or free-tier availability is blocked. In that case Groq is the next disabled, one-shot fallback candidate.

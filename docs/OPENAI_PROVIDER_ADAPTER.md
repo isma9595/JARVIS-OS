@@ -60,3 +60,7 @@ The request body remains limited to:
 - `max_output_tokens` when provided by the one-shot guard
 
 The adapter still does not send memory, profile data, files, logs, tools, streaming options, or `previous_response_id`.
+
+## TASK-058 Note
+
+OpenAI remains optional and may require paid billing. Gemini and Groq are tracked as free-tier candidates, but they also remain disabled by default and explicit one-shot only.

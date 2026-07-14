@@ -6,6 +6,7 @@ from ai import (
     AIProviderRouter,
     AIRequest,
     GeminiRequestGate,
+    GroqRequestGate,
     OpenAIRequestGate,
 )
 from core.action_router import SafeActionRouter
@@ -129,6 +130,20 @@ class CommandProcessor:
         "gemini модель",
         "gemini model",
     }
+    GROQ_STATUS_COMMANDS = {
+        "статус groq",
+        "статус грок",
+        "groq status",
+    }
+    GROQ_GUARD_STATUS_COMMANDS = {
+        "статус groq guard",
+        "статус groq cost guard",
+        "лимиты groq",
+    }
+    GROQ_MODEL_COMMANDS = {
+        "groq модель",
+        "groq model",
+    }
     AI_PROVIDER_LIST_COMMANDS = {
         "список ai провайдеров",
         "список ии провайдеров",
@@ -158,11 +173,21 @@ class CommandProcessor:
     }
     AI_PROVIDER_KEY_CHECK_COMMANDS = {
         "проверить groq ключ": "groq",
+        "проверить ключ groq": "groq",
         "проверить gemini ключ": "gemini",
         "проверить ключ gemini": "gemini",
         "проверить openai ключ": "openai",
         "проверить ключ openai": "openai",
     }
+    GROQ_CHAT_PREFIXES = (
+        "спроси groq:",
+        "groq:",
+    )
+    GROQ_ONE_SHOT_PREFIXES = (
+        "groq реальный запрос:",
+        "реальный groq запрос:",
+        "groq one shot:",
+    )
     GEMINI_CHAT_PREFIXES = (
         "спроси gemini:",
         "gemini:",
@@ -912,6 +937,7 @@ class CommandProcessor:
         ai_provider_config_manager=None,
         openai_request_gate=None,
         gemini_request_gate=None,
+        groq_request_gate=None,
     ):
         self.user_profile = user_profile or {}
         self.dialogue_manager = dialogue_manager or DialogueManager(self.user_profile)
@@ -938,6 +964,10 @@ class CommandProcessor:
             router=self.ai_provider_router,
         )
         self.gemini_request_gate = gemini_request_gate or GeminiRequestGate(
+            config_manager=self.ai_provider_config_manager,
+            router=self.ai_provider_router,
+        )
+        self.groq_request_gate = groq_request_gate or GroqRequestGate(
             config_manager=self.ai_provider_config_manager,
             router=self.ai_provider_router,
         )
@@ -1707,6 +1737,14 @@ class CommandProcessor:
         if gemini_one_shot_text is not None:
             return self._generate_gemini_one_shot_result(gemini_one_shot_text)
 
+        groq_one_shot_text = self._extract_ai_prefixed_text(
+            command_text,
+            command,
+            self.GROQ_ONE_SHOT_PREFIXES,
+        )
+        if groq_one_shot_text is not None:
+            return self._generate_groq_one_shot_result(groq_one_shot_text)
+
         gemini_chat_text = self._extract_ai_prefixed_text(
             command_text,
             command,
@@ -1718,6 +1756,19 @@ class CommandProcessor:
                 gemini_chat_text,
                 AIProviderCapability.CHAT,
                 "ai.gemini.chat",
+            )
+
+        groq_chat_text = self._extract_ai_prefixed_text(
+            command_text,
+            command,
+            self.GROQ_CHAT_PREFIXES,
+        )
+        if groq_chat_text is not None:
+            return self._generate_named_ai_result(
+                "groq",
+                groq_chat_text,
+                AIProviderCapability.CHAT,
+                "ai.groq.chat",
             )
 
         openai_chat_text = self._extract_ai_prefixed_text(
@@ -1884,6 +1935,24 @@ class CommandProcessor:
             return self._result(
                 "ai.gemini.model",
                 self.gemini_request_gate.model_text_ru(),
+            )
+
+        if command in self.GROQ_STATUS_COMMANDS:
+            return self._result(
+                "ai.groq.status",
+                self._groq_status_text(),
+            )
+
+        if command in self.GROQ_GUARD_STATUS_COMMANDS:
+            return self._result(
+                "ai.groq.guard.status",
+                self.groq_request_gate.guard_status_text_ru(),
+            )
+
+        if command in self.GROQ_MODEL_COMMANDS:
+            return self._result(
+                "ai.groq.model",
+                self.groq_request_gate.model_text_ru(),
             )
 
         if command in self.AI_PROVIDER_LIST_COMMANDS:
@@ -2768,6 +2837,14 @@ class CommandProcessor:
                 "Use explicit one-shot for a real Gemini test.\n"
                 "dry_run remains available through: спроси ai: <текст>."
             )
+        if provider_name == "groq" and response.is_error:
+            text = (
+                "Groq adapter exists, but no request was sent.\n"
+                f"Reason: {response.error_message or response.text}\n"
+                "Groq provider is disabled by default and network is disabled except explicit one-shot.\n"
+                "Use explicit one-shot for a real Groq test.\n"
+                "dry_run remains available through: спроси ai: <текст>."
+            )
         result_intent = f"{intent}.error" if response.is_error else intent
         return self._result(result_intent, text)
 
@@ -2863,6 +2940,52 @@ class CommandProcessor:
         )
         return self._result("ai.gemini.one_shot", text)
 
+    def _generate_groq_one_shot_result(self, prompt):
+        request = AIRequest(
+            prompt=prompt,
+            task_type=AIProviderCapability.CHAT.value,
+            language="ru",
+        )
+        response = self.groq_request_gate.generate_one_shot(
+            request,
+            capability=AIProviderCapability.CHAT,
+        )
+        if response.is_error:
+            if response.error_message == "GROQ_API_KEY is missing.":
+                text = (
+                    "Groq real request was not sent.\n"
+                    "Reason: GROQ_API_KEY is missing.\n"
+                    "Set the key as an environment variable outside the repository.\n"
+                    "The key value must never be committed or printed.\n"
+                    "Groq free/developer quota or rate limits may be used only after an explicit one-shot request."
+                )
+            else:
+                text = (
+                    "Groq real request was not sent.\n"
+                    f"Reason: {response.error_message or response.text}\n"
+                    "Groq was not enabled permanently.\n"
+                    "The key value was not printed.\n"
+                    "Groq free/developer quota or rate limits may be used only by one-shot."
+                )
+            return self._result("ai.groq.one_shot.error", text)
+
+        guard = self.groq_request_gate.request_guard
+        text = (
+            "Groq real response:\n"
+            f"{response.text}\n\n"
+            "Safety:\n"
+            "- one-shot request completed\n"
+            f"- model: {response.model_name}\n"
+            f"- max_tokens: {guard.config.max_output_tokens}\n"
+            "- Groq was not enabled permanently\n"
+            "- dry_run remains default\n"
+            "- response was not executed as a command\n"
+            "- key value was not printed\n"
+            "- no memory/profile/files were sent automatically\n"
+            "- free/developer quota or rate limits may be used"
+        )
+        return self._result("ai.groq.one_shot", text)
+
     def _openai_status_text(self):
         status = self.ai_provider_config_manager.status_for("openai")
         if status is None:
@@ -2893,6 +3016,28 @@ class CommandProcessor:
         enabled = "enabled" if status.enabled else "disabled"
         return (
             "Gemini provider status:\n"
+            f"- provider: {status.name}\n"
+            f"- enabled: {enabled}\n"
+            f"- env var: {status.api_key_env_var}\n"
+            f"- key status: {status.key_status.value}\n"
+            f"- model: {status.default_model}\n"
+            f"- runtime: {status.runtime_state.value}\n"
+            "- network: disabled except explicit one-shot\n"
+            "- key value is never printed\n"
+            "- no status network call is made\n"
+            "- dry_run remains default"
+        )
+
+    def _groq_status_text(self):
+        status = self.ai_provider_config_manager.status_for("groq")
+        if status is None:
+            return (
+                "Groq provider config не найден.\n"
+                "Сеть не используется, ключи не читаются."
+            )
+        enabled = "enabled" if status.enabled else "disabled"
+        return (
+            "Groq provider status:\n"
             f"- provider: {status.name}\n"
             f"- enabled: {enabled}\n"
             f"- env var: {status.api_key_env_var}\n"
@@ -3624,7 +3769,8 @@ class CommandProcessor:
             "OpenAI adapter: статус openai; проверить openai ключ; спроси openai: <текст> пока показывает безопасный отказ без сетевого запроса. "
             "OpenAI one-shot: статус openai one shot; статус openai guard; лимиты openai; openai модель; openai реальный запрос: <текст>; только явная one-shot команда может сделать один реальный запрос, OpenAI не включается постоянно, dry_run остается default, ключ не печатается, ответ не выполняется как команда, max_output_tokens ограничен, реальный API может использовать лимит аккаунта. "
             "Gemini adapter: статус gemini; проверить gemini ключ; статус gemini guard; лимиты gemini; gemini модель; спроси gemini: <текст> показывает безопасный отказ без сетевого запроса; gemini реальный запрос: <текст> или gemini one shot: <текст> делает только явный one-shot при наличии GEMINI_API_KEY, Gemini не включается постоянно, dry_run остается default, ключ не печатается, ответ не выполняется как команда, free tier/quota может использоваться. "
-            "Безопасная конфигурация AI: статус ai конфигурации; статус ai ключей; конфигурация ai провайдеров; безопасность ai ключей; проверить groq ключ; проверить gemini ключ; проверить openai ключ. "
+            "Groq adapter: статус groq; статус грок; проверить groq ключ; статус groq guard; лимиты groq; groq модель; спроси groq: <текст> показывает безопасный отказ без сетевого запроса; groq реальный запрос: <текст> или groq one shot: <текст> делает только явный one-shot при наличии GROQ_API_KEY, Groq не включается постоянно, dry_run остается default, ключ не печатается, ответ не выполняется как команда, free/developer quota или rate limits могут использоваться. "
+            "Безопасная конфигурация AI: статус ai конфигурации; статус ai ключей; конфигурация ai провайдеров; безопасность ai ключей; проверить groq ключ; проверить ключ groq; проверить gemini ключ; проверить openai ключ. "
             "OpenAI real requests не активны по умолчанию, сеть не используется без явной one-shot команды, API-ключи не печатаются, AI-ответы не выполняются как команды. "
             "Зрение экрана и автоматизация запланированы позже. "
             "Для выхода напишите: выход."

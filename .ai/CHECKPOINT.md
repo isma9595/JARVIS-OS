@@ -1,10 +1,10 @@
 # JARVIS-OS Checkpoint
 
 - Project: JARVIS-OS
-- Current stable stage: TASK-055 — OpenAI Real Request Manual Verification / Model & Cost Guard
-- Last stable commit: d1d1dcd
-- Last stable commit message: Add OpenAI model and cost guard
-- Next stage: TASK-056 — Gemini Provider Adapter / Free-Tier First
+- Current stable stage: TASK-056 — Gemini Provider Adapter / Free-Tier First
+- Last stable commit: 83b15da
+- Last stable commit message: Add Gemini provider adapter
+- Next stage: TASK-058 — Groq Provider Adapter / Free-Tier Fallback
 - Status: in progress
 
 ## Approved Workflow
@@ -37,4 +37,6 @@ TASK-054 is complete and stable at commit 443af1a.
 
 TASK-055 is complete and stable at commit d1d1dcd.
 
-TASK-056 is in progress for Gemini provider adapter, one-shot request gate, model/quota guard, fake-client tests, and docs.
+TASK-056 is complete and stable at commit 83b15da.
+
+TASK-058 is in progress for Groq provider adapter, one-shot request gate, model/quota guard, fake-client tests, and docs.

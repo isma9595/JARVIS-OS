@@ -10,6 +10,7 @@ TASK-051 starts the AI Brain / Provider Router Foundation cycle. The goal is to 
 - `ai/provider_router.py` registers providers, tracks the default provider, routes by capability, and returns safe structured errors.
 - `ai/providers/dry_run_provider.py` is the active default provider.
 - `ai/providers/gemini_provider.py` is registered as a disabled external adapter in TASK-056.
+- `ai/providers/groq_provider.py` is registered as a disabled external adapter in TASK-058.
 - `ai/providers/openai_provider.py` is registered as a disabled external adapter in TASK-053.
 - `core/command_processor.py` exposes typed status and dry-run AI commands, but AI output is returned only as text.
 
@@ -37,7 +38,9 @@ For TASK-051, only `CHAT`, `SUMMARY`, and `CLASSIFICATION` are active in the dry
 - generate through the selected provider
 - return safe errors for invalid requests or unsupported capabilities
 
-The router defaults to `dry_run`. It does not enable OpenAI or Gemini network access by selecting or listing providers.
+The router defaults to `dry_run`. It does not enable OpenAI, Gemini, or Groq network access by selecting or listing providers.
+
+Provider order: `dry_run`, OpenAI, Gemini, Groq.
 
 ## Configuration Safety Layer
 
@@ -138,3 +141,7 @@ After a one-shot request, `dry_run` remains the default provider.
 Gemini is registered behind the same router as a disabled external provider. The default provider remains `dry_run`.
 
 Gemini real requests are available only through explicit one-shot commands guarded by `GEMINI_API_KEY`, `GEMINI_MODEL`, prompt length, and `maxOutputTokens`. Normal `спроси gemini:` commands return a safe no-network message.
+
+## TASK-058 Update
+
+Groq is registered as a disabled external provider after `dry_run`, OpenAI, and Gemini. The default provider remains `dry_run`; normal Groq ask commands return a safe no-network message, and real Groq requests are explicit one-shot only.

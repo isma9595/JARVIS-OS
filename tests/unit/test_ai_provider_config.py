@@ -19,6 +19,8 @@ def test_default_configs_include_dry_run_groq_gemini_openai():
     assert configs["groq"].enabled is False
     assert configs["gemini"].enabled is False
     assert configs["openai"].enabled is False
+    assert configs["groq"].default_model == "llama-3.1-8b-instant"
+    assert configs["groq"].api_key_env_var == "GROQ_API_KEY"
     assert configs["gemini"].default_model == "gemini-2.5-flash-lite"
     assert configs["gemini"].api_key_env_var == "GEMINI_API_KEY"
     assert configs["openai"].api_key_env_var == "OPENAI_API_KEY"
@@ -99,6 +101,25 @@ def test_openai_env_var_value_never_appears_in_status_text():
 
     assert status.key_status == AIProviderKeyStatus.PRESENT
     assert "OPENAI_API_KEY" in text
+    assert "PRESENT" in text
+    assert secret not in text
+
+
+def test_groq_env_var_value_never_appears_in_status_text():
+    secret = "groq-secret-that-must-not-print"
+    manager = AIProviderConfigManager(environ={"GROQ_API_KEY": secret})
+    status = manager.status_for("groq")
+    text = "\n".join(
+        [
+            manager.format_status_ru(),
+            manager.format_provider_list_ru(),
+            manager.check_provider_key_text_ru("groq"),
+        ]
+    )
+
+    assert status.key_status == AIProviderKeyStatus.PRESENT
+    assert status.default_model == "llama-3.1-8b-instant"
+    assert "GROQ_API_KEY" in text
     assert "PRESENT" in text
     assert secret not in text
 

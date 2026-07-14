@@ -35,9 +35,12 @@ class AIProviderConfigManager:
                 name="groq",
                 provider_type="groq",
                 enabled=False,
-                default_model="groq-default",
+                default_model="llama-3.1-8b-instant",
                 api_key_env_var="GROQ_API_KEY",
-                notes="Future external provider. Disabled by default.",
+                notes=(
+                    "Groq API key comes from Groq Console. Disabled by default; "
+                    "real requests are one-shot only."
+                ),
             ),
             AIProviderConfig(
                 name="gemini",

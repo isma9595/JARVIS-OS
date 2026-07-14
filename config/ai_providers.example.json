@@ -4,9 +4,9 @@
       "name": "groq",
       "provider_type": "groq",
       "enabled": false,
-      "default_model": "groq-default",
+      "default_model": "llama-3.1-8b-instant",
       "api_key_env_var": "GROQ_API_KEY",
-      "notes": "Set the API key in an environment variable, never in this file."
+      "notes": "Create a Groq Console API key and set only GROQ_API_KEY in the environment. Never put a real key in this file. Optional model override: GROQ_MODEL."
     },
     {
       "name": "gemini",

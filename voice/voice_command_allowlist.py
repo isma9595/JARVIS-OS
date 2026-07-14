@@ -55,6 +55,11 @@ class SafeVoiceCommandAllowlist:
             "статус джемини",
             "gemini status",
         },
+        "статус groq": {
+            "статус groq",
+            "статус грок",
+            "groq status",
+        },
         "статус openai one shot": {
             "статус openai one shot",
         },
@@ -77,6 +82,15 @@ class SafeVoiceCommandAllowlist:
         "gemini модель": {
             "gemini модель",
             "gemini model",
+        },
+        "статус groq guard": {
+            "статус groq guard",
+            "статус groq cost guard",
+            "лимиты groq",
+        },
+        "groq модель": {
+            "groq модель",
+            "groq model",
         },
         "список ai провайдеров": {
             "список ai провайдеров",
@@ -103,6 +117,7 @@ class SafeVoiceCommandAllowlist:
         },
         "проверить groq ключ": {
             "проверить groq ключ",
+            "проверить ключ groq",
         },
         "проверить gemini ключ": {
             "проверить gemini ключ",
