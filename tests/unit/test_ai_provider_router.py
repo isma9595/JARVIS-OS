@@ -12,8 +12,10 @@ def test_router_starts_with_dry_run_provider():
 def test_list_providers():
     providers = AIProviderRouter().list_providers()
 
-    assert len(providers) == 1
+    assert len(providers) == 2
     assert providers[0].name == "dry_run"
+    assert providers[1].name == "openai"
+    assert providers[1].enabled is False
 
 
 def test_status_text_mentions_offline_dry_run_no_network():
@@ -23,13 +25,20 @@ def test_status_text_mentions_offline_dry_run_no_network():
     assert "offline deterministic" in status
     assert "переменных окружения" in status
     assert "Сеть не используется" in status
-    assert "API-ключи не требуются" in status
+    assert "OpenAI" in status
 
 
 def test_route_chat_to_dry_run():
     provider = AIProviderRouter().route(AIProviderCapability.CHAT)
 
     assert provider.get_info().name == "dry_run"
+
+
+def test_openai_is_known_but_not_default():
+    router = AIProviderRouter()
+
+    assert router.get_default_provider().get_info().name == "dry_run"
+    assert "openai" in [provider.name for provider in router.list_providers()]
 
 
 def test_route_unsupported_capability_safely_errors():
@@ -74,7 +83,42 @@ def test_router_config_status_does_not_activate_external_providers():
     provider_names = [provider.name for provider in router.list_providers()]
     config_names = [status.name for status in router.config_manager.statuses()]
 
-    assert provider_names == ["dry_run"]
-    assert config_names == ["dry_run", "groq", "gemini"]
+    assert provider_names == ["dry_run", "openai"]
+    assert config_names == ["dry_run", "groq", "gemini", "openai"]
     assert "groq" not in provider_names
     assert "gemini" not in provider_names
+
+
+def test_openai_disabled_or_network_disabled_does_not_call_network():
+    class FailingHTTPClient:
+        def post_json(self, url, headers, payload, timeout):
+            raise AssertionError("network must not be called")
+
+    from ai import AIProviderConfig
+    from ai.providers.openai_provider import OpenAIProvider
+
+    router = AIProviderRouter(
+        providers=[
+            OpenAIProvider(
+                config=AIProviderConfig(
+                    name="openai",
+                    provider_type="openai",
+                    enabled=True,
+                    default_model="openai-default",
+                    api_key_env_var="OPENAI_API_KEY",
+                ),
+                http_client=FailingHTTPClient(),
+                allow_network=False,
+                environ={"OPENAI_API_KEY": "fake-key"},
+            )
+        ]
+    )
+
+    response = router.generate_with_provider(
+        "openai",
+        AIRequest(prompt="привет"),
+        AIProviderCapability.CHAT,
+    )
+
+    assert response.is_error is True
+    assert "network calls are disabled" in response.text

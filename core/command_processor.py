@@ -87,6 +87,11 @@ class CommandProcessor:
         "статус ии провайдеров",
         "ai status",
     }
+    OPENAI_STATUS_COMMANDS = {
+        "статус openai",
+        "статус опенай",
+        "openai status",
+    }
     AI_PROVIDER_LIST_COMMANDS = {
         "список ai провайдеров",
         "список ии провайдеров",
@@ -117,7 +122,13 @@ class CommandProcessor:
     AI_PROVIDER_KEY_CHECK_COMMANDS = {
         "проверить groq ключ": "groq",
         "проверить gemini ключ": "gemini",
+        "проверить openai ключ": "openai",
+        "проверить ключ openai": "openai",
     }
+    OPENAI_CHAT_PREFIXES = (
+        "спроси openai:",
+        "openai:",
+    )
     AI_CHAT_PREFIXES = (
         "спроси ai:",
         "спроси ии:",
@@ -1618,6 +1629,19 @@ class CommandProcessor:
                 "ai.classification",
             )
 
+        openai_chat_text = self._extract_ai_prefixed_text(
+            command_text,
+            command,
+            self.OPENAI_CHAT_PREFIXES,
+        )
+        if openai_chat_text is not None:
+            return self._generate_named_ai_result(
+                "openai",
+                openai_chat_text,
+                AIProviderCapability.CHAT,
+                "ai.openai.chat",
+            )
+
         if self._is_voice_simulation_command(command):
             return self._process_voice_simulation(command)
 
@@ -1727,6 +1751,12 @@ class CommandProcessor:
             return self._result(
                 "ai.status",
                 self.ai_provider_router.status_text_ru(),
+            )
+
+        if command in self.OPENAI_STATUS_COMMANDS:
+            return self._result(
+                "ai.openai.status",
+                self._openai_status_text(),
             )
 
         if command in self.AI_PROVIDER_LIST_COMMANDS:
@@ -2576,6 +2606,56 @@ class CommandProcessor:
             response.text,
         )
 
+    def _generate_named_ai_result(
+        self,
+        provider_name,
+        prompt,
+        capability,
+        intent,
+        max_chars=None,
+    ):
+        request = AIRequest(
+            prompt=prompt,
+            task_type=capability.value,
+            language="ru",
+            max_chars=max_chars,
+        )
+        response = self.ai_provider_router.generate_with_provider(
+            provider_name,
+            request,
+            capability=capability,
+        )
+        text = response.text
+        if provider_name == "openai" and response.is_error:
+            text = (
+                "OpenAI adapter exists, but no request was sent.\n"
+                f"Reason: {response.error_message or response.text}\n"
+                "OpenAI provider is disabled by default and real network calls are disabled unless explicitly enabled in a future task.\n"
+                "Use dry_run through: спроси ai: <текст>."
+            )
+        result_intent = f"{intent}.error" if response.is_error else intent
+        return self._result(result_intent, text)
+
+    def _openai_status_text(self):
+        status = self.ai_provider_config_manager.status_for("openai")
+        if status is None:
+            return (
+                "OpenAI provider config не найден.\n"
+                "Сеть не используется, ключи не читаются."
+            )
+        enabled = "enabled" if status.enabled else "disabled"
+        return (
+            "OpenAI provider status:\n"
+            f"- provider: {status.name}\n"
+            f"- enabled: {enabled}\n"
+            f"- env var: {status.api_key_env_var}\n"
+            f"- key status: {status.key_status.value}\n"
+            f"- runtime: {status.runtime_state.value}\n"
+            "- network: disabled by default\n"
+            "- key value is never printed\n"
+            "- no status network call is made"
+        )
+
     def _result(
         self,
         intent,
@@ -3292,8 +3372,9 @@ class CommandProcessor:
             "Рискованные действия не обходят безопасность, постоянное прослушивание не связано "
             "с реальным распознаванием. "
             "AI foundation сейчас работает только в dry-run/offline режиме: статус ai; список ai провайдеров; спроси ai: <текст>; ai кратко: <текст>; ai классифицируй: <текст>. "
-            "Безопасная конфигурация AI: статус ai конфигурации; статус ai ключей; конфигурация ai провайдеров; безопасность ai ключей; проверить groq ключ; проверить gemini ключ. "
-            "Реальные внешние AI-провайдеры пока не подключены, сеть не используется, API-ключи не печатаются, AI-ответы не выполняются как команды. "
+            "OpenAI adapter: статус openai; проверить openai ключ; спроси openai: <текст> пока показывает безопасный отказ без сетевого запроса. "
+            "Безопасная конфигурация AI: статус ai конфигурации; статус ai ключей; конфигурация ai провайдеров; безопасность ai ключей; проверить groq ключ; проверить gemini ключ; проверить openai ключ. "
+            "OpenAI real requests не активны по умолчанию, сеть не используется, API-ключи не печатаются, AI-ответы не выполняются как команды. "
             "Зрение экрана и автоматизация запланированы позже. "
             "Для выхода напишите: выход."
         )

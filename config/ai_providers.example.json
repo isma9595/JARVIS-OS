@@ -15,6 +15,14 @@
       "default_model": "gemini-default",
       "api_key_env_var": "GEMINI_API_KEY",
       "notes": "Set the API key in an environment variable, never in this file."
+    },
+    {
+      "name": "openai",
+      "provider_type": "openai",
+      "enabled": false,
+      "default_model": "openai-default",
+      "api_key_env_var": "OPENAI_API_KEY",
+      "notes": "Set the API key in an environment variable, never in tracked files."
     }
   ]
 }

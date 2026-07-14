@@ -8,6 +8,7 @@ def test_manager_formats_russian_config_status():
     assert "dry_run" in text
     assert "groq" in text
     assert "gemini" in text
+    assert "openai" in text
     assert "Сеть не используется" in text
 
 
@@ -17,6 +18,7 @@ def test_manager_formats_provider_list():
     assert "Конфигурация AI провайдеров" in text
     assert "GROQ_API_KEY" in text
     assert "GEMINI_API_KEY" in text
+    assert "OPENAI_API_KEY" in text
     assert "выключен" in text
 
 
@@ -30,9 +32,9 @@ def test_key_safety_text_mentions_env_vars_no_commits_and_no_printing_keys():
 
 
 def test_check_specific_provider_key_status_missing():
-    text = AIProviderConfigManager(environ={}).check_provider_key_text_ru("groq")
+    text = AIProviderConfigManager(environ={}).check_provider_key_text_ru("openai")
 
-    assert "GROQ_API_KEY" in text
+    assert "OPENAI_API_KEY" in text
     assert "MISSING" in text
     assert "значение ключа не отображается" in text.lower()
     assert "провайдер не вызывается" in text
@@ -72,3 +74,15 @@ def test_no_actual_key_value_in_output_when_env_set():
 
     assert secret not in combined
     assert "GEMINI_API_KEY" in combined
+
+
+def test_check_openai_key_status_present_without_value():
+    secret = "openai-secret-that-must-stay-hidden"
+    manager = AIProviderConfigManager(environ={"OPENAI_API_KEY": secret})
+    status = manager.status_for("openai")
+    text = manager.check_provider_key_text_ru("openai")
+
+    assert status.key_status == AIProviderKeyStatus.PRESENT
+    assert "PRESENT" in text
+    assert "OPENAI_API_KEY" in text
+    assert secret not in text

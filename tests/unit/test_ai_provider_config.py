@@ -11,13 +11,15 @@ from ai import (
 )
 
 
-def test_default_configs_include_dry_run_groq_gemini():
+def test_default_configs_include_dry_run_groq_gemini_openai():
     configs = {config.name: config for config in AIProviderConfigManager.default_configs()}
 
-    assert set(configs) == {"dry_run", "groq", "gemini"}
+    assert set(configs) == {"dry_run", "groq", "gemini", "openai"}
     assert configs["dry_run"].enabled is True
     assert configs["groq"].enabled is False
     assert configs["gemini"].enabled is False
+    assert configs["openai"].enabled is False
+    assert configs["openai"].api_key_env_var == "OPENAI_API_KEY"
 
 
 def test_dry_run_key_status_is_not_required():
@@ -32,6 +34,7 @@ def test_missing_env_vars_produce_missing():
 
     assert manager.status_for("groq").key_status == AIProviderKeyStatus.MISSING
     assert manager.status_for("gemini").key_status == AIProviderKeyStatus.MISSING
+    assert manager.status_for("openai").key_status == AIProviderKeyStatus.MISSING
 
 
 def test_present_env_var_produces_present_but_value_is_not_shown():
@@ -72,6 +75,24 @@ def test_status_text_does_not_contain_env_var_value():
     assert "GEMINI_API_KEY" in text
 
 
+def test_openai_env_var_value_never_appears_in_status_text():
+    secret = "openai-secret-that-must-not-print"
+    manager = AIProviderConfigManager(environ={"OPENAI_API_KEY": secret})
+    status = manager.status_for("openai")
+    text = "\n".join(
+        [
+            manager.format_status_ru(),
+            manager.format_provider_list_ru(),
+            manager.check_provider_key_text_ru("openai"),
+        ]
+    )
+
+    assert status.key_status == AIProviderKeyStatus.PRESENT
+    assert "OPENAI_API_KEY" in text
+    assert "PRESENT" in text
+    assert secret not in text
+
+
 def test_example_config_does_not_contain_secrets():
     path = Path("config/ai_providers.example.json")
     data = json.loads(path.read_text(encoding="utf-8"))
@@ -79,8 +100,8 @@ def test_example_config_does_not_contain_secrets():
 
     assert "sk-" not in text
     assert "secret" not in text.lower().replace("secrets", "")
-    assert data["providers"][0]["api_key_env_var"] == "GROQ_API_KEY"
-    assert data["providers"][1]["api_key_env_var"] == "GEMINI_API_KEY"
+    env_vars = [provider["api_key_env_var"] for provider in data["providers"]]
+    assert env_vars == ["GROQ_API_KEY", "GEMINI_API_KEY", "OPENAI_API_KEY"]
 
 
 def test_config_layer_has_no_network_dependency():
@@ -88,4 +109,9 @@ def test_config_layer_has_no_network_dependency():
 
     statuses = manager.statuses()
 
-    assert [status.name for status in statuses] == ["dry_run", "groq", "gemini"]
+    assert [status.name for status in statuses] == [
+        "dry_run",
+        "groq",
+        "gemini",
+        "openai",
+    ]

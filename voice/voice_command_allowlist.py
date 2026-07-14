@@ -45,6 +45,11 @@ class SafeVoiceCommandAllowlist:
             "статус ии провайдеров",
             "ai status",
         },
+        "статус openai": {
+            "статус openai",
+            "статус опенай",
+            "openai status",
+        },
         "список ai провайдеров": {
             "список ai провайдеров",
             "список ии провайдеров",
@@ -73,6 +78,10 @@ class SafeVoiceCommandAllowlist:
         },
         "проверить gemini ключ": {
             "проверить gemini ключ",
+        },
+        "проверить openai ключ": {
+            "проверить openai ключ",
+            "проверить ключ openai",
         },
         "помощь": {
             "помощь",

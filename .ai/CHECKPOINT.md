@@ -1,10 +1,10 @@
 # JARVIS-OS Checkpoint
 
 - Project: JARVIS-OS
-- Current stable stage: TASK-051 — AI Provider Core Contracts / Router Foundation
-- Last stable commit: e16a1d4
-- Last stable commit message: Add AI provider router foundation
-- Next stage: TASK-052 — AI Provider Configuration / API Key Safety Layer
+- Current stable stage: TASK-052 — AI Provider Configuration / API Key Safety Layer
+- Last stable commit: 29e422c
+- Last stable commit message: Add AI provider config safety layer
+- Next stage: TASK-053 — OpenAI Provider Adapter / Responses API
 - Status: in progress
 
 ## Approved Workflow
@@ -37,4 +37,6 @@ TASK-050A is complete and stable at commit a63af4f.
 
 TASK-051 is complete and stable at commit e16a1d4.
 
-TASK-052 is in progress for AI provider configuration and API key safety only.
+TASK-052 is complete and stable at commit 29e422c.
+
+TASK-053 is in progress for the OpenAI provider adapter / Responses API, disabled by default with no real network calls in tests.

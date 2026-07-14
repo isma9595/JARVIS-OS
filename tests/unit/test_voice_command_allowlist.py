@@ -119,6 +119,9 @@ def test_ai_config_and_key_safety_voice_commands_are_allowed():
         ("безопасность ai ключей", "безопасность ai ключей"),
         ("проверить groq ключ", "проверить groq ключ"),
         ("проверить gemini ключ", "проверить gemini ключ"),
+        ("статус openai", "статус openai"),
+        ("проверить openai ключ", "проверить openai ключ"),
+        ("проверить ключ openai", "проверить openai ключ"),
     ):
         decision = allowlist.decide(command)
 
@@ -133,6 +136,8 @@ def test_voice_command_for_setting_keys_is_not_allowlisted():
         "установить groq ключ abc123",
         "установи groq ключ abc123",
         "добавь gemini ключ abc123",
+        "установить openai ключ abc123",
+        "установи openai ключ abc123",
     ):
         decision = allowlist.decide(command)
 
@@ -145,6 +150,8 @@ def test_broad_ai_voice_queries_are_not_allowlisted():
 
     assert allowlist.decide("спроси ai: привет").allowed is False
     assert allowlist.decide("ai: привет").allowed is False
+    assert allowlist.decide("спроси openai: привет").allowed is False
+    assert allowlist.decide("openai: привет").allowed is False
 
 
 def test_voice_interaction_info_commands_are_allowed_without_replay_execution():

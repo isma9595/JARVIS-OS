@@ -47,6 +47,14 @@ class AIProviderConfigManager:
                 api_key_env_var="GEMINI_API_KEY",
                 notes="Future external provider. Disabled by default.",
             ),
+            AIProviderConfig(
+                name="openai",
+                provider_type="openai",
+                enabled=False,
+                default_model="openai-default",
+                api_key_env_var="OPENAI_API_KEY",
+                notes="Set the API key in an environment variable, never in tracked files.",
+            ),
         ]
 
     def list_configs(self):
@@ -125,7 +133,7 @@ class AIProviderConfigManager:
                 "Безопасность AI/API ключей:",
                 "- Не вставляйте ключи в код, JSON, Markdown, тесты или команды для коммита.",
                 "- Не коммитьте секреты.",
-                "- Используйте переменные окружения, например GROQ_API_KEY или GEMINI_API_KEY.",
+                "- Используйте переменные окружения, например GROQ_API_KEY, GEMINI_API_KEY или OPENAI_API_KEY.",
                 "- Локальные файлы config/ai_providers.local.json, config/secrets/ и secrets/ игнорируются git.",
                 "- JARVIS показывает только имя переменной и статус PRESENT/MISSING, но не значение.",
                 "- На этом этапе сеть не используется и реальные провайдеры не вызываются.",

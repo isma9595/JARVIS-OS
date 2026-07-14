@@ -2,7 +2,7 @@
 
 ## Purpose
 
-TASK-052 adds an offline-safe configuration and API key readiness layer for future providers such as Groq and Gemini. It does not add real external provider adapters and does not make network calls.
+TASK-052 adds an offline-safe configuration and API key readiness layer for future providers such as Groq and Gemini. TASK-053 adds OpenAI as a disabled external provider config and adapter. Status/key checks still do not make network calls.
 
 ## Provider Config Model
 
@@ -21,6 +21,7 @@ Future external providers use environment variables:
 
 - Groq: `GROQ_API_KEY`
 - Gemini: `GEMINI_API_KEY`
+- OpenAI: `OPENAI_API_KEY`
 
 JARVIS only checks whether the variable exists and is non-empty. It never prints the key value and does not validate keys by network.
 
@@ -59,6 +60,8 @@ The example file must not contain real secrets.
 - `безопасность ai ключей`
 - `проверить groq ключ`
 - `проверить gemini ключ`
+- `проверить openai ключ`
+- `статус openai`
 
 These commands are Russian-first, read-only, deterministic, and offline. Voice auto-execution is allowlisted only for the safe read-only status/help/key-check commands.
 
@@ -66,7 +69,8 @@ These commands are Russian-first, read-only, deterministic, and offline. Voice a
 
 - No real Groq provider.
 - No real Gemini provider.
-- No network calls.
+- OpenAI adapter exists but is disabled by default.
+- No network calls during config/status/key checks.
 - No API keys are required.
 - Keys are checked only by environment variable presence.
 - `dry_run` remains the only active AI provider.
@@ -75,5 +79,6 @@ These commands are Russian-first, read-only, deterministic, and offline. Voice a
 
 - Groq adapter.
 - Gemini adapter.
+- Explicit OpenAI real request gate.
 - Provider enable/disable commands.
 - Optional encrypted local secrets or OS keyring support if needed.

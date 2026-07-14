@@ -16,6 +16,7 @@ from ai.provider_config import (
 )
 from ai.provider_config_manager import AIProviderConfigManager
 from ai.provider_router import AIProviderRouter
+from ai.providers.openai_provider import OpenAIProvider
 
 __all__ = [
     "AIProvider",
@@ -30,4 +31,5 @@ __all__ = [
     "AIProviderSafetyLevel",
     "AIRequest",
     "AIResponse",
+    "OpenAIProvider",
 ]

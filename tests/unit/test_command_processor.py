@@ -2795,7 +2795,7 @@ def test_ai_status_commands_work():
         assert result["intent"] == "ai.status"
         assert "dry_run" in result["response"]
         assert "Сеть не используется" in result["response"]
-        assert "API-ключи не требуются" in result["response"]
+        assert "OpenAI" in result["response"]
 
 
 def test_ai_provider_list_command_works():
@@ -2815,6 +2815,7 @@ def test_ai_config_status_command_works():
     assert "dry_run" in result["response"]
     assert "groq" in result["response"]
     assert "gemini" in result["response"]
+    assert "openai" in result["response"]
     assert "Сеть не используется" in result["response"]
 
 
@@ -2824,6 +2825,7 @@ def test_ai_key_status_command_works():
     assert result["intent"] == "ai.config.status"
     assert "GROQ_API_KEY" in result["response"]
     assert "GEMINI_API_KEY" in result["response"]
+    assert "OPENAI_API_KEY" in result["response"]
     assert "MISSING" in result["response"]
 
 
@@ -2834,6 +2836,7 @@ def test_ai_provider_config_list_command_works():
     assert "Конфигурация AI провайдеров" in result["response"]
     assert "GROQ_API_KEY" in result["response"]
     assert "GEMINI_API_KEY" in result["response"]
+    assert "OPENAI_API_KEY" in result["response"]
 
 
 def test_ai_key_safety_help_command_works():
@@ -2867,6 +2870,45 @@ def test_check_gemini_key_command_does_not_print_value(monkeypatch):
     assert "PRESENT" in result["response"]
     assert "GEMINI_API_KEY" in result["response"]
     assert secret not in result["response"]
+
+
+def test_openai_status_command_works():
+    for command in ("статус openai", "статус опенай", "openai status"):
+        result = CommandProcessor().process(command)
+
+        assert result["intent"] == "ai.openai.status"
+        assert "OpenAI provider status" in result["response"]
+        assert "enabled: disabled" in result["response"]
+        assert "OPENAI_API_KEY" in result["response"]
+        assert "key status: MISSING" in result["response"]
+        assert "network: disabled by default" in result["response"]
+
+
+def test_check_openai_key_command_does_not_print_value(monkeypatch):
+    secret = "openai-secret-that-must-not-print"
+    monkeypatch.setenv("OPENAI_API_KEY", secret)
+
+    for command in ("проверить openai ключ", "проверить ключ openai"):
+        result = CommandProcessor().process(command)
+
+        assert result["intent"] == "ai.key_check"
+        assert "PRESENT" in result["response"]
+        assert "OPENAI_API_KEY" in result["response"]
+        assert secret not in result["response"]
+
+
+def test_openai_ask_commands_return_safe_disabled_message():
+    processor = CommandProcessor()
+
+    for command in ("спроси openai: привет", "openai: привет"):
+        result = processor.process(command)
+
+        assert result["intent"] == "ai.openai.chat.error"
+        assert "OpenAI adapter exists" in result["response"]
+        assert "no request was sent" in result["response"]
+        assert "disabled" in result["response"]
+        assert "network calls are disabled" in result["response"]
+        assert "спроси ai: <текст>" in result["response"]
 
 
 def test_ai_ask_commands_return_dry_run_text():
@@ -2917,18 +2959,35 @@ def test_ai_output_is_not_routed_to_action_router_as_command():
     assert "AI dry-run" in result["response"]
 
 
+def test_openai_output_is_not_routed_to_action_router_as_command():
+    class FailingActionRouter:
+        def route(self, command):
+            raise AssertionError(f"ActionRouter must not receive AI command: {command}")
+
+    processor = CommandProcessor()
+    processor.action_router = FailingActionRouter()
+
+    result = processor.process("openai: статус системы")
+
+    assert result["intent"] == "ai.openai.chat.error"
+    assert "no request was sent" in result["response"]
+
+
 def test_help_mentions_ai_provider_foundation():
     response = CommandProcessor().process("помощь")["response"]
 
     assert "статус ai" in response
     assert "список ai провайдеров" in response
     assert "спроси ai: <текст>" in response
+    assert "статус openai" in response
+    assert "проверить openai ключ" in response
+    assert "спроси openai: <текст>" in response
     assert "ai кратко: <текст>" in response
     assert "ai классифицируй: <текст>" in response
     assert "статус ai конфигурации" in response
     assert "статус ai ключей" in response
     assert "безопасность ai ключей" in response
-    assert "Реальные внешние AI-провайдеры пока не подключены" in response
+    assert "OpenAI real requests не активны по умолчанию" in response
     assert "AI-ответы не выполняются как команды" in response
     assert "не выполняет команду повторно" in response
 
@@ -2945,6 +3004,7 @@ def test_ai_config_commands_do_not_call_network():
 
     assert processor.process("статус ai ключей")["intent"] == "ai.config.status"
     assert processor.process("проверить groq ключ")["intent"] == "ai.key_check"
+    assert processor.process("проверить openai ключ")["intent"] == "ai.key_check"
 
 
 def run_tests():
