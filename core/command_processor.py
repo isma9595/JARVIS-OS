@@ -262,7 +262,12 @@ class CommandProcessor:
     }
     MICROPHONE_MODE_OFF_COMMANDS = {
         "выключи микрофон",
+        "выключить микрофон",
         "отключи микрофон",
+        "отключить микрофон",
+        "микрофон выключить",
+        "микрофон off",
+        "mic off",
         "отключи прослушивание",
         "выключи прослушивание",
         "стоп микрофон",
@@ -271,6 +276,11 @@ class CommandProcessor:
         "слушай одну команду",
         "прими голосовую команду",
         "включи частичное прослушивание",
+        "частичный режим микрофона",
+        "включить частичный режим микрофона",
+        "микрофон частично",
+        "partial microphone mode",
+        "mic partial",
         "режим одной команды",
         "частичное прослушивание",
     }
@@ -516,6 +526,7 @@ class CommandProcessor:
         "модель vosk",
         "статус модели vosk",
         "проверить модель vosk",
+        "проверить готовность модели vosk",
         "готовность модели vosk",
         "диагностика модели vosk",
         "модель vosk статус",
@@ -852,6 +863,8 @@ class CommandProcessor:
             return self._result(
                 "empty",
                 self.dialogue_manager.empty_command_response(),
+                speakable=False,
+                allow_manual_dialogue=False,
             )
 
         if command in self.SPEECH_BACKEND_STATUS_COMMANDS:

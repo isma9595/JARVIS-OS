@@ -1627,6 +1627,55 @@ def test_empty_command():
     )
 
 
+def test_empty_command_does_not_become_last_response():
+    processor = CommandProcessor(sample_profile())
+
+    processor.process("")
+    result = processor.process("последний ответ")
+
+    assert result["intent"] == "assistant.last_response.empty"
+    assert result["response"] == "В этой сессии ещё нет ответа JARVIS для повторения."
+    assert processor.assistant_response_history.count() == 0
+
+
+def test_empty_command_does_not_overwrite_existing_last_response():
+    processor = CommandProcessor(sample_profile())
+
+    status = processor.process("статус системы")
+    processor.process("")
+    result = processor.process("последний ответ")
+
+    assert result["intent"] == "assistant.last_response"
+    assert result["response"] == f"Последний ответ JARVIS:\n{status['response']}"
+    assert "я не услышал команду" not in result["response"]
+    assert processor.assistant_response_history.count() == 1
+
+
+def test_empty_command_is_not_added_to_response_history():
+    processor = CommandProcessor(sample_profile())
+
+    processor.process("")
+    result = processor.process("история ответов")
+
+    assert result["intent"] == "assistant.response_history.list"
+    assert result["response"] == "История ответов JARVIS за текущую сессию пуста."
+    assert "я не услышал команду" not in result["response"]
+
+
+def test_empty_command_is_not_spoken_in_manual_voice_dialogue():
+    backend = FakeDryRunTtsBackend()
+    manager = VoiceOutputManager(backend=backend)
+    processor = CommandProcessor(sample_profile(), voice_output_manager=manager)
+    processor.process("включить тестовый голос")
+    processor.process("включить голосовой диалог")
+
+    result = processor.process("")
+
+    assert result["intent"] == "empty"
+    assert result["response"] == "Исмаил, я не услышал команду. Повторите, пожалуйста."
+    assert backend.calls == []
+
+
 def test_stop_command_is_voice_cancel_without_exit():
     result = CommandProcessor(sample_profile()).process("стоп")
 
@@ -1998,7 +2047,12 @@ def test_microphone_legacy_status_command_still_reports_adapter_status():
 def test_microphone_mode_off_commands_switch_to_off():
     for command in (
         "выключи микрофон",
+        "выключить микрофон",
         "отключи микрофон",
+        "отключить микрофон",
+        "микрофон выключить",
+        "микрофон off",
+        "mic off",
         "отключи прослушивание",
         "выключи прослушивание",
         "стоп микрофон",
@@ -2016,6 +2070,7 @@ def test_microphone_mode_off_commands_switch_to_off():
 
         assert result["intent"] == "microphone.mode.off"
         assert result["response"] == "Микрофон выключен."
+        assert "постоянное прослушивание" not in result["response"].lower()
         assert mode_manager.get_mode() == "off"
 
 
@@ -2024,6 +2079,11 @@ def test_microphone_mode_partial_commands_switch_to_partial():
         "слушай одну команду",
         "прими голосовую команду",
         "включи частичное прослушивание",
+        "частичный режим микрофона",
+        "включить частичный режим микрофона",
+        "микрофон частично",
+        "partial microphone mode",
+        "mic partial",
         "режим одной команды",
         "частичное прослушивание",
     ):
@@ -2036,6 +2096,7 @@ def test_microphone_mode_partial_commands_switch_to_partial():
             "Включено частичное прослушивание. "
             "Реальный захват микрофона пока не запускается автоматически."
         )
+        assert "постоянное прослушивание" not in result["response"].lower()
         assert processor.microphone_listening_mode_manager.get_mode() == "partial"
 
         status = processor.process("режим микрофона")
@@ -2757,6 +2818,10 @@ def run_tests():
     test_exit_command()
     test_unknown_command()
     test_empty_command()
+    test_empty_command_does_not_become_last_response()
+    test_empty_command_does_not_overwrite_existing_last_response()
+    test_empty_command_is_not_added_to_response_history()
+    test_empty_command_is_not_spoken_in_manual_voice_dialogue()
     test_stop_command_is_voice_cancel_without_exit()
     test_normalizes_command()
     test_send_email_requires_confirmation()
@@ -2843,6 +2908,7 @@ def test_vosk_model_readiness_commands_return_safe_diagnostics():
 
     for command in (
         "проверить модель vosk",
+        "проверить готовность модели vosk",
         "готовность модели vosk",
         "диагностика модели vosk",
         "модель vosk статус",

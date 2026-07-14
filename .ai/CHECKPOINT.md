@@ -1,10 +1,10 @@
 # JARVIS-OS Checkpoint
 
 - Project: JARVIS-OS
-- Current stable stage: TASK-049 — Voice Dialogue Repeat / Clarify / Last Voice Interaction Controls
-- Last stable commit: d5bcd36
-- Last stable commit message: Add voice interaction repeat controls
-- Next stage: TASK-050 — Voice Cycle Final Polish / Stability Review
+- Current stable stage: TASK-050 — Voice Cycle Final Polish / Stability Review
+- Last stable commit: 9a5bc6b
+- Last stable commit message: Finalize voice cycle polish
+- Next stage: TASK-050A — Manual Voice Command Polish
 - Status: in progress
 
 ## Approved Workflow
@@ -31,4 +31,6 @@ TASK-037A is diagnostics only. It must not install packages automatically and mu
 
 JARVIS remains Russian-first for user-facing functionality, with future multilingual switching planned.
 
-TASK-050 is in progress. The voice cycle is nearing final review completion, pending verification.
+TASK-050 is complete and stable at commit 9a5bc6b.
+
+TASK-050A is in progress for manual voice command polish only.

@@ -58,6 +58,23 @@ def test_safe_aliases_map_to_canonical_commands():
         allowlist.decide("проверить зависимости микрофона").canonical_command
         == "проверка аудио зависимостей"
     )
+    assert (
+        allowlist.decide("проверить готовность модели vosk").canonical_command
+        == "проверить модель vosk"
+    )
+    assert allowlist.decide("выключить микрофон").canonical_command == "выключи микрофон"
+    assert allowlist.decide("отключить микрофон").canonical_command == "выключи микрофон"
+    assert allowlist.decide("микрофон off").canonical_command == "выключи микрофон"
+    assert allowlist.decide("mic off").canonical_command == "выключи микрофон"
+    assert (
+        allowlist.decide("частичный режим микрофона").canonical_command
+        == "частичное прослушивание"
+    )
+    assert (
+        allowlist.decide("включить частичный режим микрофона").canonical_command
+        == "частичное прослушивание"
+    )
+    assert allowlist.decide("mic partial").canonical_command == "частичное прослушивание"
     assert allowlist.decide("как твое имя").canonical_command == "как тебя зовут"
 
 
@@ -188,6 +205,9 @@ def test_allowlist_response_contains_only_safe_commands():
     assert "статуя система" in response
     assert "помощь" in response
     assert "проверить модель vosk" in response
+    assert "проверить готовность модели vosk" in response
+    assert "выключить микрофон" in response
+    assert "частичный режим микрофона" in response
     assert "ожидающая голосовая команда" in response
     assert "Все неизвестные и рискованные голосовые команды всё ещё требуют подтверждения" in response
     assert "fuzzy matching" in response
