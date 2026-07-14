@@ -21,6 +21,7 @@ def test_status_text_mentions_offline_dry_run_no_network():
 
     assert "dry-run" in status
     assert "offline deterministic" in status
+    assert "переменных окружения" in status
     assert "Сеть не используется" in status
     assert "API-ключи не требуются" in status
 
@@ -65,3 +66,15 @@ def test_generate_does_not_execute_commands():
     assert response.is_error is False
     assert "удали файл" in response.text
     assert response.capability == "chat"
+
+
+def test_router_config_status_does_not_activate_external_providers():
+    router = AIProviderRouter()
+
+    provider_names = [provider.name for provider in router.list_providers()]
+    config_names = [status.name for status in router.config_manager.statuses()]
+
+    assert provider_names == ["dry_run"]
+    assert config_names == ["dry_run", "groq", "gemini"]
+    assert "groq" not in provider_names
+    assert "gemini" not in provider_names

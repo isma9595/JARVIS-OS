@@ -1,0 +1,79 @@
+# AI Provider Configuration
+
+## Purpose
+
+TASK-052 adds an offline-safe configuration and API key readiness layer for future providers such as Groq and Gemini. It does not add real external provider adapters and does not make network calls.
+
+## Provider Config Model
+
+The model lives in `ai/provider_config.py`:
+
+- `AIProviderConfig` describes a provider name, type, default model, enabled flag, API key environment variable name, safety level, and notes.
+- `AIProviderConfigStatus` reports readiness without exposing secrets.
+- `AIProviderKeyStatus` is `NOT_REQUIRED`, `MISSING`, `PRESENT`, or `INVALID_REFERENCE`.
+- `AIProviderRuntimeState` is `DRY_RUN_ONLY`, `DISABLED`, `MISSING_KEY`, `CONFIGURED`, or `ERROR`.
+
+`api_key_env_var` must be an environment variable name only. Obvious secret-looking values such as `sk-...`, long token-like strings, spaces, or invalid environment variable names are rejected.
+
+## Environment Variables
+
+Future external providers use environment variables:
+
+- Groq: `GROQ_API_KEY`
+- Gemini: `GEMINI_API_KEY`
+
+JARVIS only checks whether the variable exists and is non-empty. It never prints the key value and does not validate keys by network.
+
+## Secret Safety
+
+- Never put API keys in code, docs, tests, tracked JSON, or commits.
+- Never commit secrets.
+- Use environment variables for keys.
+- JARVIS reports `PRESENT` or `MISSING`, not the actual value.
+- This stage does not persist prompts, responses, provider keys, or provider outputs.
+
+## Config Files
+
+Tracked example:
+
+- `config/ai_providers.example.json`
+
+Ignored local paths:
+
+- `.env`
+- `.env.*`
+- `*.env`
+- `*.key`
+- `config/ai_providers.local.json`
+- `config/secrets.json`
+- `config/secrets/`
+- `secrets/`
+
+The example file must not contain real secrets.
+
+## Commands
+
+- `статус ai конфигурации`
+- `статус ai ключей`
+- `конфигурация ai провайдеров`
+- `безопасность ai ключей`
+- `проверить groq ключ`
+- `проверить gemini ключ`
+
+These commands are Russian-first, read-only, deterministic, and offline. Voice auto-execution is allowlisted only for the safe read-only status/help/key-check commands.
+
+## Current Limitations
+
+- No real Groq provider.
+- No real Gemini provider.
+- No network calls.
+- No API keys are required.
+- Keys are checked only by environment variable presence.
+- `dry_run` remains the only active AI provider.
+
+## Future
+
+- Groq adapter.
+- Gemini adapter.
+- Provider enable/disable commands.
+- Optional encrypted local secrets or OS keyring support if needed.

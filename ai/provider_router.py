@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import replace
 
+from ai.provider_config_manager import AIProviderConfigManager
 from ai.provider_contracts import (
     AIProvider,
     AIProviderCapability,
@@ -15,9 +16,14 @@ from ai.providers.dry_run_provider import DryRunAIProvider
 
 
 class AIProviderRouter:
-    def __init__(self, providers: list[AIProvider] | None = None):
+    def __init__(
+        self,
+        providers: list[AIProvider] | None = None,
+        config_manager: AIProviderConfigManager | None = None,
+    ):
         self._providers: dict[str, AIProvider] = {}
         self._default_provider_name: str | None = None
+        self.config_manager = config_manager or AIProviderConfigManager()
 
         initial_providers = providers if providers is not None else [DryRunAIProvider()]
         for provider in initial_providers:
@@ -84,6 +90,8 @@ class AIProviderRouter:
             f"- Доступно провайдеров: {provider_count}\n"
             f"- Провайдеры: {provider_names}\n"
             "- Активный режим: dry-run / offline deterministic\n"
+            "- Внешние провайдеры из конфигурации остаются выключенными по умолчанию.\n"
+            "- Слой конфигурации проверяет только наличие переменных окружения и не показывает ключи.\n"
             "- Реальные внешние AI-провайдеры пока не подключены.\n"
             "- Сеть не используется.\n"
             "- API-ключи не требуются."

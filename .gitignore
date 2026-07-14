@@ -8,7 +8,9 @@ venv/
 env/
 
 .env
-.env.local
+.env.*
+*.env
+*.key
 
 .db
 .db/
@@ -37,6 +39,12 @@ config/local/*.json
 config/local/*.db
 config/local/*.sqlite
 !config/local/.gitkeep
+
+# Local AI provider settings and secrets
+config/ai_providers.local.json
+config/secrets.json
+config/secrets/
+secrets/
 
 # Local AI/Vosk models
 models/

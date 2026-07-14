@@ -1,10 +1,10 @@
 # JARVIS-OS Checkpoint
 
 - Project: JARVIS-OS
-- Current stable stage: TASK-050A — Manual Voice Command Polish
-- Last stable commit: a63af4f
-- Last stable commit message: Polish manual voice commands
-- Next stage: TASK-051 — AI Provider Core Contracts / Router Foundation
+- Current stable stage: TASK-051 — AI Provider Core Contracts / Router Foundation
+- Last stable commit: e16a1d4
+- Last stable commit message: Add AI provider router foundation
+- Next stage: TASK-052 — AI Provider Configuration / API Key Safety Layer
 - Status: in progress
 
 ## Approved Workflow
@@ -35,4 +35,6 @@ TASK-050 is complete and stable at commit 9a5bc6b.
 
 TASK-050A is complete and stable at commit a63af4f.
 
-TASK-051 is in progress for AI provider core contracts and offline router foundation only.
+TASK-051 is complete and stable at commit e16a1d4.
+
+TASK-052 is in progress for AI provider configuration and API key safety only.

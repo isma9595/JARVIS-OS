@@ -37,6 +37,12 @@ For TASK-051, only `CHAT`, `SUMMARY`, and `CLASSIFICATION` are active in the dry
 
 The router is deterministic and does not perform network calls.
 
+## Configuration Safety Layer
+
+TASK-052 adds `ai/provider_config.py` and `ai/provider_config_manager.py` for safe readiness reporting before any external adapter exists. The config layer lists `dry_run`, `groq`, and `gemini`, keeps Groq/Gemini disabled by default, checks only environment variable presence, and never displays API key values.
+
+See `docs/AI_PROVIDER_CONFIGURATION.md` for key safety rules and commands.
+
 ## Dry-Run Provider
 
 `DryRunAIProvider` is offline and deterministic:

@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from ai import AIProviderCapability, AIProviderRouter, AIRequest
+from ai import AIProviderCapability, AIProviderConfigManager, AIProviderRouter, AIRequest
 from core.action_router import SafeActionRouter
 from dialogue import (
     AssistantResponseHistory,
@@ -93,6 +93,30 @@ class CommandProcessor:
         "ai провайдеры",
         "ии провайдеры",
         "провайдеры ai",
+    }
+    AI_CONFIG_STATUS_COMMANDS = {
+        "статус ai конфигурации",
+        "статус ии конфигурации",
+        "статус ai ключей",
+        "статус ии ключей",
+        "статус api ключей",
+        "ai config status",
+    }
+    AI_PROVIDER_CONFIG_LIST_COMMANDS = {
+        "конфигурация ai провайдеров",
+        "конфигурация ии провайдеров",
+        "список ai конфигурации",
+        "список ии конфигурации",
+    }
+    AI_KEY_SAFETY_HELP_COMMANDS = {
+        "безопасность ai ключей",
+        "безопасность ии ключей",
+        "как хранить ai ключи",
+        "как хранить api ключи",
+    }
+    AI_PROVIDER_KEY_CHECK_COMMANDS = {
+        "проверить groq ключ": "groq",
+        "проверить gemini ключ": "gemini",
     }
     AI_CHAT_PREFIXES = (
         "спроси ai:",
@@ -822,6 +846,7 @@ class CommandProcessor:
         assistant_response_history=None,
         voice_dialogue_mode_manager=None,
         ai_provider_router=None,
+        ai_provider_config_manager=None,
     ):
         self.user_profile = user_profile or {}
         self.dialogue_manager = dialogue_manager or DialogueManager(self.user_profile)
@@ -835,7 +860,14 @@ class CommandProcessor:
             user_profile=self.user_profile,
             dialogue_manager=self.dialogue_manager,
         )
-        self.ai_provider_router = ai_provider_router or AIProviderRouter()
+        self.ai_provider_config_manager = (
+            ai_provider_config_manager
+            or getattr(ai_provider_router, "config_manager", None)
+            or AIProviderConfigManager()
+        )
+        self.ai_provider_router = ai_provider_router or AIProviderRouter(
+            config_manager=self.ai_provider_config_manager
+        )
         self.voice_input_manager = None
         if voice_output_manager is None:
             from voice.voice_output_manager import VoiceOutputManager
@@ -1701,6 +1733,33 @@ class CommandProcessor:
             return self._result(
                 "ai.providers",
                 self.ai_provider_router.providers_text_ru(),
+            )
+
+        if command in self.AI_CONFIG_STATUS_COMMANDS:
+            return self._result(
+                "ai.config.status",
+                self.ai_provider_config_manager.format_status_ru(),
+            )
+
+        if command in self.AI_PROVIDER_CONFIG_LIST_COMMANDS:
+            return self._result(
+                "ai.config.providers",
+                self.ai_provider_config_manager.format_provider_list_ru(),
+            )
+
+        if command in self.AI_KEY_SAFETY_HELP_COMMANDS:
+            return self._result(
+                "ai.key_safety",
+                self.ai_provider_config_manager.format_key_safety_help_ru(),
+            )
+
+        if command in self.AI_PROVIDER_KEY_CHECK_COMMANDS:
+            provider_name = self.AI_PROVIDER_KEY_CHECK_COMMANDS[command]
+            return self._result(
+                "ai.key_check",
+                self.ai_provider_config_manager.check_provider_key_text_ru(
+                    provider_name
+                ),
             )
 
         if command in self.VOICE_STATUS_COMMANDS:
@@ -3233,7 +3292,8 @@ class CommandProcessor:
             "Рискованные действия не обходят безопасность, постоянное прослушивание не связано "
             "с реальным распознаванием. "
             "AI foundation сейчас работает только в dry-run/offline режиме: статус ai; список ai провайдеров; спроси ai: <текст>; ai кратко: <текст>; ai классифицируй: <текст>. "
-            "Реальные внешние AI-провайдеры пока не подключены, сеть не используется, API-ключи не требуются, AI-ответы не выполняются как команды. "
+            "Безопасная конфигурация AI: статус ai конфигурации; статус ai ключей; конфигурация ai провайдеров; безопасность ai ключей; проверить groq ключ; проверить gemini ключ. "
+            "Реальные внешние AI-провайдеры пока не подключены, сеть не используется, API-ключи не печатаются, AI-ответы не выполняются как команды. "
             "Зрение экрана и автоматизация запланированы позже. "
             "Для выхода напишите: выход."
         )

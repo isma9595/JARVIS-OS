@@ -2808,6 +2808,67 @@ def test_ai_provider_list_command_works():
     assert "classification" in result["response"]
 
 
+def test_ai_config_status_command_works():
+    result = CommandProcessor().process("статус ai конфигурации")
+
+    assert result["intent"] == "ai.config.status"
+    assert "dry_run" in result["response"]
+    assert "groq" in result["response"]
+    assert "gemini" in result["response"]
+    assert "Сеть не используется" in result["response"]
+
+
+def test_ai_key_status_command_works():
+    result = CommandProcessor().process("статус ai ключей")
+
+    assert result["intent"] == "ai.config.status"
+    assert "GROQ_API_KEY" in result["response"]
+    assert "GEMINI_API_KEY" in result["response"]
+    assert "MISSING" in result["response"]
+
+
+def test_ai_provider_config_list_command_works():
+    result = CommandProcessor().process("конфигурация ai провайдеров")
+
+    assert result["intent"] == "ai.config.providers"
+    assert "Конфигурация AI провайдеров" in result["response"]
+    assert "GROQ_API_KEY" in result["response"]
+    assert "GEMINI_API_KEY" in result["response"]
+
+
+def test_ai_key_safety_help_command_works():
+    result = CommandProcessor().process("безопасность ai ключей")
+
+    assert result["intent"] == "ai.key_safety"
+    assert "Не коммитьте секреты" in result["response"]
+    assert "переменные окружения" in result["response"]
+    assert "не значение" in result["response"]
+
+
+def test_check_groq_key_command_does_not_print_value(monkeypatch):
+    secret = "groq-secret-that-must-not-print"
+    monkeypatch.setenv("GROQ_API_KEY", secret)
+
+    result = CommandProcessor().process("проверить groq ключ")
+
+    assert result["intent"] == "ai.key_check"
+    assert "PRESENT" in result["response"]
+    assert "GROQ_API_KEY" in result["response"]
+    assert secret not in result["response"]
+
+
+def test_check_gemini_key_command_does_not_print_value(monkeypatch):
+    secret = "gemini-secret-that-must-not-print"
+    monkeypatch.setenv("GEMINI_API_KEY", secret)
+
+    result = CommandProcessor().process("проверить gemini ключ")
+
+    assert result["intent"] == "ai.key_check"
+    assert "PRESENT" in result["response"]
+    assert "GEMINI_API_KEY" in result["response"]
+    assert secret not in result["response"]
+
+
 def test_ai_ask_commands_return_dry_run_text():
     processor = CommandProcessor()
 
@@ -2864,9 +2925,26 @@ def test_help_mentions_ai_provider_foundation():
     assert "спроси ai: <текст>" in response
     assert "ai кратко: <текст>" in response
     assert "ai классифицируй: <текст>" in response
+    assert "статус ai конфигурации" in response
+    assert "статус ai ключей" in response
+    assert "безопасность ai ключей" in response
     assert "Реальные внешние AI-провайдеры пока не подключены" in response
     assert "AI-ответы не выполняются как команды" in response
     assert "не выполняет команду повторно" in response
+
+
+def test_ai_config_commands_do_not_call_network():
+    class FailingRouter:
+        def status_text_ru(self):
+            raise AssertionError("router should not be needed for config commands")
+
+        def providers_text_ru(self):
+            raise AssertionError("router should not be needed for config commands")
+
+    processor = CommandProcessor(ai_provider_router=FailingRouter())
+
+    assert processor.process("статус ai ключей")["intent"] == "ai.config.status"
+    assert processor.process("проверить groq ключ")["intent"] == "ai.key_check"
 
 
 def run_tests():

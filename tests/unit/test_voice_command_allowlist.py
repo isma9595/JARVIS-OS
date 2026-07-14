@@ -110,6 +110,36 @@ def test_ai_status_and_provider_list_commands_are_allowed():
     )
 
 
+def test_ai_config_and_key_safety_voice_commands_are_allowed():
+    allowlist = SafeVoiceCommandAllowlist()
+
+    for command, canonical in (
+        ("статус ai конфигурации", "статус ai конфигурации"),
+        ("статус ai ключей", "статус ai ключей"),
+        ("безопасность ai ключей", "безопасность ai ключей"),
+        ("проверить groq ключ", "проверить groq ключ"),
+        ("проверить gemini ключ", "проверить gemini ключ"),
+    ):
+        decision = allowlist.decide(command)
+
+        assert decision.allowed is True
+        assert decision.canonical_command == canonical
+
+
+def test_voice_command_for_setting_keys_is_not_allowlisted():
+    allowlist = SafeVoiceCommandAllowlist()
+
+    for command in (
+        "установить groq ключ abc123",
+        "установи groq ключ abc123",
+        "добавь gemini ключ abc123",
+    ):
+        decision = allowlist.decide(command)
+
+        assert decision.allowed is False
+        assert decision.canonical_command is None
+
+
 def test_broad_ai_voice_queries_are_not_allowlisted():
     allowlist = SafeVoiceCommandAllowlist()
 

@@ -1,0 +1,20 @@
+{
+  "providers": [
+    {
+      "name": "groq",
+      "provider_type": "groq",
+      "enabled": false,
+      "default_model": "groq-default",
+      "api_key_env_var": "GROQ_API_KEY",
+      "notes": "Set the API key in an environment variable, never in this file."
+    },
+    {
+      "name": "gemini",
+      "provider_type": "gemini",
+      "enabled": false,
+      "default_model": "gemini-default",
+      "api_key_env_var": "GEMINI_API_KEY",
+      "notes": "Set the API key in an environment variable, never in this file."
+    }
+  ]
+}

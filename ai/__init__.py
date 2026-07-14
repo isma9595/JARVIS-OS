@@ -8,13 +8,25 @@ from ai.provider_contracts import (
     AIRequest,
     AIResponse,
 )
+from ai.provider_config import (
+    AIProviderConfig,
+    AIProviderConfigStatus,
+    AIProviderKeyStatus,
+    AIProviderRuntimeState,
+)
+from ai.provider_config_manager import AIProviderConfigManager
 from ai.provider_router import AIProviderRouter
 
 __all__ = [
     "AIProvider",
     "AIProviderCapability",
+    "AIProviderConfig",
+    "AIProviderConfigManager",
+    "AIProviderConfigStatus",
     "AIProviderInfo",
+    "AIProviderKeyStatus",
     "AIProviderRouter",
+    "AIProviderRuntimeState",
     "AIProviderSafetyLevel",
     "AIRequest",
     "AIResponse",
