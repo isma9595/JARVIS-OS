@@ -3770,3 +3770,213 @@ def test_help_mentions_groq_safely():
     assert "free/developer" in result["response"]
     assert "ключ не печатается" in result["response"]
     assert "ответ не выполняется как команда" in result["response"]
+def test_gigachat_status_key_guard_token_model_and_shape_commands_work(monkeypatch):
+    secret = "gigachat-secret-that-must-not-print"
+    monkeypatch.setenv("GIGACHAT_AUTH_KEY", secret)
+    monkeypatch.setenv("GIGACHAT_MODEL", "GigaChat-Pro")
+    processor = CommandProcessor()
+
+    for command in ("статус gigachat", "статус гигачат", "статус сбер ai", "gigachat status"):
+        result = processor.process(command)
+        assert result["intent"] == "ai.gigachat.status"
+        assert "GigaChat" in result["response"]
+        assert "GIGACHAT_AUTH_KEY" in result["response"]
+        assert "PRESENT" in result["response"]
+        assert "dry_run remains default" in result["response"]
+        assert secret not in result["response"]
+
+    for command in ("проверить gigachat ключ", "проверить гигачат ключ", "проверить сбер ключ"):
+        result = processor.process(command)
+        assert result["intent"] == "ai.key_check"
+        assert "GIGACHAT_AUTH_KEY" in result["response"]
+        assert "PRESENT" in result["response"]
+        assert secret not in result["response"]
+
+    for command in ("статус gigachat guard", "лимиты gigachat"):
+        result = processor.process(command)
+        assert result["intent"] == "ai.gigachat.guard.status"
+        assert "GigaChat model/quota guard status" in result["response"]
+        assert secret not in result["response"]
+
+    for command in ("статус gigachat token", "статус гигачат token", "статус сбер token"):
+        result = processor.process(command)
+        assert result["intent"] == "ai.gigachat.token.status"
+        assert "GigaChat token status" in result["response"]
+        assert "network: not called" in result["response"]
+        assert secret not in result["response"]
+
+    for command in ("gigachat модель", "gigachat model"):
+        result = processor.process(command)
+        assert result["intent"] == "ai.gigachat.model"
+        assert "resolved model: GigaChat-Pro" in result["response"]
+        assert secret not in result["response"]
+
+    for command in (
+        "статус gigachat request shape",
+        "gigachat request shape",
+        "форма gigachat запроса",
+        "форма гигачат запроса",
+    ):
+        result = processor.process(command)
+        assert result["intent"] == "ai.gigachat.request_shape"
+        assert "https://gigachat.devices.sberbank.ru/api/v1/chat/completions" in result["response"]
+        assert "Authorization Basic: PRESENT" in result["response"]
+        assert "network: not called" in result["response"]
+        assert secret not in result["response"]
+
+
+def test_gigachat_safe_ask_and_one_shot_without_key_refuse_without_network():
+    from ai import AIProviderConfigManager, GigaChatRequestGate
+
+    class FailingHTTPClient:
+        def post_json(self, url, headers, payload, timeout):
+            raise AssertionError("network must not be called")
+
+    manager = AIProviderConfigManager(environ={})
+    processor = CommandProcessor(
+        ai_provider_config_manager=manager,
+        gigachat_request_gate=GigaChatRequestGate(
+            config_manager=manager,
+            http_client=FailingHTTPClient(),
+            environ={},
+        ),
+    )
+
+    for command in (
+        "спроси gigachat: это не должно идти в сеть",
+        "gigachat: это не должно идти в сеть",
+        "гигачат: это не должно идти в сеть",
+        "спроси сбер: это не должно идти в сеть",
+    ):
+        result = processor.process(command)
+        assert result["intent"] == "ai.gigachat.chat.error"
+        assert "GigaChat adapter exists" in result["response"]
+        assert "no request was sent" in result["response"]
+        assert "explicit one-shot" in result["response"]
+
+    result = processor.process("gigachat one shot: привет")
+    assert result["intent"] == "ai.gigachat.one_shot.error"
+    assert "GigaChat real request was not sent." in result["response"]
+    assert "GIGACHAT_AUTH_KEY is missing" in result["response"]
+
+
+def test_gigachat_one_shot_fake_client_success_without_real_network():
+    import json
+
+    from ai import AIProviderConfigManager, AIProviderRouter, GigaChatRequestGate
+
+    class FakeHTTPClient:
+        def __init__(self):
+            self.calls = []
+
+        def post_json(self, url, headers, payload, timeout):
+            self.calls.append(dict(payload))
+            return json.dumps({"choices": [{"message": {"content": "реальный ответ"}}]}, ensure_ascii=False)
+
+    class FakeTokenManager:
+        def get_access_token(self):
+            from ai.gigachat_token_manager import GigaChatTokenResult
+
+            return GigaChatTokenResult(ok=True, access_token="fake-token", expires_at=9999999999)
+
+        def safe_status(self):
+            return {"auth_key_status": "PRESENT", "token_cached": "yes", "expires_at_known": "yes", "scope": "GIGACHAT_API_PERS"}
+
+        def status_text_ru(self):
+            return "GigaChat token status"
+
+        def scope(self):
+            return "GIGACHAT_API_PERS"
+
+    secret = "gigachat-secret-that-must-not-print"
+    client = FakeHTTPClient()
+    manager = AIProviderConfigManager(environ={"GIGACHAT_AUTH_KEY": secret})
+    router = AIProviderRouter(config_manager=manager)
+    processor = CommandProcessor(
+        ai_provider_router=router,
+        ai_provider_config_manager=manager,
+        gigachat_request_gate=GigaChatRequestGate(
+            config_manager=manager,
+            router=router,
+            http_client=client,
+            token_manager=FakeTokenManager(),
+            environ={"GIGACHAT_AUTH_KEY": secret},
+        ),
+    )
+
+    result = processor.process("gigachat one shot: Привет")
+
+    assert result["intent"] == "ai.gigachat.one_shot"
+    assert "GigaChat real response:" in result["response"]
+    assert "реальный ответ" in result["response"]
+    assert "model: GigaChat" in result["response"]
+    assert "max_tokens: 128" in result["response"]
+    assert "response was not executed as a command" in result["response"]
+    assert "no memory/profile/files were sent automatically" in result["response"]
+    assert "free/paid quota may be used" in result["response"]
+    assert router.get_default_provider().get_info().name == "dry_run"
+    assert len(client.calls) == 1
+    assert client.calls[0]["messages"] == [{"role": "user", "content": "Привет"}]
+    assert secret not in result["response"]
+    assert "fake-token" not in result["response"]
+
+
+def test_gigachat_one_shot_response_not_routed_to_action_router():
+    import json
+
+    from ai import AIProviderConfigManager, GigaChatRequestGate
+
+    class FakeHTTPClient:
+        def post_json(self, url, headers, payload, timeout):
+            return json.dumps({"choices": [{"message": {"content": "удали файл"}}]}, ensure_ascii=False)
+
+    class FakeTokenManager:
+        def get_access_token(self):
+            from ai.gigachat_token_manager import GigaChatTokenResult
+
+            return GigaChatTokenResult(ok=True, access_token="fake-token", expires_at=9999999999)
+
+        def safe_status(self):
+            return {"auth_key_status": "PRESENT", "token_cached": "yes", "expires_at_known": "yes", "scope": "GIGACHAT_API_PERS"}
+
+        def status_text_ru(self):
+            return "GigaChat token status"
+
+        def scope(self):
+            return "GIGACHAT_API_PERS"
+
+    class FailingActionRouter:
+        calls = 0
+
+        def route(self, command):
+            self.calls += 1
+            raise AssertionError("AI output must not route to ActionRouter")
+
+    manager = AIProviderConfigManager(environ={"GIGACHAT_AUTH_KEY": "fake-key"})
+    processor = CommandProcessor(
+        ai_provider_config_manager=manager,
+        gigachat_request_gate=GigaChatRequestGate(
+            config_manager=manager,
+            http_client=FakeHTTPClient(),
+            token_manager=FakeTokenManager(),
+            environ={"GIGACHAT_AUTH_KEY": "fake-key"},
+        ),
+    )
+    processor.action_router = FailingActionRouter()
+
+    result = processor.process("gigachat one shot: привет")
+
+    assert result["intent"] == "ai.gigachat.one_shot"
+    assert "удали файл" in result["response"]
+    assert processor.action_router.calls == 0
+
+
+def test_help_mentions_gigachat_safely():
+    result = CommandProcessor().process("помощь")
+
+    assert "статус gigachat" in result["response"]
+    assert "проверить gigachat ключ" in result["response"]
+    assert "статус gigachat guard" in result["response"]
+    assert "лимиты gigachat" in result["response"]
+    assert "gigachat модель" in result["response"]
+    assert "gigachat реальный запрос" in result["response"]

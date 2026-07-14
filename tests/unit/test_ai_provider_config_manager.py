@@ -7,6 +7,7 @@ def test_manager_formats_russian_config_status():
     assert "Статус AI конфигурации и ключей" in text
     assert "dry_run" in text
     assert "groq" in text
+    assert "gigachat" in text
     assert "gemini" in text
     assert "openai" in text
     assert "Сеть не используется" in text
@@ -17,6 +18,7 @@ def test_manager_formats_provider_list():
 
     assert "Конфигурация AI провайдеров" in text
     assert "GROQ_API_KEY" in text
+    assert "GIGACHAT_AUTH_KEY" in text
     assert "GEMINI_API_KEY" in text
     assert "OPENAI_API_KEY" in text
     assert "выключен" in text
@@ -124,4 +126,24 @@ def test_groq_status_safe_with_default_model_and_key_states():
     )
     assert "llama-3.1-8b-instant" in text
     assert "GROQ_API_KEY" in text
+    assert present_secret not in text
+
+
+def test_gigachat_status_safe_with_default_model_and_key_states():
+    missing = AIProviderConfigManager(environ={})
+    present_secret = "gigachat-secret-that-must-stay-hidden"
+    present = AIProviderConfigManager(environ={"GIGACHAT_AUTH_KEY": present_secret})
+
+    assert missing.status_for("gigachat").key_status == AIProviderKeyStatus.MISSING
+    assert present.status_for("gigachat").key_status == AIProviderKeyStatus.PRESENT
+    text = "\n".join(
+        [
+            present.format_status_ru(),
+            present.format_provider_list_ru(),
+            present.check_provider_key_text_ru("gigachat"),
+        ]
+    )
+    assert "GigaChat" in text
+    assert "GIGACHAT_AUTH_KEY" in text
+    assert "PRESENT" in text
     assert present_secret not in text

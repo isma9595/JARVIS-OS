@@ -14,6 +14,7 @@ from ai.provider_contracts import (
 )
 from ai.providers.dry_run_provider import DryRunAIProvider
 from ai.providers.gemini_provider import GeminiProvider
+from ai.providers.gigachat_provider import GigaChatProvider
 from ai.providers.groq_provider import GroqProvider
 from ai.providers.openai_provider import OpenAIProvider
 
@@ -123,6 +124,7 @@ class AIProviderRouter:
             "- OpenAI зарегистрирован как disabled external provider; сеть для него выключена, пока явно не разрешена.\n"
             "- Gemini зарегистрирован как disabled external provider; сеть выключена кроме явного one-shot.\n"
             "- Groq зарегистрирован как disabled external provider; сеть выключена кроме явного one-shot.\n"
+            "- GigaChat зарегистрирован как disabled external provider; сеть выключена кроме явного one-shot; auth key/token не печатаются.\n"
             "- Слой конфигурации проверяет только наличие переменных окружения и не показывает ключи.\n"
             "- Реальные внешние AI-провайдеры не активны по умолчанию.\n"
             "- Сеть не используется.\n"
@@ -145,6 +147,7 @@ class AIProviderRouter:
                 "OpenAI виден как внешний провайдер, но выключен по умолчанию; сеть не используется без явного разрешения.",
                 "Gemini виден как внешний провайдер, но выключен по умолчанию; сеть не используется кроме явного one-shot.",
                 "Groq виден как внешний провайдер, но выключен по умолчанию; сеть не используется кроме явного one-shot.",
+                "GigaChat виден как внешний провайдер, но выключен по умолчанию; сеть не используется кроме явного one-shot; auth key/token не печатаются.",
                 "API-ключи не печатаются.",
             ]
         )
@@ -161,6 +164,9 @@ class AIProviderRouter:
         groq_config = self.config_manager.get_config("groq")
         if groq_config is not None:
             providers.append(GroqProvider(config=groq_config))
+        gigachat_config = self.config_manager.get_config("gigachat")
+        if gigachat_config is not None:
+            providers.append(GigaChatProvider(config=gigachat_config))
         return providers
 
     @staticmethod

@@ -275,6 +275,49 @@ def test_groq_status_key_guard_limits_and_model_commands_are_allowlisted_but_req
         assert allowlist.decide(command).allowed is False
 
 
+def test_gigachat_status_key_guard_token_limits_model_and_shape_are_allowlisted_but_requests_are_not():
+    allowlist = SafeVoiceCommandAllowlist()
+
+    for command, canonical in (
+        ("статус gigachat", "статус gigachat"),
+        ("статус гигачат", "статус gigachat"),
+        ("статус сбер ai", "статус gigachat"),
+        ("проверить gigachat ключ", "проверить gigachat ключ"),
+        ("проверить гигачат ключ", "проверить gigachat ключ"),
+        ("проверить сбер ключ", "проверить gigachat ключ"),
+        ("статус gigachat guard", "статус gigachat guard"),
+        ("лимиты gigachat", "статус gigachat guard"),
+        ("статус gigachat token", "статус gigachat token"),
+        ("статус гигачат token", "статус gigachat token"),
+        ("статус сбер token", "статус gigachat token"),
+        ("gigachat модель", "gigachat модель"),
+        ("gigachat model", "gigachat модель"),
+        ("статус gigachat request shape", "статус gigachat request shape"),
+        ("gigachat request shape", "статус gigachat request shape"),
+        ("форма gigachat запроса", "статус gigachat request shape"),
+        ("форма гигачат запроса", "статус gigachat request shape"),
+    ):
+        decision = allowlist.decide(command)
+        assert decision.allowed is True
+        assert decision.canonical_command == canonical
+
+    for command in (
+        "спроси gigachat: привет",
+        "gigachat: привет",
+        "гигачат: привет",
+        "спроси сбер: привет",
+        "gigachat реальный запрос: привет",
+        "гигачат реальный запрос: привет",
+        "сбер реальный запрос: привет",
+        "реальный gigachat запрос: привет",
+        "gigachat one shot: hello",
+        "установи gigachat ключ abc123",
+        "покажи gigachat token",
+        "включи gigachat provider",
+    ):
+        assert allowlist.decide(command).allowed is False
+
+
 def test_voice_interaction_info_commands_are_allowed_without_replay_execution():
     allowlist = SafeVoiceCommandAllowlist()
 

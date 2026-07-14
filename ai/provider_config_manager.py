@@ -43,6 +43,18 @@ class AIProviderConfigManager:
                 ),
             ),
             AIProviderConfig(
+                name="gigachat",
+                provider_type="gigachat",
+                enabled=False,
+                default_model="GigaChat",
+                api_key_env_var="GIGACHAT_AUTH_KEY",
+                notes=(
+                    "GigaChat Authorization key comes from an environment variable. "
+                    "OAuth access token is obtained only by explicit one-shot and "
+                    "kept in memory only."
+                ),
+            ),
+            AIProviderConfig(
                 name="gemini",
                 provider_type="gemini",
                 enabled=False,

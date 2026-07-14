@@ -9,6 +9,14 @@
       "notes": "Create a Groq Console API key and set only GROQ_API_KEY in the environment. Never put a real key in this file. Optional model override: GROQ_MODEL."
     },
     {
+      "name": "gigachat",
+      "provider_type": "gigachat",
+      "enabled": false,
+      "default_model": "GigaChat",
+      "api_key_env_var": "GIGACHAT_AUTH_KEY",
+      "notes": "Set only GIGACHAT_AUTH_KEY in the environment. Optional overrides: GIGACHAT_MODEL and GIGACHAT_SCOPE. OAuth access token is kept in memory only and never written to disk."
+    },
+    {
       "name": "gemini",
       "provider_type": "gemini",
       "enabled": false,

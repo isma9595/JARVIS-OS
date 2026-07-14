@@ -11,16 +11,19 @@ from ai import (
 )
 
 
-def test_default_configs_include_dry_run_groq_gemini_openai():
+def test_default_configs_include_dry_run_groq_gigachat_gemini_openai():
     configs = {config.name: config for config in AIProviderConfigManager.default_configs()}
 
-    assert set(configs) == {"dry_run", "groq", "gemini", "openai"}
+    assert set(configs) == {"dry_run", "groq", "gigachat", "gemini", "openai"}
     assert configs["dry_run"].enabled is True
     assert configs["groq"].enabled is False
+    assert configs["gigachat"].enabled is False
     assert configs["gemini"].enabled is False
     assert configs["openai"].enabled is False
     assert configs["groq"].default_model == "llama-3.1-8b-instant"
     assert configs["groq"].api_key_env_var == "GROQ_API_KEY"
+    assert configs["gigachat"].default_model == "GigaChat"
+    assert configs["gigachat"].api_key_env_var == "GIGACHAT_AUTH_KEY"
     assert configs["gemini"].default_model == "gemini-2.5-flash-lite"
     assert configs["gemini"].api_key_env_var == "GEMINI_API_KEY"
     assert configs["openai"].api_key_env_var == "OPENAI_API_KEY"
@@ -37,6 +40,7 @@ def test_missing_env_vars_produce_missing():
     manager = AIProviderConfigManager(environ={})
 
     assert manager.status_for("groq").key_status == AIProviderKeyStatus.MISSING
+    assert manager.status_for("gigachat").key_status == AIProviderKeyStatus.MISSING
     assert manager.status_for("gemini").key_status == AIProviderKeyStatus.MISSING
     assert manager.status_for("openai").key_status == AIProviderKeyStatus.MISSING
 
@@ -124,6 +128,25 @@ def test_groq_env_var_value_never_appears_in_status_text():
     assert secret not in text
 
 
+def test_gigachat_env_var_value_never_appears_in_status_text():
+    secret = "gigachat-secret-that-must-not-print"
+    manager = AIProviderConfigManager(environ={"GIGACHAT_AUTH_KEY": secret})
+    status = manager.status_for("gigachat")
+    text = "\n".join(
+        [
+            manager.format_status_ru(),
+            manager.format_provider_list_ru(),
+            manager.check_provider_key_text_ru("gigachat"),
+        ]
+    )
+
+    assert status.key_status == AIProviderKeyStatus.PRESENT
+    assert status.default_model == "GigaChat"
+    assert "GIGACHAT_AUTH_KEY" in text
+    assert "PRESENT" in text
+    assert secret not in text
+
+
 def test_example_config_does_not_contain_secrets():
     path = Path("config/ai_providers.example.json")
     data = json.loads(path.read_text(encoding="utf-8"))
@@ -132,7 +155,12 @@ def test_example_config_does_not_contain_secrets():
     assert "sk-" not in text
     assert "secret" not in text.lower().replace("secrets", "").replace("secret.", "")
     env_vars = [provider["api_key_env_var"] for provider in data["providers"]]
-    assert env_vars == ["GROQ_API_KEY", "GEMINI_API_KEY", "OPENAI_API_KEY"]
+    assert env_vars == [
+        "GROQ_API_KEY",
+        "GIGACHAT_AUTH_KEY",
+        "GEMINI_API_KEY",
+        "OPENAI_API_KEY",
+    ]
 
 
 def test_config_layer_has_no_network_dependency():
@@ -143,6 +171,7 @@ def test_config_layer_has_no_network_dependency():
     assert [status.name for status in statuses] == [
         "dry_run",
         "groq",
+        "gigachat",
         "gemini",
         "openai",
     ]

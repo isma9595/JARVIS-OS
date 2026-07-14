@@ -37,6 +37,14 @@ from ai.groq_cost_guard import (
 )
 from ai.groq_request_gate import GroqRequestGate, GroqRequestGateStatus
 from ai.providers.groq_provider import GroqProvider
+from ai.gigachat_cost_guard import (
+    GigaChatRequestCostGuard,
+    GigaChatRequestGuardConfig,
+    GigaChatRequestGuardResult,
+)
+from ai.gigachat_token_manager import GigaChatTokenManager, GigaChatTokenResult
+from ai.gigachat_request_gate import GigaChatRequestGate, GigaChatRequestGateStatus
+from ai.providers.gigachat_provider import GigaChatProvider
 
 __all__ = [
     "AIProvider",
@@ -63,6 +71,14 @@ __all__ = [
     "GroqRequestGateStatus",
     "GroqRequestGuardConfig",
     "GroqRequestGuardResult",
+    "GigaChatProvider",
+    "GigaChatRequestCostGuard",
+    "GigaChatRequestGate",
+    "GigaChatRequestGateStatus",
+    "GigaChatRequestGuardConfig",
+    "GigaChatRequestGuardResult",
+    "GigaChatTokenManager",
+    "GigaChatTokenResult",
     "OpenAIRequestCostGuard",
     "OpenAIRequestGate",
     "OpenAIRequestGateStatus",

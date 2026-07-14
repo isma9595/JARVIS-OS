@@ -1,10 +1,10 @@
 # JARVIS-OS Checkpoint
 
 - Project: JARVIS-OS
-- Current stable stage: TASK-058 — Groq Provider Adapter / Free-Tier Fallback
-- Last stable commit: af23293
-- Last stable commit message: Add Groq provider adapter
-- Next stage: TASK-058C — Groq Python HTTP Transport Compatibility Fix
+- Current stable stage: TASK-058C — Groq Python HTTP Transport Compatibility Fix
+- Last stable commit: ca51313
+- Last stable commit message: Fix Groq Python transport compatibility
+- Next stage: TASK-059 — GigaChat Provider Adapter / Russia-Friendly Fallback
 - Status: in progress
 
 ## Approved Workflow
@@ -41,4 +41,6 @@ TASK-056 is complete and stable at commit 83b15da.
 
 TASK-058 is complete and stable at commit af23293.
 
-TASK-058C is in progress for Groq Python HTTP transport compatibility, request-shape diagnostics, sanitized HTTP 403 details, fake-client regression tests, and docs.
+TASK-058C is complete and stable at commit ca51313.
+
+TASK-059 is in progress for the GigaChat provider adapter, in-memory OAuth token manager, one-shot request gate, command integration, voice allowlist policy, fake-client regression tests, and docs.

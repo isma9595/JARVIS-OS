@@ -100,3 +100,14 @@ The adapter remains disabled by default. `dry_run` remains default. Free tier, q
 ## TASK-058 Update
 
 Groq uses `GROQ_API_KEY` for the API key and optional `GROQ_MODEL` for one-shot model selection. The default Groq model is `llama-3.1-8b-instant`. Groq remains disabled by default, `dry_run` remains default, and key/status checks stay offline and never print key values.
+
+## TASK-059 Update
+
+GigaChat uses `GIGACHAT_AUTH_KEY` for the Authorization key, optional
+`GIGACHAT_MODEL` for one-shot model selection, and optional `GIGACHAT_SCOPE`
+for OAuth scope. The default model is `GigaChat`, and the default scope is
+`GIGACHAT_API_PERS`.
+
+OAuth access tokens are cached in memory only, never written to disk, and never
+printed. GigaChat remains disabled by default, `dry_run` remains default, and
+status/key/token checks stay offline.

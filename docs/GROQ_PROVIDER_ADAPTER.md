@@ -2,6 +2,8 @@
 
 TASK-058 adds Groq as the next free-tier fallback candidate after Gemini live availability was blocked by location/free-tier access.
 
+TASK-059 adds GigaChat after Groq as the next Russia-friendly fallback provider.
+
 ## Safety Model
 
 - Groq is disabled by default.

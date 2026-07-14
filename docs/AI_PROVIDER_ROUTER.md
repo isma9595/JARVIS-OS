@@ -145,3 +145,12 @@ Gemini real requests are available only through explicit one-shot commands guard
 ## TASK-058 Update
 
 Groq is registered as a disabled external provider after `dry_run`, OpenAI, and Gemini. The default provider remains `dry_run`; normal Groq ask commands return a safe no-network message, and real Groq requests are explicit one-shot only.
+
+## TASK-059 Update
+
+GigaChat is registered as a disabled external provider after Groq. Provider
+order is now `dry_run`, OpenAI, Gemini, Groq, GigaChat.
+
+The default provider remains `dry_run`. Normal GigaChat ask commands return a
+safe no-network message, and real GigaChat requests are explicit one-shot only.
+Auth key and OAuth token values are never printed.

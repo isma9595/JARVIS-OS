@@ -65,6 +65,18 @@ class SafeVoiceCommandAllowlist:
             "groq request shape",
             "форма groq запроса",
         },
+        "статус gigachat": {
+            "статус gigachat",
+            "статус гигачат",
+            "статус сбер ai",
+            "gigachat status",
+        },
+        "статус gigachat request shape": {
+            "статус gigachat request shape",
+            "gigachat request shape",
+            "форма gigachat запроса",
+            "форма гигачат запроса",
+        },
         "статус openai one shot": {
             "статус openai one shot",
         },
@@ -97,6 +109,19 @@ class SafeVoiceCommandAllowlist:
             "groq модель",
             "groq model",
         },
+        "статус gigachat guard": {
+            "статус gigachat guard",
+            "лимиты gigachat",
+        },
+        "статус gigachat token": {
+            "статус gigachat token",
+            "статус гигачат token",
+            "статус сбер token",
+        },
+        "gigachat модель": {
+            "gigachat модель",
+            "gigachat model",
+        },
         "список ai провайдеров": {
             "список ai провайдеров",
             "список ии провайдеров",
@@ -123,6 +148,11 @@ class SafeVoiceCommandAllowlist:
         "проверить groq ключ": {
             "проверить groq ключ",
             "проверить ключ groq",
+        },
+        "проверить gigachat ключ": {
+            "проверить gigachat ключ",
+            "проверить гигачат ключ",
+            "проверить сбер ключ",
         },
         "проверить gemini ключ": {
             "проверить gemini ключ",

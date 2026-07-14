@@ -6,6 +6,7 @@ from ai import (
     AIProviderRouter,
     AIRequest,
     GeminiRequestGate,
+    GigaChatRequestGate,
     GroqRequestGate,
     OpenAIRequestGate,
 )
@@ -149,6 +150,31 @@ class CommandProcessor:
         "groq модель",
         "groq model",
     }
+    GIGACHAT_STATUS_COMMANDS = {
+        "статус gigachat",
+        "статус гигачат",
+        "статус сбер ai",
+        "gigachat status",
+    }
+    GIGACHAT_REQUEST_SHAPE_COMMANDS = {
+        "статус gigachat request shape",
+        "gigachat request shape",
+        "форма gigachat запроса",
+        "форма гигачат запроса",
+    }
+    GIGACHAT_GUARD_STATUS_COMMANDS = {
+        "статус gigachat guard",
+        "лимиты gigachat",
+    }
+    GIGACHAT_TOKEN_STATUS_COMMANDS = {
+        "статус gigachat token",
+        "статус гигачат token",
+        "статус сбер token",
+    }
+    GIGACHAT_MODEL_COMMANDS = {
+        "gigachat модель",
+        "gigachat model",
+    }
     AI_PROVIDER_LIST_COMMANDS = {
         "список ai провайдеров",
         "список ии провайдеров",
@@ -183,6 +209,9 @@ class CommandProcessor:
         "проверить ключ gemini": "gemini",
         "проверить openai ключ": "openai",
         "проверить ключ openai": "openai",
+        "проверить gigachat ключ": "gigachat",
+        "проверить гигачат ключ": "gigachat",
+        "проверить сбер ключ": "gigachat",
     }
     GROQ_CHAT_PREFIXES = (
         "спроси groq:",
@@ -192,6 +221,19 @@ class CommandProcessor:
         "groq реальный запрос:",
         "реальный groq запрос:",
         "groq one shot:",
+    )
+    GIGACHAT_CHAT_PREFIXES = (
+        "спроси gigachat:",
+        "gigachat:",
+        "гигачат:",
+        "спроси сбер:",
+    )
+    GIGACHAT_ONE_SHOT_PREFIXES = (
+        "gigachat реальный запрос:",
+        "гигачат реальный запрос:",
+        "сбер реальный запрос:",
+        "реальный gigachat запрос:",
+        "gigachat one shot:",
     )
     GEMINI_CHAT_PREFIXES = (
         "спроси gemini:",
@@ -943,6 +985,7 @@ class CommandProcessor:
         openai_request_gate=None,
         gemini_request_gate=None,
         groq_request_gate=None,
+        gigachat_request_gate=None,
     ):
         self.user_profile = user_profile or {}
         self.dialogue_manager = dialogue_manager or DialogueManager(self.user_profile)
@@ -973,6 +1016,10 @@ class CommandProcessor:
             router=self.ai_provider_router,
         )
         self.groq_request_gate = groq_request_gate or GroqRequestGate(
+            config_manager=self.ai_provider_config_manager,
+            router=self.ai_provider_router,
+        )
+        self.gigachat_request_gate = gigachat_request_gate or GigaChatRequestGate(
             config_manager=self.ai_provider_config_manager,
             router=self.ai_provider_router,
         )
@@ -1750,6 +1797,27 @@ class CommandProcessor:
         if groq_one_shot_text is not None:
             return self._generate_groq_one_shot_result(groq_one_shot_text)
 
+        gigachat_one_shot_text = self._extract_ai_prefixed_text(
+            command_text,
+            command,
+            self.GIGACHAT_ONE_SHOT_PREFIXES,
+        )
+        if gigachat_one_shot_text is not None:
+            return self._generate_gigachat_one_shot_result(gigachat_one_shot_text)
+
+        gigachat_chat_text = self._extract_ai_prefixed_text(
+            command_text,
+            command,
+            self.GIGACHAT_CHAT_PREFIXES,
+        )
+        if gigachat_chat_text is not None:
+            return self._generate_named_ai_result(
+                "gigachat",
+                gigachat_chat_text,
+                AIProviderCapability.CHAT,
+                "ai.gigachat.chat",
+            )
+
         gemini_chat_text = self._extract_ai_prefixed_text(
             command_text,
             command,
@@ -1964,6 +2032,36 @@ class CommandProcessor:
             return self._result(
                 "ai.groq.model",
                 self.groq_request_gate.model_text_ru(),
+            )
+
+        if command in self.GIGACHAT_STATUS_COMMANDS:
+            return self._result(
+                "ai.gigachat.status",
+                self.gigachat_request_gate.status_text_ru(),
+            )
+
+        if command in self.GIGACHAT_REQUEST_SHAPE_COMMANDS:
+            return self._result(
+                "ai.gigachat.request_shape",
+                self.gigachat_request_gate.request_shape_text_ru(),
+            )
+
+        if command in self.GIGACHAT_GUARD_STATUS_COMMANDS:
+            return self._result(
+                "ai.gigachat.guard.status",
+                self.gigachat_request_gate.guard_status_text_ru(),
+            )
+
+        if command in self.GIGACHAT_TOKEN_STATUS_COMMANDS:
+            return self._result(
+                "ai.gigachat.token.status",
+                self.gigachat_request_gate.token_status_text_ru(),
+            )
+
+        if command in self.GIGACHAT_MODEL_COMMANDS:
+            return self._result(
+                "ai.gigachat.model",
+                self.gigachat_request_gate.model_text_ru(),
             )
 
         if command in self.AI_PROVIDER_LIST_COMMANDS:
@@ -2856,6 +2954,14 @@ class CommandProcessor:
                 "Use explicit one-shot for a real Groq test.\n"
                 "dry_run remains available through: спроси ai: <текст>."
             )
+        if provider_name == "gigachat" and response.is_error:
+            text = (
+                "GigaChat adapter exists, but no request was sent.\n"
+                f"Reason: {response.error_message or response.text}\n"
+                "GigaChat provider is disabled by default and network is disabled.\n"
+                "Use explicit one-shot for a real GigaChat test.\n"
+                "dry_run remains available through: спроси ai: <текст>."
+            )
         result_intent = f"{intent}.error" if response.is_error else intent
         return self._result(result_intent, text)
 
@@ -2996,6 +3102,52 @@ class CommandProcessor:
             "- free/developer quota or rate limits may be used"
         )
         return self._result("ai.groq.one_shot", text)
+
+    def _generate_gigachat_one_shot_result(self, prompt):
+        request = AIRequest(
+            prompt=prompt,
+            task_type=AIProviderCapability.CHAT.value,
+            language="ru",
+        )
+        response = self.gigachat_request_gate.generate_one_shot(
+            request,
+            capability=AIProviderCapability.CHAT,
+        )
+        if response.is_error:
+            if response.error_message == "GIGACHAT_AUTH_KEY is missing.":
+                text = (
+                    "GigaChat real request was not sent.\n"
+                    "Reason: GIGACHAT_AUTH_KEY is missing.\n"
+                    "Set the authorization key as an environment variable outside the repository.\n"
+                    "Auth key and token values must never be committed or printed.\n"
+                    "GigaChat free/paid quota may be used only after an explicit one-shot request."
+                )
+            else:
+                text = (
+                    "GigaChat real request was not sent.\n"
+                    f"Reason: {response.error_message or response.text}\n"
+                    "GigaChat was not enabled permanently.\n"
+                    "Auth key and token values were not printed.\n"
+                    "GigaChat free/paid quota may be used only by one-shot."
+                )
+            return self._result("ai.gigachat.one_shot.error", text)
+
+        guard = self.gigachat_request_gate.request_guard
+        text = (
+            "GigaChat real response:\n"
+            f"{response.text}\n\n"
+            "Safety:\n"
+            "- one-shot request completed\n"
+            f"- model: {response.model_name}\n"
+            f"- max_tokens: {guard.config.max_output_tokens}\n"
+            "- GigaChat was not enabled permanently\n"
+            "- dry_run remains default\n"
+            "- response was not executed as a command\n"
+            "- auth key and token values were not printed\n"
+            "- no memory/profile/files were sent automatically\n"
+            "- free/paid quota may be used"
+        )
+        return self._result("ai.gigachat.one_shot", text)
 
     def _openai_status_text(self):
         status = self.ai_provider_config_manager.status_for("openai")
@@ -3781,6 +3933,7 @@ class CommandProcessor:
             "OpenAI one-shot: статус openai one shot; статус openai guard; лимиты openai; openai модель; openai реальный запрос: <текст>; только явная one-shot команда может сделать один реальный запрос, OpenAI не включается постоянно, dry_run остается default, ключ не печатается, ответ не выполняется как команда, max_output_tokens ограничен, реальный API может использовать лимит аккаунта. "
             "Gemini adapter: статус gemini; проверить gemini ключ; статус gemini guard; лимиты gemini; gemini модель; спроси gemini: <текст> показывает безопасный отказ без сетевого запроса; gemini реальный запрос: <текст> или gemini one shot: <текст> делает только явный one-shot при наличии GEMINI_API_KEY, Gemini не включается постоянно, dry_run остается default, ключ не печатается, ответ не выполняется как команда, free tier/quota может использоваться. "
             "Groq adapter: статус groq; статус грок; groq request shape; форма groq запроса; проверить groq ключ; статус groq guard; лимиты groq; groq модель; спроси groq: <текст> показывает безопасный отказ без сетевого запроса; groq реальный запрос: <текст> или groq one shot: <текст> делает только явный one-shot при наличии GROQ_API_KEY, Groq не включается постоянно, dry_run остается default, ключ не печатается, ответ не выполняется как команда, free/developer quota или rate limits могут использоваться. "
+            "GigaChat adapter: статус gigachat; статус гигачат; статус сбер ai; проверить gigachat ключ; проверить сбер ключ; статус gigachat token; статус gigachat guard; лимиты gigachat; gigachat модель; статус gigachat request shape; форма gigachat запроса; спроси gigachat: <текст> показывает безопасный отказ без сетевого запроса; gigachat реальный запрос: <текст>, сбер реальный запрос: <текст> или gigachat one shot: <текст> делает только явный one-shot при наличии GIGACHAT_AUTH_KEY, GigaChat не включается постоянно, dry_run остается default, auth key/token не печатаются, ответ не выполняется как команда, free/paid quota может использоваться. "
             "Безопасная конфигурация AI: статус ai конфигурации; статус ai ключей; конфигурация ai провайдеров; безопасность ai ключей; проверить groq ключ; проверить ключ groq; проверить gemini ключ; проверить openai ключ. "
             "OpenAI real requests не активны по умолчанию, сеть не используется без явной one-shot команды, API-ключи не печатаются, AI-ответы не выполняются как команды. "
             "Зрение экрана и автоматизация запланированы позже. "
