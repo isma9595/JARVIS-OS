@@ -16,6 +16,11 @@ from ai.provider_config import (
 )
 from ai.provider_config_manager import AIProviderConfigManager
 from ai.provider_router import AIProviderRouter
+from ai.openai_cost_guard import (
+    OpenAIRequestCostGuard,
+    OpenAIRequestGuardConfig,
+    OpenAIRequestGuardResult,
+)
 from ai.openai_request_gate import OpenAIRequestGate, OpenAIRequestGateStatus
 from ai.providers.openai_provider import OpenAIProvider
 
@@ -32,7 +37,10 @@ __all__ = [
     "AIProviderSafetyLevel",
     "AIRequest",
     "AIResponse",
+    "OpenAIRequestCostGuard",
     "OpenAIRequestGate",
     "OpenAIRequestGateStatus",
+    "OpenAIRequestGuardConfig",
+    "OpenAIRequestGuardResult",
     "OpenAIProvider",
 ]

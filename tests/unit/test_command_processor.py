@@ -3175,6 +3175,39 @@ def test_openai_one_shot_status_command_works():
     assert "key value is never printed" in result["response"]
 
 
+def test_openai_guard_status_commands_work():
+    processor = CommandProcessor()
+
+    for command in (
+        "статус openai guard",
+        "статус openai cost guard",
+        "лимиты openai",
+        "лимит openai запроса",
+        "openai guard status",
+    ):
+        result = processor.process(command)
+
+        assert result["intent"] == "ai.openai.guard.status"
+        assert "OpenAI model/cost guard status" in result["response"]
+        assert "max prompt chars: 1200" in result["response"]
+        assert "max_output_tokens: 128" in result["response"]
+        assert "dry_run remains default" in result["response"]
+
+
+def test_openai_model_command_works_without_network(monkeypatch):
+    secret = "openai-secret-that-must-not-print"
+    monkeypatch.setenv("OPENAI_API_KEY", secret)
+    monkeypatch.setenv("OPENAI_MODEL", "gpt-5-mini")
+
+    for command in ("openai модель", "openai model"):
+        result = CommandProcessor().process(command)
+
+        assert result["intent"] == "ai.openai.model"
+        assert "resolved model: gpt-5-mini" in result["response"]
+        assert "network: not called" in result["response"]
+        assert secret not in result["response"]
+
+
 def test_openai_one_shot_missing_key_returns_safe_message_without_request():
     from ai import AIProviderConfigManager, OpenAIRequestGate
 
@@ -3197,6 +3230,30 @@ def test_openai_one_shot_missing_key_returns_safe_message_without_request():
     assert result["intent"] == "ai.openai.one_shot.error"
     assert "OpenAI real request was not sent." in result["response"]
     assert "OPENAI_API_KEY is missing" in result["response"]
+
+
+def test_openai_real_request_too_long_returns_safe_error_without_request():
+    from ai import AIProviderConfigManager, OpenAIRequestGate
+
+    class FailingHTTPClient:
+        def post_json(self, url, headers, payload, timeout):
+            raise AssertionError("network must not be called")
+
+    environ = {"OPENAI_API_KEY": "fake-key"}
+    manager = AIProviderConfigManager(environ=environ)
+    processor = CommandProcessor(
+        ai_provider_config_manager=manager,
+        openai_request_gate=OpenAIRequestGate(
+            config_manager=manager,
+            http_client=FailingHTTPClient(),
+            environ=environ,
+        ),
+    )
+
+    result = processor.process("openai one shot: " + ("x" * 1201))
+
+    assert result["intent"] == "ai.openai.one_shot.error"
+    assert "limit is 1200" in result["response"]
 
 
 def test_openai_one_shot_fake_client_success_without_real_network():
@@ -3231,7 +3288,11 @@ def test_openai_one_shot_fake_client_success_without_real_network():
     assert result["intent"] == "ai.openai.one_shot"
     assert "OpenAI real response:" in result["response"]
     assert "fake success" in result["response"]
+    assert "model: gpt-5.6" in result["response"]
+    assert "max_output_tokens: 128" in result["response"]
     assert "response was not executed as a command" in result["response"]
+    assert "no memory/profile/files were sent automatically" in result["response"]
+    assert "real API usage may consume account credits/limits" in result["response"]
     assert router.get_default_provider().get_info().name == "dry_run"
     assert len(client.calls) == 1
 
@@ -3323,5 +3384,9 @@ def test_help_mentions_openai_one_shot_safely():
     result = CommandProcessor().process("помощь")
 
     assert "статус openai one shot" in result["response"]
+    assert "статус openai guard" in result["response"]
+    assert "лимиты openai" in result["response"]
+    assert "openai модель" in result["response"]
     assert "openai реальный запрос" in result["response"]
     assert "ответ не выполняется как команда" in result["response"]
+    assert "max_output_tokens ограничен" in result["response"]

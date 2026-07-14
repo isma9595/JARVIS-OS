@@ -103,6 +103,17 @@ class CommandProcessor:
         "статус openai real request",
         "статус реального openai запроса",
     }
+    OPENAI_GUARD_STATUS_COMMANDS = {
+        "статус openai guard",
+        "статус openai cost guard",
+        "лимиты openai",
+        "лимит openai запроса",
+        "openai guard status",
+    }
+    OPENAI_MODEL_COMMANDS = {
+        "openai модель",
+        "openai model",
+    }
     AI_PROVIDER_LIST_COMMANDS = {
         "список ai провайдеров",
         "список ии провайдеров",
@@ -1794,6 +1805,18 @@ class CommandProcessor:
                 self.openai_request_gate.status_text_ru(),
             )
 
+        if command in self.OPENAI_GUARD_STATUS_COMMANDS:
+            return self._result(
+                "ai.openai.guard.status",
+                self.openai_request_gate.guard_status_text_ru(),
+            )
+
+        if command in self.OPENAI_MODEL_COMMANDS:
+            return self._result(
+                "ai.openai.model",
+                self.openai_request_gate.model_text_ru(),
+            )
+
         if command in self.AI_PROVIDER_LIST_COMMANDS:
             return self._result(
                 "ai.providers",
@@ -2687,26 +2710,33 @@ class CommandProcessor:
                     "OpenAI real request was not sent.\n"
                     "Reason: OPENAI_API_KEY is missing.\n"
                     "Set the key as an environment variable outside the repository.\n"
-                    "The key value must never be committed or printed."
+                    "The key value must never be committed or printed.\n"
+                    "Real API usage may consume account credits/limits."
                 )
             else:
                 text = (
                     "OpenAI real request was not sent.\n"
                     f"Reason: {response.error_message or response.text}\n"
                     "OpenAI was not enabled permanently.\n"
-                    "The key value was not printed."
+                    "The key value was not printed.\n"
+                    "Real API usage may consume account credits/limits."
                 )
             return self._result("ai.openai.one_shot.error", text)
 
+        guard = self.openai_request_gate.request_guard
         text = (
             "OpenAI real response:\n"
             f"{response.text}\n\n"
             "Safety:\n"
             "- one-shot request completed\n"
+            f"- model: {response.model_name}\n"
+            f"- max_output_tokens: {guard.config.max_output_tokens}\n"
             "- OpenAI was not enabled permanently\n"
             "- dry_run remains default\n"
             "- response was not executed as a command\n"
-            "- key value was not printed"
+            "- key value was not printed\n"
+            "- no memory/profile/files were sent automatically\n"
+            "- real API usage may consume account credits/limits"
         )
         return self._result("ai.openai.one_shot", text)
 
@@ -3447,7 +3477,7 @@ class CommandProcessor:
             "с реальным распознаванием. "
             "AI foundation сейчас работает только в dry-run/offline режиме: статус ai; список ai провайдеров; спроси ai: <текст>; ai кратко: <текст>; ai классифицируй: <текст>. "
             "OpenAI adapter: статус openai; проверить openai ключ; спроси openai: <текст> пока показывает безопасный отказ без сетевого запроса. "
-            "OpenAI one-shot: статус openai one shot; openai реальный запрос: <текст>; только явная one-shot команда может сделать один реальный запрос, OpenAI не включается постоянно, dry_run остается default, ключ не печатается, ответ не выполняется как команда. "
+            "OpenAI one-shot: статус openai one shot; статус openai guard; лимиты openai; openai модель; openai реальный запрос: <текст>; только явная one-shot команда может сделать один реальный запрос, OpenAI не включается постоянно, dry_run остается default, ключ не печатается, ответ не выполняется как команда, max_output_tokens ограничен, реальный API может использовать лимит аккаунта. "
             "Безопасная конфигурация AI: статус ai конфигурации; статус ai ключей; конфигурация ai провайдеров; безопасность ai ключей; проверить groq ключ; проверить gemini ключ; проверить openai ключ. "
             "OpenAI real requests не активны по умолчанию, сеть не используется без явной one-shot команды, API-ключи не печатаются, AI-ответы не выполняются как команды. "
             "Зрение экрана и автоматизация запланированы позже. "

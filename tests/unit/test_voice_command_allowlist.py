@@ -170,6 +170,34 @@ def test_openai_one_shot_status_is_allowlisted_but_request_is_not():
     assert allowlist.decide("спроси openai: привет").allowed is False
 
 
+def test_openai_guard_status_and_model_commands_are_allowlisted():
+    allowlist = SafeVoiceCommandAllowlist()
+
+    for command, canonical in (
+        ("статус openai guard", "статус openai guard"),
+        ("статус openai cost guard", "статус openai guard"),
+        ("лимиты openai", "статус openai guard"),
+        ("openai модель", "openai модель"),
+    ):
+        decision = allowlist.decide(command)
+
+        assert decision.allowed is True
+        assert decision.canonical_command == canonical
+
+
+def test_openai_real_request_and_model_or_key_setting_are_not_allowlisted():
+    allowlist = SafeVoiceCommandAllowlist()
+
+    for command in (
+        "openai реальный запрос: привет",
+        "реальный openai запрос: привет",
+        "openai one shot: hello",
+        "установи openai модель gpt-5.6",
+        "установи openai ключ abc123",
+    ):
+        assert allowlist.decide(command).allowed is False
+
+
 def test_voice_interaction_info_commands_are_allowed_without_replay_execution():
     allowlist = SafeVoiceCommandAllowlist()
 

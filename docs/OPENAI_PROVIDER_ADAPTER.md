@@ -48,3 +48,15 @@ The adapter still remains disabled by default. Real calls are allowed only throu
 - Model selection
 - Prompt safety and context policy
 - Cost and rate limit handling
+
+## TASK-055 Update
+
+`OpenAIProvider` now accepts a guarded `max_output_tokens` value from `AIRequest.metadata["max_output_tokens"]` and sends it to the Responses API when present. Arbitrary metadata is not forwarded.
+
+The request body remains limited to:
+
+- `model`
+- `input`
+- `max_output_tokens` when provided by the one-shot guard
+
+The adapter still does not send memory, profile data, files, logs, tools, streaming options, or `previous_response_id`.

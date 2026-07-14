@@ -1,10 +1,10 @@
 # JARVIS-OS Checkpoint
 
 - Project: JARVIS-OS
-- Current stable stage: TASK-052 — AI Provider Configuration / API Key Safety Layer
-- Last stable commit: 29e422c
-- Last stable commit message: Add AI provider config safety layer
-- Next stage: TASK-053 — OpenAI Provider Adapter / Responses API
+- Current stable stage: TASK-054 — OpenAI Real Request Gate / One-Shot Network Permission
+- Last stable commit: 443af1a
+- Last stable commit message: Add OpenAI one-shot request gate
+- Next stage: TASK-055 — OpenAI Real Request Manual Verification / Model & Cost Guard
 - Status: in progress
 
 ## Approved Workflow
@@ -39,4 +39,8 @@ TASK-051 is complete and stable at commit e16a1d4.
 
 TASK-052 is complete and stable at commit 29e422c.
 
-TASK-053 is in progress for the OpenAI provider adapter / Responses API, disabled by default with no real network calls in tests.
+TASK-053 is complete and stable.
+
+TASK-054 is complete and stable at commit 443af1a.
+
+TASK-055 is in progress for OpenAI real request manual verification, model guard, prompt-size guard, max_output_tokens guard, and cost warning.

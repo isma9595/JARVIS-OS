@@ -53,6 +53,17 @@ class SafeVoiceCommandAllowlist:
         "статус openai one shot": {
             "статус openai one shot",
         },
+        "статус openai guard": {
+            "статус openai guard",
+            "статус openai cost guard",
+            "лимиты openai",
+            "лимит openai запроса",
+            "openai guard status",
+        },
+        "openai модель": {
+            "openai модель",
+            "openai model",
+        },
         "список ai провайдеров": {
             "список ai провайдеров",
             "список ии провайдеров",

@@ -75,3 +75,47 @@ python -m pytest tests/unit/test_voice_command_allowlist.py
 - Model selection
 - Cost and rate limit guard
 - Prompt safety and context policy
+
+## TASK-055 Model And Cost Guard Update
+
+TASK-055 adds `OpenAIRequestCostGuard` before the real one-shot request. The guard resolves the model from `OPENAI_MODEL` when present and safe, otherwise uses `gpt-5.6`; enforces a 1200 character prompt limit; sets `max_output_tokens` to 128; and keeps a hard cap of 512.
+
+The one-shot Responses API body is limited to `model`, `input`, and guarded `max_output_tokens`. No memory, profile, files, logs, tools, streaming, or previous response context are added.
+
+Additional read-only commands:
+
+```text
+статус openai guard
+статус openai cost guard
+лимиты openai
+лимит openai запроса
+openai guard status
+openai модель
+openai model
+```
+
+Manual verification should use temporary local PowerShell environment variables only:
+
+```powershell
+$env:OPENAI_API_KEY = "PASTE_TEMPORARY_KEY_HERE"
+$env:OPENAI_MODEL = "gpt-5.6"
+python run.py
+```
+
+Inside JARVIS:
+
+```text
+статус openai one shot
+статус openai guard
+openai реальный запрос: Ответь одним коротким предложением на русском: подключение работает?
+выход
+```
+
+After exit:
+
+```powershell
+Remove-Item Env:OPENAI_API_KEY
+Remove-Item Env:OPENAI_MODEL
+```
+
+Real API usage may consume account credits or limits. Do not paste the key into chat, JARVIS commands, files, tests, or commits.

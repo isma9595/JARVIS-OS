@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, replace
 import os
 
+from ai.openai_cost_guard import OpenAIRequestCostGuard
 from ai.provider_config import AIProviderConfig, AIProviderKeyStatus
 from ai.provider_config_manager import AIProviderConfigManager
 from ai.provider_contracts import (
@@ -36,12 +37,14 @@ class OpenAIRequestGate:
         provider_factory=None,
         http_client=None,
         environ=None,
+        request_guard: OpenAIRequestCostGuard | None = None,
     ):
         self.config_manager = config_manager or AIProviderConfigManager(environ=environ)
         self.router = router
         self.provider_factory = provider_factory or OpenAIProvider
         self.http_client = http_client
         self.environ = os.environ if environ is None else environ
+        self.request_guard = request_guard or OpenAIRequestCostGuard(environ=self.environ)
 
     def can_make_real_request(self) -> OpenAIRequestGateStatus:
         status = self.config_manager.status_for("openai")
@@ -79,13 +82,27 @@ class OpenAIRequestGate:
         if validation_error:
             return self._error_response(capability, validation_error)
 
+        guard_result = self.request_guard.guard_request(
+            request.prompt,
+            request.metadata.get("max_output_tokens") if request.metadata else None,
+        )
+        if not guard_result.allowed:
+            return self._error_response(capability, guard_result.safe_message)
+
         gate_status = self.can_make_real_request()
         if not gate_status.can_request:
             return self._error_response(capability, gate_status.reason)
 
-        config = self._temporary_enabled_openai_config()
+        config = self._temporary_enabled_openai_config(guard_result.model)
         provider = self._build_provider(config)
-        one_shot_request = replace(request, task_type=capability.value)
+        metadata = dict(request.metadata or {})
+        metadata["max_output_tokens"] = str(guard_result.max_output_tokens)
+        one_shot_request = replace(
+            request,
+            prompt=guard_result.prompt,
+            task_type=capability.value,
+            metadata=metadata,
+        )
         response = provider.generate(one_shot_request)
         if response.is_error:
             return self._error_response(
@@ -103,6 +120,9 @@ class OpenAIRequestGate:
                 f"- provider config: {'present' if status.provider_configured else 'missing'}",
                 f"- key status: {status.key_status.value}",
                 "- key value is never printed",
+                f"- model guard: {self.request_guard.safe_model_display()}",
+                f"- max prompt chars: {self.request_guard.config.max_prompt_chars}",
+                f"- max_output_tokens: {self.request_guard.config.max_output_tokens}",
                 "- network: allowed only by explicit one-shot typed command",
                 "- OpenAI is not enabled permanently",
                 f"- default provider remains: {default_name}",
@@ -111,17 +131,23 @@ class OpenAIRequestGate:
             ]
         )
 
-    def _temporary_enabled_openai_config(self) -> AIProviderConfig:
+    def guard_status_text_ru(self) -> str:
+        return self.request_guard.status_text_ru()
+
+    def model_text_ru(self) -> str:
+        return self.request_guard.model_text_ru()
+
+    def _temporary_enabled_openai_config(self, model: str) -> AIProviderConfig:
         config = self.config_manager.get_config("openai")
         if config is None:
             config = AIProviderConfig(
                 name="openai",
                 provider_type="openai",
                 enabled=False,
-                default_model=OpenAIProvider.DEFAULT_MODEL,
+                default_model=model,
                 api_key_env_var="OPENAI_API_KEY",
             )
-        return replace(config, enabled=True)
+        return replace(config, enabled=True, default_model=model)
 
     def _build_provider(self, config: AIProviderConfig):
         kwargs = {

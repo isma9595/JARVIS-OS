@@ -108,6 +108,9 @@ class OpenAIProvider:
             "model": self._model_name(),
             "input": self._input_for(request.prompt, capability),
         }
+        max_output_tokens = self._max_output_tokens_for(request)
+        if max_output_tokens is not None:
+            payload["max_output_tokens"] = max_output_tokens
         headers = {
             "Authorization": f"Bearer {api_key}",
             "Content-Type": "application/json",
@@ -165,6 +168,19 @@ class OpenAIProvider:
 
     def _model_name(self) -> str:
         return self.config.default_model or self.DEFAULT_MODEL
+
+    @staticmethod
+    def _max_output_tokens_for(request: AIRequest) -> int | None:
+        metadata = request.metadata or {}
+        if "max_output_tokens" not in metadata:
+            return None
+        try:
+            value = int(metadata.get("max_output_tokens"))
+        except (TypeError, ValueError):
+            return None
+        if value <= 0:
+            return None
+        return value
 
     @classmethod
     def _capability_from_task_type(cls, task_type: str) -> AIProviderCapability:

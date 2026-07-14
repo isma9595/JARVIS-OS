@@ -84,3 +84,9 @@ These commands are Russian-first, read-only, deterministic, and offline. Voice a
 - Explicit OpenAI real request gate.
 - Provider enable/disable commands.
 - Optional encrypted local secrets or OS keyring support if needed.
+
+## TASK-055 Update
+
+OpenAI one-shot model selection is controlled only by the temporary environment variable `OPENAI_MODEL`. If it is missing, the guard uses `gpt-5.6`.
+
+`OPENAI_MODEL` is validated as a model name, not a secret. Empty values, spaces, path separators, long token-like strings, and key-looking values such as `sk-...` are rejected. The model is not written to tracked config, and no command is added to save or permanently set it.

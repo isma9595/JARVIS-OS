@@ -125,3 +125,9 @@ Future work:
 - prompt safety layer
 - model routing by task type
 - context policy and privacy controls
+
+## TASK-055 Update
+
+The OpenAI one-shot gate now has a model/cost guard, but it still sits outside normal default routing. A real one-shot request creates a temporary `allow_network=True` provider instance for exactly one request and does not change `AIProviderRouter`.
+
+After a one-shot request, `dry_run` remains the default provider.

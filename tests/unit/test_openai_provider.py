@@ -129,6 +129,61 @@ def test_enabled_fake_client_posts_responses_api_and_parses_output_text():
     assert secret not in response.text
 
 
+def test_request_body_includes_max_output_tokens_when_provided():
+    client = FakeHTTPClient(response=json.dumps({"output_text": "ok"}))
+
+    response = OpenAIProvider(
+        config=enabled_config(),
+        http_client=client,
+        allow_network=True,
+        environ={"OPENAI_API_KEY": "fake-key"},
+    ).generate(AIRequest(prompt="hello", metadata={"max_output_tokens": "128"}))
+
+    assert response.is_error is False
+    assert client.calls[0]["payload"] == {
+        "model": "openai-default",
+        "input": "hello",
+        "max_output_tokens": 128,
+    }
+
+
+def test_request_body_omits_max_output_tokens_when_absent():
+    client = FakeHTTPClient(response=json.dumps({"output_text": "ok"}))
+
+    OpenAIProvider(
+        config=enabled_config(),
+        http_client=client,
+        allow_network=True,
+        environ={"OPENAI_API_KEY": "fake-key"},
+    ).generate(AIRequest(prompt="hello"))
+
+    assert "max_output_tokens" not in client.calls[0]["payload"]
+
+
+def test_request_body_only_contains_allowed_fields():
+    client = FakeHTTPClient(response=json.dumps({"output_text": "ok"}))
+
+    OpenAIProvider(
+        config=enabled_config(),
+        http_client=client,
+        allow_network=True,
+        environ={"OPENAI_API_KEY": "fake-key"},
+    ).generate(
+        AIRequest(
+            prompt="hello",
+            metadata={
+                "max_output_tokens": "128",
+                "memory": "do not send",
+                "profile": "do not send",
+                "files": "do not send",
+                "tools": "do not send",
+            },
+        )
+    )
+
+    assert set(client.calls[0]["payload"]) == {"model", "input", "max_output_tokens"}
+
+
 def test_summary_and_classification_inputs_are_mapped():
     client = FakeHTTPClient(response=json.dumps({"output_text": "ok"}))
     provider = OpenAIProvider(

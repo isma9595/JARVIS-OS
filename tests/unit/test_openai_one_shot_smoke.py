@@ -42,6 +42,10 @@ def test_one_shot_smoke_keeps_dry_run_default_and_no_action_execution():
 
     assert response.text == "fake one-shot response"
     assert "fake one-shot response" in result["response"]
+    assert "model: gpt-5.6" in result["response"]
+    assert "max_output_tokens: 128" in result["response"]
+    assert "real API usage may consume account credits/limits" in result["response"]
     assert router.get_default_provider().get_info().name == "dry_run"
     assert processor.action_router.calls == 0
     assert len(client.calls) == 2
+    assert client.calls[0]["max_output_tokens"] == 128
