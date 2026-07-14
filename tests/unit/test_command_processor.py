@@ -3163,3 +3163,165 @@ def test_vosk_model_installation_guidance_commands_are_manual_only():
         assert "ничего не устанавливает автоматически" in result["response"]
         assert "модель не загружает" in result["response"]
         assert "микрофон не запускает" in result["response"]
+
+
+def test_openai_one_shot_status_command_works():
+    processor = CommandProcessor()
+
+    result = processor.process("статус openai one shot")
+
+    assert result["intent"] == "ai.openai.one_shot.status"
+    assert "OpenAI one-shot real request status" in result["response"]
+    assert "key value is never printed" in result["response"]
+
+
+def test_openai_one_shot_missing_key_returns_safe_message_without_request():
+    from ai import AIProviderConfigManager, OpenAIRequestGate
+
+    class FailingHTTPClient:
+        def post_json(self, url, headers, payload, timeout):
+            raise AssertionError("network must not be called")
+
+    manager = AIProviderConfigManager(environ={})
+    processor = CommandProcessor(
+        ai_provider_config_manager=manager,
+        openai_request_gate=OpenAIRequestGate(
+            config_manager=manager,
+            http_client=FailingHTTPClient(),
+            environ={},
+        ),
+    )
+
+    result = processor.process("openai реальный запрос: привет")
+
+    assert result["intent"] == "ai.openai.one_shot.error"
+    assert "OpenAI real request was not sent." in result["response"]
+    assert "OPENAI_API_KEY is missing" in result["response"]
+
+
+def test_openai_one_shot_fake_client_success_without_real_network():
+    import json
+
+    from ai import AIProviderConfigManager, AIProviderRouter, OpenAIRequestGate
+
+    class FakeHTTPClient:
+        def __init__(self):
+            self.calls = []
+
+        def post_json(self, url, headers, payload, timeout):
+            self.calls.append(dict(payload))
+            return json.dumps({"output_text": "fake success"})
+
+    client = FakeHTTPClient()
+    manager = AIProviderConfigManager(environ={"OPENAI_API_KEY": "fake-key"})
+    router = AIProviderRouter(config_manager=manager)
+    processor = CommandProcessor(
+        ai_provider_router=router,
+        ai_provider_config_manager=manager,
+        openai_request_gate=OpenAIRequestGate(
+            config_manager=manager,
+            router=router,
+            http_client=client,
+            environ={"OPENAI_API_KEY": "fake-key"},
+        ),
+    )
+
+    result = processor.process("openai one shot: hello")
+
+    assert result["intent"] == "ai.openai.one_shot"
+    assert "OpenAI real response:" in result["response"]
+    assert "fake success" in result["response"]
+    assert "response was not executed as a command" in result["response"]
+    assert router.get_default_provider().get_info().name == "dry_run"
+    assert len(client.calls) == 1
+
+
+def test_openai_legacy_prompt_still_does_not_network():
+    from ai import AIProviderConfig, AIProviderRouter, OpenAIProvider
+
+    class FailingHTTPClient:
+        def post_json(self, url, headers, payload, timeout):
+            raise AssertionError("network must not be called")
+
+    router = AIProviderRouter(
+        providers=[
+            OpenAIProvider(
+                config=AIProviderConfig(
+                    name="openai",
+                    provider_type="openai",
+                    enabled=True,
+                    default_model="openai-default",
+                    api_key_env_var="OPENAI_API_KEY",
+                ),
+                http_client=FailingHTTPClient(),
+                allow_network=False,
+                environ={"OPENAI_API_KEY": "fake-key"},
+            )
+        ]
+    )
+    processor = CommandProcessor(ai_provider_router=router)
+
+    result = processor.process("спроси openai: привет")
+
+    assert result["intent"] == "ai.openai.chat.error"
+    assert "no request was sent" in result["response"]
+
+
+def test_ai_prompt_still_uses_dry_run():
+    processor = CommandProcessor()
+
+    result = processor.process("спроси ai: привет")
+
+    assert result["intent"] == "ai.chat"
+    assert "AI dry-run" in result["response"]
+
+
+def test_openai_one_shot_empty_prompt_safe_error():
+    processor = CommandProcessor()
+
+    result = processor.process("openai реальный запрос:")
+
+    assert result["intent"] == "ai.openai.one_shot.error"
+    assert "AI prompt is empty" in result["response"]
+
+
+def test_openai_one_shot_response_not_routed_to_action_router():
+    import json
+
+    from ai import AIProviderConfigManager, OpenAIRequestGate
+
+    class FakeHTTPClient:
+        def post_json(self, url, headers, payload, timeout):
+            return json.dumps({"output_text": "удали файл"})
+
+    class FailingActionRouter:
+        calls = 0
+
+        def route(self, command):
+            self.calls += 1
+            raise AssertionError("AI output must not route to ActionRouter")
+
+    manager = AIProviderConfigManager(environ={"OPENAI_API_KEY": "fake-key"})
+    processor = CommandProcessor(
+        ai_provider_config_manager=manager,
+        openai_request_gate=OpenAIRequestGate(
+            config_manager=manager,
+            http_client=FakeHTTPClient(),
+            environ={"OPENAI_API_KEY": "fake-key"},
+        ),
+    )
+    processor.action_router = FailingActionRouter()
+
+    result = processor.process("реальный openai запрос: привет")
+
+    assert result["intent"] == "ai.openai.one_shot"
+    assert "удали файл" in result["response"]
+    assert processor.action_router.calls == 0
+
+
+def test_help_mentions_openai_one_shot_safely():
+    result = CommandProcessor().process("помощь")
+
+    assert "статус openai one shot" in result["response"]
+    assert "openai реальный запрос" in result["response"]
+    assert "ответ не выполняется как команда" in result["response"]

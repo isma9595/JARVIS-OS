@@ -37,7 +37,9 @@ AI responses are returned as text only and are not executed as commands.
 
 ## Current Limitation
 
-Real one-shot OpenAI network calls are intentionally not enabled in TASK-053.
+TASK-054 adds `docs/OPENAI_ONE_SHOT_REQUEST_GATE.md` and `ai/openai_request_gate.py`.
+
+The adapter still remains disabled by default. Real calls are allowed only through the explicit one-shot gate command, which creates a temporary enabled provider instance for one request and does not persist state.
 
 ## Future
 

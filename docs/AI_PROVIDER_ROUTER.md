@@ -66,6 +66,8 @@ It does not use API keys, network, tools, local files, memory, user profile, or 
 
 The adapter is visible through the router, but `dry_run` remains the default provider. `set_default_provider("openai")` does not enable network.
 
+TASK-054 adds an OpenAI one-shot request gate outside default routing. It can make one explicit typed request through `OpenAIProvider` with `allow_network=True`, but it does not change the router default and does not enable OpenAI permanently.
+
 ## Commands
 
 - `статус ai`

@@ -152,6 +152,22 @@ def test_broad_ai_voice_queries_are_not_allowlisted():
     assert allowlist.decide("ai: привет").allowed is False
     assert allowlist.decide("спроси openai: привет").allowed is False
     assert allowlist.decide("openai: привет").allowed is False
+    assert allowlist.decide("openai реальный запрос: привет").allowed is False
+    assert allowlist.decide("реальный openai запрос: привет").allowed is False
+    assert allowlist.decide("openai one shot: hello").allowed is False
+
+
+def test_openai_one_shot_status_is_allowlisted_but_request_is_not():
+    allowlist = SafeVoiceCommandAllowlist()
+
+    status = allowlist.decide("статус openai one shot")
+
+    assert status.allowed is True
+    assert status.canonical_command == "статус openai one shot"
+    assert allowlist.decide("openai реальный запрос: привет").allowed is False
+    assert allowlist.decide("реальный openai запрос: привет").allowed is False
+    assert allowlist.decide("openai one shot: hello").allowed is False
+    assert allowlist.decide("спроси openai: привет").allowed is False
 
 
 def test_voice_interaction_info_commands_are_allowed_without_replay_execution():

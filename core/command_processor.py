@@ -1,6 +1,12 @@
 from pathlib import Path
 
-from ai import AIProviderCapability, AIProviderConfigManager, AIProviderRouter, AIRequest
+from ai import (
+    AIProviderCapability,
+    AIProviderConfigManager,
+    AIProviderRouter,
+    AIRequest,
+    OpenAIRequestGate,
+)
 from core.action_router import SafeActionRouter
 from dialogue import (
     AssistantResponseHistory,
@@ -92,6 +98,11 @@ class CommandProcessor:
         "статус опенай",
         "openai status",
     }
+    OPENAI_ONE_SHOT_STATUS_COMMANDS = {
+        "статус openai one shot",
+        "статус openai real request",
+        "статус реального openai запроса",
+    }
     AI_PROVIDER_LIST_COMMANDS = {
         "список ai провайдеров",
         "список ии провайдеров",
@@ -128,6 +139,11 @@ class CommandProcessor:
     OPENAI_CHAT_PREFIXES = (
         "спроси openai:",
         "openai:",
+    )
+    OPENAI_ONE_SHOT_PREFIXES = (
+        "openai реальный запрос:",
+        "реальный openai запрос:",
+        "openai one shot:",
     )
     AI_CHAT_PREFIXES = (
         "спроси ai:",
@@ -858,6 +874,7 @@ class CommandProcessor:
         voice_dialogue_mode_manager=None,
         ai_provider_router=None,
         ai_provider_config_manager=None,
+        openai_request_gate=None,
     ):
         self.user_profile = user_profile or {}
         self.dialogue_manager = dialogue_manager or DialogueManager(self.user_profile)
@@ -878,6 +895,10 @@ class CommandProcessor:
         )
         self.ai_provider_router = ai_provider_router or AIProviderRouter(
             config_manager=self.ai_provider_config_manager
+        )
+        self.openai_request_gate = openai_request_gate or OpenAIRequestGate(
+            config_manager=self.ai_provider_config_manager,
+            router=self.ai_provider_router,
         )
         self.voice_input_manager = None
         if voice_output_manager is None:
@@ -1629,6 +1650,14 @@ class CommandProcessor:
                 "ai.classification",
             )
 
+        openai_one_shot_text = self._extract_ai_prefixed_text(
+            command_text,
+            command,
+            self.OPENAI_ONE_SHOT_PREFIXES,
+        )
+        if openai_one_shot_text is not None:
+            return self._generate_openai_one_shot_result(openai_one_shot_text)
+
         openai_chat_text = self._extract_ai_prefixed_text(
             command_text,
             command,
@@ -1757,6 +1786,12 @@ class CommandProcessor:
             return self._result(
                 "ai.openai.status",
                 self._openai_status_text(),
+            )
+
+        if command in self.OPENAI_ONE_SHOT_STATUS_COMMANDS:
+            return self._result(
+                "ai.openai.one_shot.status",
+                self.openai_request_gate.status_text_ru(),
             )
 
         if command in self.AI_PROVIDER_LIST_COMMANDS:
@@ -2636,6 +2671,45 @@ class CommandProcessor:
         result_intent = f"{intent}.error" if response.is_error else intent
         return self._result(result_intent, text)
 
+    def _generate_openai_one_shot_result(self, prompt):
+        request = AIRequest(
+            prompt=prompt,
+            task_type=AIProviderCapability.CHAT.value,
+            language="ru",
+        )
+        response = self.openai_request_gate.generate_one_shot(
+            request,
+            capability=AIProviderCapability.CHAT,
+        )
+        if response.is_error:
+            if response.error_message == "OPENAI_API_KEY is missing.":
+                text = (
+                    "OpenAI real request was not sent.\n"
+                    "Reason: OPENAI_API_KEY is missing.\n"
+                    "Set the key as an environment variable outside the repository.\n"
+                    "The key value must never be committed or printed."
+                )
+            else:
+                text = (
+                    "OpenAI real request was not sent.\n"
+                    f"Reason: {response.error_message or response.text}\n"
+                    "OpenAI was not enabled permanently.\n"
+                    "The key value was not printed."
+                )
+            return self._result("ai.openai.one_shot.error", text)
+
+        text = (
+            "OpenAI real response:\n"
+            f"{response.text}\n\n"
+            "Safety:\n"
+            "- one-shot request completed\n"
+            "- OpenAI was not enabled permanently\n"
+            "- dry_run remains default\n"
+            "- response was not executed as a command\n"
+            "- key value was not printed"
+        )
+        return self._result("ai.openai.one_shot", text)
+
     def _openai_status_text(self):
         status = self.ai_provider_config_manager.status_for("openai")
         if status is None:
@@ -3373,8 +3447,9 @@ class CommandProcessor:
             "с реальным распознаванием. "
             "AI foundation сейчас работает только в dry-run/offline режиме: статус ai; список ai провайдеров; спроси ai: <текст>; ai кратко: <текст>; ai классифицируй: <текст>. "
             "OpenAI adapter: статус openai; проверить openai ключ; спроси openai: <текст> пока показывает безопасный отказ без сетевого запроса. "
+            "OpenAI one-shot: статус openai one shot; openai реальный запрос: <текст>; только явная one-shot команда может сделать один реальный запрос, OpenAI не включается постоянно, dry_run остается default, ключ не печатается, ответ не выполняется как команда. "
             "Безопасная конфигурация AI: статус ai конфигурации; статус ai ключей; конфигурация ai провайдеров; безопасность ai ключей; проверить groq ключ; проверить gemini ключ; проверить openai ключ. "
-            "OpenAI real requests не активны по умолчанию, сеть не используется, API-ключи не печатаются, AI-ответы не выполняются как команды. "
+            "OpenAI real requests не активны по умолчанию, сеть не используется без явной one-shot команды, API-ключи не печатаются, AI-ответы не выполняются как команды. "
             "Зрение экрана и автоматизация запланированы позже. "
             "Для выхода напишите: выход."
         )

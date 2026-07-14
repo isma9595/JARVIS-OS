@@ -256,3 +256,15 @@ def test_response_text_and_errors_never_contain_api_key_value():
     assert response.is_error is True
     assert secret not in response.text
     assert secret not in response.error_message
+
+
+def test_allow_network_true_and_enabled_true_with_fake_key_succeeds():
+    response = OpenAIProvider(
+        config=enabled_config(),
+        http_client=FakeHTTPClient(response=json.dumps({"output_text": "ok"})),
+        allow_network=True,
+        environ={"OPENAI_API_KEY": "fake-key"},
+    ).generate(AIRequest(prompt="hello"))
+
+    assert response.is_error is False
+    assert response.text == "ok"

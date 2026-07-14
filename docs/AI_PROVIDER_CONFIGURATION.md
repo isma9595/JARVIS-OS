@@ -25,6 +25,8 @@ Future external providers use environment variables:
 
 JARVIS only checks whether the variable exists and is non-empty. It never prints the key value and does not validate keys by network.
 
+For now, `OPENAI_API_KEY` is used only by the explicit OpenAI one-shot request gate. Status and key-check commands remain offline.
+
 ## Secret Safety
 
 - Never put API keys in code, docs, tests, tracked JSON, or commits.
