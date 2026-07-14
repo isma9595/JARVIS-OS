@@ -248,6 +248,9 @@ def test_groq_status_key_guard_limits_and_model_commands_are_allowlisted_but_req
     for command, canonical in (
         ("статус groq", "статус groq"),
         ("статус грок", "статус groq"),
+        ("статус groq request shape", "статус groq request shape"),
+        ("groq request shape", "статус groq request shape"),
+        ("форма groq запроса", "статус groq request shape"),
         ("проверить groq ключ", "проверить groq ключ"),
         ("проверить ключ groq", "проверить groq ключ"),
         ("статус groq guard", "статус groq guard"),

@@ -1,10 +1,10 @@
 # JARVIS-OS Checkpoint
 
 - Project: JARVIS-OS
-- Current stable stage: TASK-056 — Gemini Provider Adapter / Free-Tier First
-- Last stable commit: 83b15da
-- Last stable commit message: Add Gemini provider adapter
-- Next stage: TASK-058 — Groq Provider Adapter / Free-Tier Fallback
+- Current stable stage: TASK-058 — Groq Provider Adapter / Free-Tier Fallback
+- Last stable commit: af23293
+- Last stable commit message: Add Groq provider adapter
+- Next stage: TASK-058C — Groq Python HTTP Transport Compatibility Fix
 - Status: in progress
 
 ## Approved Workflow
@@ -39,4 +39,6 @@ TASK-055 is complete and stable at commit d1d1dcd.
 
 TASK-056 is complete and stable at commit 83b15da.
 
-TASK-058 is in progress for Groq provider adapter, one-shot request gate, model/quota guard, fake-client tests, and docs.
+TASK-058 is complete and stable at commit af23293.
+
+TASK-058C is in progress for Groq Python HTTP transport compatibility, request-shape diagnostics, sanitized HTTP 403 details, fake-client regression tests, and docs.

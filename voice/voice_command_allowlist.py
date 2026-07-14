@@ -60,6 +60,11 @@ class SafeVoiceCommandAllowlist:
             "статус грок",
             "groq status",
         },
+        "статус groq request shape": {
+            "статус groq request shape",
+            "groq request shape",
+            "форма groq запроса",
+        },
         "статус openai one shot": {
             "статус openai one shot",
         },

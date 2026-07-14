@@ -3575,6 +3575,29 @@ def test_groq_status_and_key_commands_work():
         assert "MISSING" in result["response"]
 
 
+def test_groq_request_shape_commands_work_without_network(monkeypatch):
+    secret = "groq-secret-that-must-not-print"
+    monkeypatch.setenv("GROQ_API_KEY", secret)
+    processor = CommandProcessor()
+
+    for command in ("статус groq request shape", "groq request shape", "форма groq запроса"):
+        result = processor.process(command)
+
+        assert result["intent"] == "ai.groq.request_shape"
+        assert "https://api.groq.com/openai/v1/chat/completions" in result["response"]
+        assert "- method: POST" in result["response"]
+        assert "- Authorization: PRESENT" in result["response"]
+        assert "- Content-Type: application/json" in result["response"]
+        assert "- Accept: application/json" in result["response"]
+        assert "- User-Agent: JARVIS-OS/0.2" in result["response"]
+        assert "- model" in result["response"]
+        assert "- messages" in result["response"]
+        assert "- max_tokens" in result["response"]
+        assert "- temperature" in result["response"]
+        assert "- network: not called" in result["response"]
+        assert secret not in result["response"]
+
+
 def test_groq_guard_limits_and_model_commands_work(monkeypatch):
     secret = "groq-secret-that-must-not-print"
     monkeypatch.setenv("GROQ_API_KEY", secret)
@@ -3667,7 +3690,10 @@ def test_groq_one_shot_fake_client_success_without_real_network():
 
         def post_json(self, url, headers, payload, timeout):
             self.calls.append(dict(payload))
-            return json.dumps({"choices": [{"message": {"content": "fake success"}}]})
+            return json.dumps(
+                {"choices": [{"message": {"content": "реальный ответ"}}]},
+                ensure_ascii=False,
+            )
 
     client = FakeHTTPClient()
     manager = AIProviderConfigManager(environ={"GROQ_API_KEY": "fake-key"})
@@ -3683,11 +3709,11 @@ def test_groq_one_shot_fake_client_success_without_real_network():
         ),
     )
 
-    result = processor.process("groq one shot: hello")
+    result = processor.process("groq one shot: Привет")
 
     assert result["intent"] == "ai.groq.one_shot"
     assert "Groq real response:" in result["response"]
-    assert "fake success" in result["response"]
+    assert "реальный ответ" in result["response"]
     assert "model: llama-3.1-8b-instant" in result["response"]
     assert "max_tokens: 128" in result["response"]
     assert "response was not executed as a command" in result["response"]
@@ -3695,6 +3721,7 @@ def test_groq_one_shot_fake_client_success_without_real_network():
     assert "free/developer quota or rate limits may be used" in result["response"]
     assert router.get_default_provider().get_info().name == "dry_run"
     assert len(client.calls) == 1
+    assert client.calls[0]["messages"] == [{"role": "user", "content": "Привет"}]
 
 
 def test_groq_one_shot_response_not_routed_to_action_router():

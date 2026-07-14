@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import socket
 import urllib.error
 import urllib.request
@@ -22,10 +23,10 @@ class UrllibGroqHTTPClient:
     """Tiny JSON POST client for Groq chat completions."""
 
     def post_json(self, url: str, headers: dict[str, str], payload: dict, timeout: int):
-        body = json.dumps(payload).encode("utf-8")
+        data = json.dumps(payload, ensure_ascii=False).encode("utf-8")
         request = urllib.request.Request(
             url,
-            data=body,
+            data=data,
             headers=headers,
             method="POST",
         )
@@ -113,6 +114,8 @@ class GroqProvider:
         headers = {
             "Authorization": f"Bearer {api_key}",
             "Content-Type": "application/json",
+            "Accept": "application/json",
+            "User-Agent": "JARVIS-OS/0.2",
         }
 
         try:
@@ -123,13 +126,13 @@ class GroqProvider:
                 timeout=self.timeout_seconds,
             )
         except urllib.error.HTTPError as error:
-            return self._http_error_response(capability, error.code)
+            return self._http_error_response(capability, error.code, error, api_key)
         except TimeoutError:
             return self._error_response(capability, "Groq network timeout.")
         except (socket.timeout, urllib.error.URLError, OSError) as error:
             status = getattr(error, "status", None) or getattr(error, "code", None)
             if status is not None:
-                return self._http_error_response(capability, status)
+                return self._http_error_response(capability, status, error, api_key)
             return self._error_response(capability, "Groq network error.")
 
         try:
@@ -155,9 +158,12 @@ class GroqProvider:
     def _api_key(self) -> str | None:
         env_var = self.config.api_key_env_var or "GROQ_API_KEY"
         value = self.environ.get(env_var)
-        if value is None or not str(value).strip():
+        if value is None:
             return None
-        return str(value)
+        stripped = str(value).strip()
+        if not stripped:
+            return None
+        return stripped
 
     def _model_name(self) -> str:
         return self.config.default_model or self.DEFAULT_MODEL
@@ -189,16 +195,7 @@ class GroqProvider:
             user_content = "Классифицируй запрос одной короткой категорией:\n\n" + prompt
         else:
             user_content = prompt
-        return [
-            {
-                "role": "system",
-                "content": (
-                    "You are JARVIS-OS external text provider. Answer safely "
-                    "and concisely. Do not claim you can execute commands."
-                ),
-            },
-            {"role": "user", "content": user_content},
-        ]
+        return [{"role": "user", "content": user_content}]
 
     @classmethod
     def _extract_text(cls, data) -> str | None:
@@ -218,22 +215,106 @@ class GroqProvider:
             return content
         return None
 
-    def _http_error_response(self, capability: AIProviderCapability, status: int) -> AIResponse:
+    def _http_error_response(
+        self,
+        capability: AIProviderCapability,
+        status: int,
+        error=None,
+        api_key: str | None = None,
+    ) -> AIResponse:
         try:
             status_int = int(status)
         except (TypeError, ValueError):
             status_int = 0
+        detail = self._safe_http_error_detail(error, api_key)
         if status_int in (401, 403):
+            lines = [
+                f"Groq authentication/permission failed: status {status_int}.",
+            ]
+            if detail:
+                lines.extend(detail)
+            else:
+                lines.append("Groq error body was unavailable/unparseable safely.")
+            lines.append("The key value was not printed.")
             return self._error_response(
                 capability,
-                f"Groq authentication failed: status {status_int}. Check GROQ_API_KEY.",
+                "\n".join(lines),
             )
         if status_int == 429:
+            message = "Groq rate or quota limit reached: status 429."
+            if detail:
+                message = "\n".join([message, *detail])
             return self._error_response(
                 capability,
-                "Groq rate or quota limit reached: status 429.",
+                message,
             )
-        return self._error_response(capability, f"Groq HTTP error: status {status_int}.")
+        message = f"Groq HTTP error: status {status_int}."
+        if detail:
+            message = "\n".join([message, *detail])
+        return self._error_response(capability, message)
+
+    @classmethod
+    def _safe_http_error_detail(cls, error, api_key: str | None = None) -> list[str] | None:
+        body = cls._read_error_body(error)
+        if not body:
+            return None
+        try:
+            data = json.loads(body)
+        except (TypeError, json.JSONDecodeError):
+            return None
+        if not isinstance(data, dict):
+            return None
+        error_data = data.get("error")
+        if not isinstance(error_data, dict):
+            return None
+
+        parts = []
+        for label, key in (
+            ("Groq error message", "message"),
+            ("Groq error type", "type"),
+            ("Groq error code", "code"),
+        ):
+            value = error_data.get(key)
+            if isinstance(value, str) and value.strip():
+                safe_value = cls._sanitize_error_fragment(value, api_key)
+                if safe_value:
+                    parts.append(f"{label}: {safe_value}")
+        if not parts:
+            return None
+        return parts
+
+    @staticmethod
+    def _read_error_body(error) -> str | None:
+        if error is None or not hasattr(error, "read"):
+            return None
+        try:
+            raw_body = error.read()
+        except Exception:
+            return None
+        if isinstance(raw_body, bytes):
+            try:
+                return raw_body.decode("utf-8", errors="replace")
+            except Exception:
+                return None
+        if isinstance(raw_body, str):
+            return raw_body
+        return None
+
+    @classmethod
+    def _sanitize_error_fragment(cls, value: str, api_key: str | None = None) -> str:
+        text = str(value).replace("\r", " ").replace("\n", " ").strip()
+        if api_key:
+            text = text.replace(api_key, "<redacted>")
+        text = re.sub(r"Bearer\s+[A-Za-z0-9._~+/=-]+", "Bearer <redacted>", text)
+        text = re.sub(r"\b(?:gsk_|sk-)[A-Za-z0-9._-]{12,}", "<redacted>", text)
+        return cls._cap_text(text, 160)
+
+    @staticmethod
+    def _cap_text(value: str, limit: int) -> str:
+        text = str(value or "")
+        if len(text) <= limit:
+            return text
+        return text[: limit - 3].rstrip() + "..."
 
     def _error_response(
         self,

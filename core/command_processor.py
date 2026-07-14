@@ -135,6 +135,11 @@ class CommandProcessor:
         "статус грок",
         "groq status",
     }
+    GROQ_REQUEST_SHAPE_COMMANDS = {
+        "статус groq request shape",
+        "groq request shape",
+        "форма groq запроса",
+    }
     GROQ_GUARD_STATUS_COMMANDS = {
         "статус groq guard",
         "статус groq cost guard",
@@ -1941,6 +1946,12 @@ class CommandProcessor:
             return self._result(
                 "ai.groq.status",
                 self._groq_status_text(),
+            )
+
+        if command in self.GROQ_REQUEST_SHAPE_COMMANDS:
+            return self._result(
+                "ai.groq.request_shape",
+                self.groq_request_gate.request_shape_text_ru(),
             )
 
         if command in self.GROQ_GUARD_STATUS_COMMANDS:
@@ -3769,7 +3780,7 @@ class CommandProcessor:
             "OpenAI adapter: статус openai; проверить openai ключ; спроси openai: <текст> пока показывает безопасный отказ без сетевого запроса. "
             "OpenAI one-shot: статус openai one shot; статус openai guard; лимиты openai; openai модель; openai реальный запрос: <текст>; только явная one-shot команда может сделать один реальный запрос, OpenAI не включается постоянно, dry_run остается default, ключ не печатается, ответ не выполняется как команда, max_output_tokens ограничен, реальный API может использовать лимит аккаунта. "
             "Gemini adapter: статус gemini; проверить gemini ключ; статус gemini guard; лимиты gemini; gemini модель; спроси gemini: <текст> показывает безопасный отказ без сетевого запроса; gemini реальный запрос: <текст> или gemini one shot: <текст> делает только явный one-shot при наличии GEMINI_API_KEY, Gemini не включается постоянно, dry_run остается default, ключ не печатается, ответ не выполняется как команда, free tier/quota может использоваться. "
-            "Groq adapter: статус groq; статус грок; проверить groq ключ; статус groq guard; лимиты groq; groq модель; спроси groq: <текст> показывает безопасный отказ без сетевого запроса; groq реальный запрос: <текст> или groq one shot: <текст> делает только явный one-shot при наличии GROQ_API_KEY, Groq не включается постоянно, dry_run остается default, ключ не печатается, ответ не выполняется как команда, free/developer quota или rate limits могут использоваться. "
+            "Groq adapter: статус groq; статус грок; groq request shape; форма groq запроса; проверить groq ключ; статус groq guard; лимиты groq; groq модель; спроси groq: <текст> показывает безопасный отказ без сетевого запроса; groq реальный запрос: <текст> или groq one shot: <текст> делает только явный one-shot при наличии GROQ_API_KEY, Groq не включается постоянно, dry_run остается default, ключ не печатается, ответ не выполняется как команда, free/developer quota или rate limits могут использоваться. "
             "Безопасная конфигурация AI: статус ai конфигурации; статус ai ключей; конфигурация ai провайдеров; безопасность ai ключей; проверить groq ключ; проверить ключ groq; проверить gemini ключ; проверить openai ключ. "
             "OpenAI real requests не активны по умолчанию, сеть не используется без явной one-shot команды, API-ключи не печатаются, AI-ответы не выполняются как команды. "
             "Зрение экрана и автоматизация запланированы позже. "

@@ -57,10 +57,11 @@ class GroqRequestGate:
                 can_request=False,
                 reason="Groq provider config is missing.",
             )
-        if status.key_status != AIProviderKeyStatus.PRESENT:
+        real_key = self.environ.get("GROQ_API_KEY")
+        if real_key is None or not str(real_key).strip():
             return GroqRequestGateStatus(
                 provider_configured=True,
-                key_status=status.key_status,
+                key_status=AIProviderKeyStatus.MISSING,
                 default_provider_name=default_name,
                 can_request=False,
                 reason="GROQ_API_KEY is missing.",
@@ -137,6 +138,33 @@ class GroqRequestGate:
     def model_text_ru(self) -> str:
         return self.request_guard.model_text_ru()
 
+    def request_shape_text_ru(self) -> str:
+        config = self._temporary_enabled_groq_config(self.request_guard.resolve_model())
+        key_value = self.environ.get(config.api_key_env_var or "GROQ_API_KEY")
+        auth_status = "PRESENT" if key_value is not None and str(key_value).strip() else "MISSING"
+        return "\n".join(
+            [
+                "Groq request shape:",
+                f"- endpoint: {GroqProvider.ENDPOINT}",
+                "- method: POST",
+                f"- model: {config.default_model}",
+                f"- max_tokens: {self.request_guard.config.max_output_tokens}",
+                "- temperature: 0.2",
+                "- headers:",
+                f"  - Authorization: {auth_status}",
+                "  - Content-Type: application/json",
+                "  - Accept: application/json",
+                "  - User-Agent: JARVIS-OS/0.2",
+                "- payload fields:",
+                "  - model",
+                "  - messages",
+                "  - max_tokens",
+                "  - temperature",
+                "- network: not called",
+                "- key value is never printed",
+            ]
+        )
+
     def _temporary_enabled_groq_config(self, model: str) -> AIProviderConfig:
         config = self.config_manager.get_config("groq")
         if config is None:
@@ -147,7 +175,14 @@ class GroqRequestGate:
                 default_model=model,
                 api_key_env_var="GROQ_API_KEY",
             )
-        return replace(config, enabled=True, default_model=model)
+        return replace(
+            config,
+            name="groq",
+            provider_type="groq",
+            enabled=True,
+            default_model=model,
+            api_key_env_var="GROQ_API_KEY",
+        )
 
     def _build_provider(self, config: AIProviderConfig):
         kwargs = {

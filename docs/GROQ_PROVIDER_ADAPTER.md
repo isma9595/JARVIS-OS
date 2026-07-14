@@ -28,6 +28,9 @@ Create the key in Groq Console and set it only in the environment. Do not paste 
 
 - `статус groq`
 - `статус грок`
+- `статус groq request shape`
+- `groq request shape`
+- `форма groq запроса`
 - `проверить groq ключ`
 - `проверить ключ groq`
 - `статус groq guard`
@@ -47,6 +50,9 @@ Inside JARVIS:
 
 ```text
 статус groq
+статус groq request shape
+groq request shape
+форма groq запроса
 проверить groq ключ
 статус groq guard
 лимиты groq
@@ -72,6 +78,7 @@ Inside JARVIS:
 
 ```text
 статус groq
+статус groq request shape
 статус groq guard
 groq реальный запрос: Ответь одним коротким предложением на русском: подключение работает?
 выход
@@ -87,7 +94,13 @@ Remove-Item Env:GROQ_MODEL
 ## Troubleshooting
 
 - Missing key: set `GROQ_API_KEY` in the environment.
-- Auth error `401/403`: check that the key is valid and active.
+- Auth/permission error `401/403`: check that the key is valid and active.
+- If a direct PowerShell request works but JARVIS returns `403`, compare the exact endpoint, `Authorization: Bearer <GROQ_API_KEY>` header, model name, project permissions, model permissions, and provider request compatibility.
+- TASK-058C keeps the JARVIS Python transport aligned with the working direct PowerShell request: `POST https://api.groq.com/openai/v1/chat/completions`, JSON UTF-8 body, one user message, `Content-Type: application/json`, `Accept: application/json`, and `User-Agent: JARVIS-OS/0.2`.
+- Use `статус groq request shape`, `groq request shape`, or `форма groq запроса` to inspect the safe request shape. This command does not call the network and prints only `Authorization: PRESENT` or `MISSING`.
 - Rate/quota `429`: Groq free/developer limits may vary by account and model.
 - Invalid model: unset `GROQ_MODEL` or use a safe model ID such as `llama-3.1-8b-instant`.
 - Network error: retry later or verify local connectivity.
+- Never paste real keys into chat, logs, docs, tests, or shell history examples.
+- Revoke leaked keys immediately in Groq Console.
+- JARVIS should never print the key value. It should only show whether the key is present.
