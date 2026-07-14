@@ -12,10 +12,12 @@ def test_router_starts_with_dry_run_provider():
 def test_list_providers():
     providers = AIProviderRouter().list_providers()
 
-    assert len(providers) == 2
+    assert len(providers) == 3
     assert providers[0].name == "dry_run"
-    assert providers[1].name == "openai"
+    assert providers[1].name == "gemini"
     assert providers[1].enabled is False
+    assert providers[2].name == "openai"
+    assert providers[2].enabled is False
 
 
 def test_status_text_mentions_offline_dry_run_no_network():
@@ -26,6 +28,7 @@ def test_status_text_mentions_offline_dry_run_no_network():
     assert "переменных окружения" in status
     assert "Сеть не используется" in status
     assert "OpenAI" in status
+    assert "Gemini" in status
 
 
 def test_route_chat_to_dry_run():
@@ -39,6 +42,7 @@ def test_openai_is_known_but_not_default():
 
     assert router.get_default_provider().get_info().name == "dry_run"
     assert "openai" in [provider.name for provider in router.list_providers()]
+    assert "gemini" in [provider.name for provider in router.list_providers()]
 
 
 def test_route_unsupported_capability_safely_errors():
@@ -83,10 +87,19 @@ def test_router_config_status_does_not_activate_external_providers():
     provider_names = [provider.name for provider in router.list_providers()]
     config_names = [status.name for status in router.config_manager.statuses()]
 
-    assert provider_names == ["dry_run", "openai"]
+    assert provider_names == ["dry_run", "gemini", "openai"]
     assert config_names == ["dry_run", "groq", "gemini", "openai"]
     assert "groq" not in provider_names
-    assert "gemini" not in provider_names
+    assert router.get_default_provider().get_info().name == "dry_run"
+
+
+def test_generic_route_still_uses_dry_run_with_gemini_registered():
+    router = AIProviderRouter()
+
+    response = router.generate(AIRequest(prompt="hello"), AIProviderCapability.CHAT)
+
+    assert response.provider_name == "dry_run"
+    assert router.route(AIProviderCapability.CHAT).get_info().name == "dry_run"
 
 
 def test_openai_disabled_or_network_disabled_does_not_call_network():

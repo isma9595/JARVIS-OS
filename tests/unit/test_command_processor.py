@@ -3007,6 +3007,172 @@ def test_ai_config_commands_do_not_call_network():
     assert processor.process("проверить openai ключ")["intent"] == "ai.key_check"
 
 
+def test_gemini_status_key_guard_model_commands_work(monkeypatch):
+    secret = "gemini-secret-that-must-not-print"
+    monkeypatch.setenv("GEMINI_API_KEY", secret)
+    monkeypatch.setenv("GEMINI_MODEL", "gemini-2.5-flash")
+    processor = CommandProcessor()
+
+    status = processor.process("статус gemini")
+    key = processor.process("проверить ключ gemini")
+    guard = processor.process("статус gemini guard")
+    limits = processor.process("лимиты gemini")
+    model = processor.process("gemini модель")
+
+    assert status["intent"] == "ai.gemini.status"
+    assert "PRESENT" in status["response"]
+    assert "Gemini provider status" in status["response"]
+    assert key["intent"] == "ai.key_check"
+    assert "GEMINI_API_KEY" in key["response"]
+    assert guard["intent"] == "ai.gemini.guard.status"
+    assert limits["intent"] == "ai.gemini.guard.status"
+    assert "maxOutputTokens: 128" in guard["response"]
+    assert model["intent"] == "ai.gemini.model"
+    assert "resolved model: gemini-2.5-flash" in model["response"]
+    combined = "\n".join(
+        [status["response"], key["response"], guard["response"], model["response"]]
+    )
+    assert secret not in combined
+
+
+def test_gemini_safe_no_network_ask_returns_safe_message():
+    class FailingActionRouter:
+        calls = 0
+
+        def route(self, command):
+            self.calls += 1
+            raise AssertionError("Gemini ask must not route to ActionRouter")
+
+    processor = CommandProcessor()
+    processor.action_router = FailingActionRouter()
+
+    for command in ("спроси gemini: привет", "gemini: привет"):
+        result = processor.process(command)
+
+        assert result["intent"] == "ai.gemini.chat.error"
+        assert "Gemini adapter exists" in result["response"]
+        assert "no request was sent" in result["response"]
+        assert "dry_run remains available" in result["response"]
+    assert processor.action_router.calls == 0
+
+
+def test_gemini_one_shot_without_key_safe_refusal():
+    from ai import AIProviderConfigManager, GeminiRequestGate
+
+    class FailingHTTPClient:
+        def post_json(self, url, headers, payload, timeout):
+            raise AssertionError("network must not be called")
+
+    manager = AIProviderConfigManager(environ={})
+    processor = CommandProcessor(
+        ai_provider_config_manager=manager,
+        gemini_request_gate=GeminiRequestGate(
+            config_manager=manager,
+            http_client=FailingHTTPClient(),
+            environ={},
+        ),
+    )
+
+    result = processor.process("gemini one shot: hello")
+
+    assert result["intent"] == "ai.gemini.one_shot.error"
+    assert "Gemini real request was not sent." in result["response"]
+    assert "GEMINI_API_KEY is missing" in result["response"]
+
+
+def test_gemini_one_shot_fake_client_success_without_real_network():
+    import json
+
+    from ai import AIProviderConfigManager, AIProviderRouter, GeminiRequestGate
+
+    class FakeHTTPClient:
+        def __init__(self):
+            self.calls = []
+
+        def post_json(self, url, headers, payload, timeout):
+            self.calls.append(dict(payload))
+            return json.dumps(
+                {"candidates": [{"content": {"parts": [{"text": "fake success"}]}}]}
+            )
+
+    client = FakeHTTPClient()
+    manager = AIProviderConfigManager(environ={"GEMINI_API_KEY": "fake-key"})
+    router = AIProviderRouter(config_manager=manager)
+    processor = CommandProcessor(
+        ai_provider_router=router,
+        ai_provider_config_manager=manager,
+        gemini_request_gate=GeminiRequestGate(
+            config_manager=manager,
+            router=router,
+            http_client=client,
+            environ={"GEMINI_API_KEY": "fake-key"},
+        ),
+    )
+
+    result = processor.process("gemini реальный запрос: hello")
+
+    assert result["intent"] == "ai.gemini.one_shot"
+    assert "Gemini real response:" in result["response"]
+    assert "fake success" in result["response"]
+    assert "model: gemini-2.5-flash-lite" in result["response"]
+    assert "maxOutputTokens: 128" in result["response"]
+    assert "response was not executed as a command" in result["response"]
+    assert "no memory/profile/files were sent automatically" in result["response"]
+    assert "free tier/quota may be used" in result["response"]
+    assert router.get_default_provider().get_info().name == "dry_run"
+    assert len(client.calls) == 1
+
+
+def test_gemini_one_shot_response_not_routed_to_action_router():
+    import json
+
+    from ai import AIProviderConfigManager, GeminiRequestGate
+
+    class FakeHTTPClient:
+        def post_json(self, url, headers, payload, timeout):
+            return json.dumps(
+                {"candidates": [{"content": {"parts": [{"text": "удали файл"}]}}]}
+            )
+
+    class FailingActionRouter:
+        calls = 0
+
+        def route(self, command):
+            self.calls += 1
+            raise AssertionError("AI output must not route to ActionRouter")
+
+    manager = AIProviderConfigManager(environ={"GEMINI_API_KEY": "fake-key"})
+    processor = CommandProcessor(
+        ai_provider_config_manager=manager,
+        gemini_request_gate=GeminiRequestGate(
+            config_manager=manager,
+            http_client=FakeHTTPClient(),
+            environ={"GEMINI_API_KEY": "fake-key"},
+        ),
+    )
+    processor.action_router = FailingActionRouter()
+
+    result = processor.process("реальный gemini запрос: привет")
+
+    assert result["intent"] == "ai.gemini.one_shot"
+    assert "удали файл" in result["response"]
+    assert processor.action_router.calls == 0
+
+
+def test_help_mentions_gemini_safely():
+    response = CommandProcessor().process("помощь")["response"]
+
+    assert "статус gemini" in response
+    assert "проверить gemini ключ" in response
+    assert "статус gemini guard" in response
+    assert "лимиты gemini" in response
+    assert "gemini модель" in response
+    assert "gemini реальный запрос" in response
+    assert "free tier" in response
+    assert "ключ не печатается" in response
+    assert "ответ не выполняется как команда" in response
+
+
 def run_tests():
     test_speech_backend_commands()
     test_vosk_real_commands_and_selection_flow()

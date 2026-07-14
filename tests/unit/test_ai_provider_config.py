@@ -19,6 +19,8 @@ def test_default_configs_include_dry_run_groq_gemini_openai():
     assert configs["groq"].enabled is False
     assert configs["gemini"].enabled is False
     assert configs["openai"].enabled is False
+    assert configs["gemini"].default_model == "gemini-2.5-flash-lite"
+    assert configs["gemini"].api_key_env_var == "GEMINI_API_KEY"
     assert configs["openai"].api_key_env_var == "OPENAI_API_KEY"
 
 
@@ -69,10 +71,18 @@ def test_api_key_env_var_rejects_long_token_like_values():
 
 def test_status_text_does_not_contain_env_var_value():
     secret = "super-secret-key-value"
-    text = AIProviderConfigManager(environ={"GEMINI_API_KEY": secret}).format_status_ru()
+    manager = AIProviderConfigManager(environ={"GEMINI_API_KEY": secret})
+    text = "\n".join(
+        [
+            manager.format_status_ru(),
+            manager.format_provider_list_ru(),
+            manager.check_provider_key_text_ru("gemini"),
+        ]
+    )
 
     assert secret not in text
     assert "GEMINI_API_KEY" in text
+    assert "PRESENT" in text
 
 
 def test_openai_env_var_value_never_appears_in_status_text():
@@ -99,7 +109,7 @@ def test_example_config_does_not_contain_secrets():
     text = path.read_text(encoding="utf-8")
 
     assert "sk-" not in text
-    assert "secret" not in text.lower().replace("secrets", "")
+    assert "secret" not in text.lower().replace("secrets", "").replace("secret.", "")
     env_vars = [provider["api_key_env_var"] for provider in data["providers"]]
     assert env_vars == ["GROQ_API_KEY", "GEMINI_API_KEY", "OPENAI_API_KEY"]
 

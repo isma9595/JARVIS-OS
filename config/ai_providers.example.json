@@ -12,9 +12,9 @@
       "name": "gemini",
       "provider_type": "gemini",
       "enabled": false,
-      "default_model": "gemini-default",
+      "default_model": "gemini-2.5-flash-lite",
       "api_key_env_var": "GEMINI_API_KEY",
-      "notes": "Set the API key in an environment variable, never in this file."
+      "notes": "Create a Gemini API key in Google AI Studio and set only GEMINI_API_KEY in the environment. Never put a real key in this file."
     },
     {
       "name": "openai",

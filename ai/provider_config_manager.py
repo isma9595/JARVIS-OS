@@ -43,9 +43,12 @@ class AIProviderConfigManager:
                 name="gemini",
                 provider_type="gemini",
                 enabled=False,
-                default_model="gemini-default",
+                default_model="gemini-2.5-flash-lite",
                 api_key_env_var="GEMINI_API_KEY",
-                notes="Future external provider. Disabled by default.",
+                notes=(
+                    "Gemini API key comes from Google AI Studio. Disabled by "
+                    "default; real requests are one-shot only."
+                ),
             ),
             AIProviderConfig(
                 name="openai",

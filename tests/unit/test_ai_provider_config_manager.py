@@ -74,6 +74,26 @@ def test_no_actual_key_value_in_output_when_env_set():
 
     assert secret not in combined
     assert "GEMINI_API_KEY" in combined
+    assert "PRESENT" in combined
+
+
+def test_gemini_status_safe_with_default_model_and_key_states():
+    missing = AIProviderConfigManager(environ={})
+    present_secret = "gemini-secret-that-must-stay-hidden"
+    present = AIProviderConfigManager(environ={"GEMINI_API_KEY": present_secret})
+
+    assert missing.status_for("gemini").key_status == AIProviderKeyStatus.MISSING
+    assert present.status_for("gemini").key_status == AIProviderKeyStatus.PRESENT
+    text = "\n".join(
+        [
+            present.format_status_ru(),
+            present.format_provider_list_ru(),
+            present.check_provider_key_text_ru("gemini"),
+        ]
+    )
+    assert "gemini-2.5-flash-lite" in text
+    assert "GEMINI_API_KEY" in text
+    assert present_secret not in text
 
 
 def test_check_openai_key_status_present_without_value():

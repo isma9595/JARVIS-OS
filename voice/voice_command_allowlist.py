@@ -50,6 +50,11 @@ class SafeVoiceCommandAllowlist:
             "статус опенай",
             "openai status",
         },
+        "статус gemini": {
+            "статус gemini",
+            "статус джемини",
+            "gemini status",
+        },
         "статус openai one shot": {
             "статус openai one shot",
         },
@@ -63,6 +68,15 @@ class SafeVoiceCommandAllowlist:
         "openai модель": {
             "openai модель",
             "openai model",
+        },
+        "статус gemini guard": {
+            "статус gemini guard",
+            "статус gemini cost guard",
+            "лимиты gemini",
+        },
+        "gemini модель": {
+            "gemini модель",
+            "gemini model",
         },
         "список ai провайдеров": {
             "список ai провайдеров",
@@ -92,6 +106,7 @@ class SafeVoiceCommandAllowlist:
         },
         "проверить gemini ключ": {
             "проверить gemini ключ",
+            "проверить ключ gemini",
         },
         "проверить openai ключ": {
             "проверить openai ключ",

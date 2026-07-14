@@ -23,6 +23,13 @@ from ai.openai_cost_guard import (
 )
 from ai.openai_request_gate import OpenAIRequestGate, OpenAIRequestGateStatus
 from ai.providers.openai_provider import OpenAIProvider
+from ai.gemini_cost_guard import (
+    GeminiRequestCostGuard,
+    GeminiRequestGuardConfig,
+    GeminiRequestGuardResult,
+)
+from ai.gemini_request_gate import GeminiRequestGate, GeminiRequestGateStatus
+from ai.providers.gemini_provider import GeminiProvider
 
 __all__ = [
     "AIProvider",
@@ -37,6 +44,12 @@ __all__ = [
     "AIProviderSafetyLevel",
     "AIRequest",
     "AIResponse",
+    "GeminiProvider",
+    "GeminiRequestCostGuard",
+    "GeminiRequestGate",
+    "GeminiRequestGateStatus",
+    "GeminiRequestGuardConfig",
+    "GeminiRequestGuardResult",
     "OpenAIRequestCostGuard",
     "OpenAIRequestGate",
     "OpenAIRequestGateStatus",

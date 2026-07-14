@@ -21,11 +21,12 @@ Future external providers use environment variables:
 
 - Groq: `GROQ_API_KEY`
 - Gemini: `GEMINI_API_KEY`
+- Gemini model override: `GEMINI_MODEL`
 - OpenAI: `OPENAI_API_KEY`
 
 JARVIS only checks whether the variable exists and is non-empty. It never prints the key value and does not validate keys by network.
 
-For now, `OPENAI_API_KEY` is used only by the explicit OpenAI one-shot request gate. Status and key-check commands remain offline.
+For now, `OPENAI_API_KEY` is used only by the explicit OpenAI one-shot request gate. `GEMINI_API_KEY` is used only by the explicit Gemini one-shot request gate. `GEMINI_MODEL` is optional and is validated as a model name, not a key. Status and key-check commands remain offline.
 
 ## Secret Safety
 
@@ -80,7 +81,6 @@ These commands are Russian-first, read-only, deterministic, and offline. Voice a
 ## Future
 
 - Groq adapter.
-- Gemini adapter.
 - Explicit OpenAI real request gate.
 - Provider enable/disable commands.
 - Optional encrypted local secrets or OS keyring support if needed.
@@ -90,3 +90,9 @@ These commands are Russian-first, read-only, deterministic, and offline. Voice a
 OpenAI one-shot model selection is controlled only by the temporary environment variable `OPENAI_MODEL`. If it is missing, the guard uses `gpt-5.6`.
 
 `OPENAI_MODEL` is validated as a model name, not a secret. Empty values, spaces, path separators, long token-like strings, and key-looking values such as `sk-...` are rejected. The model is not written to tracked config, and no command is added to save or permanently set it.
+
+## TASK-056 Update
+
+Gemini now has a disabled provider adapter and one-shot request gate. The default model is `gemini-2.5-flash-lite`, and the key must come from `GEMINI_API_KEY`.
+
+The adapter remains disabled by default. `dry_run` remains default. Free tier, quota, rate limits, and available models may vary by account, region, and model.

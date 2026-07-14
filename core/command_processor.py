@@ -5,6 +5,7 @@ from ai import (
     AIProviderConfigManager,
     AIProviderRouter,
     AIRequest,
+    GeminiRequestGate,
     OpenAIRequestGate,
 )
 from core.action_router import SafeActionRouter
@@ -114,6 +115,20 @@ class CommandProcessor:
         "openai модель",
         "openai model",
     }
+    GEMINI_STATUS_COMMANDS = {
+        "статус gemini",
+        "статус джемини",
+        "gemini status",
+    }
+    GEMINI_GUARD_STATUS_COMMANDS = {
+        "статус gemini guard",
+        "статус gemini cost guard",
+        "лимиты gemini",
+    }
+    GEMINI_MODEL_COMMANDS = {
+        "gemini модель",
+        "gemini model",
+    }
     AI_PROVIDER_LIST_COMMANDS = {
         "список ai провайдеров",
         "список ии провайдеров",
@@ -144,9 +159,19 @@ class CommandProcessor:
     AI_PROVIDER_KEY_CHECK_COMMANDS = {
         "проверить groq ключ": "groq",
         "проверить gemini ключ": "gemini",
+        "проверить ключ gemini": "gemini",
         "проверить openai ключ": "openai",
         "проверить ключ openai": "openai",
     }
+    GEMINI_CHAT_PREFIXES = (
+        "спроси gemini:",
+        "gemini:",
+    )
+    GEMINI_ONE_SHOT_PREFIXES = (
+        "gemini реальный запрос:",
+        "реальный gemini запрос:",
+        "gemini one shot:",
+    )
     OPENAI_CHAT_PREFIXES = (
         "спроси openai:",
         "openai:",
@@ -886,6 +911,7 @@ class CommandProcessor:
         ai_provider_router=None,
         ai_provider_config_manager=None,
         openai_request_gate=None,
+        gemini_request_gate=None,
     ):
         self.user_profile = user_profile or {}
         self.dialogue_manager = dialogue_manager or DialogueManager(self.user_profile)
@@ -908,6 +934,10 @@ class CommandProcessor:
             config_manager=self.ai_provider_config_manager
         )
         self.openai_request_gate = openai_request_gate or OpenAIRequestGate(
+            config_manager=self.ai_provider_config_manager,
+            router=self.ai_provider_router,
+        )
+        self.gemini_request_gate = gemini_request_gate or GeminiRequestGate(
             config_manager=self.ai_provider_config_manager,
             router=self.ai_provider_router,
         )
@@ -1669,6 +1699,27 @@ class CommandProcessor:
         if openai_one_shot_text is not None:
             return self._generate_openai_one_shot_result(openai_one_shot_text)
 
+        gemini_one_shot_text = self._extract_ai_prefixed_text(
+            command_text,
+            command,
+            self.GEMINI_ONE_SHOT_PREFIXES,
+        )
+        if gemini_one_shot_text is not None:
+            return self._generate_gemini_one_shot_result(gemini_one_shot_text)
+
+        gemini_chat_text = self._extract_ai_prefixed_text(
+            command_text,
+            command,
+            self.GEMINI_CHAT_PREFIXES,
+        )
+        if gemini_chat_text is not None:
+            return self._generate_named_ai_result(
+                "gemini",
+                gemini_chat_text,
+                AIProviderCapability.CHAT,
+                "ai.gemini.chat",
+            )
+
         openai_chat_text = self._extract_ai_prefixed_text(
             command_text,
             command,
@@ -1815,6 +1866,24 @@ class CommandProcessor:
             return self._result(
                 "ai.openai.model",
                 self.openai_request_gate.model_text_ru(),
+            )
+
+        if command in self.GEMINI_STATUS_COMMANDS:
+            return self._result(
+                "ai.gemini.status",
+                self._gemini_status_text(),
+            )
+
+        if command in self.GEMINI_GUARD_STATUS_COMMANDS:
+            return self._result(
+                "ai.gemini.guard.status",
+                self.gemini_request_gate.guard_status_text_ru(),
+            )
+
+        if command in self.GEMINI_MODEL_COMMANDS:
+            return self._result(
+                "ai.gemini.model",
+                self.gemini_request_gate.model_text_ru(),
             )
 
         if command in self.AI_PROVIDER_LIST_COMMANDS:
@@ -2691,6 +2760,14 @@ class CommandProcessor:
                 "OpenAI provider is disabled by default and real network calls are disabled unless explicitly enabled in a future task.\n"
                 "Use dry_run through: спроси ai: <текст>."
             )
+        if provider_name == "gemini" and response.is_error:
+            text = (
+                "Gemini adapter exists, but no request was sent.\n"
+                f"Reason: {response.error_message or response.text}\n"
+                "Gemini provider is disabled by default and network is disabled except explicit one-shot.\n"
+                "Use explicit one-shot for a real Gemini test.\n"
+                "dry_run remains available through: спроси ai: <текст>."
+            )
         result_intent = f"{intent}.error" if response.is_error else intent
         return self._result(result_intent, text)
 
@@ -2740,6 +2817,52 @@ class CommandProcessor:
         )
         return self._result("ai.openai.one_shot", text)
 
+    def _generate_gemini_one_shot_result(self, prompt):
+        request = AIRequest(
+            prompt=prompt,
+            task_type=AIProviderCapability.CHAT.value,
+            language="ru",
+        )
+        response = self.gemini_request_gate.generate_one_shot(
+            request,
+            capability=AIProviderCapability.CHAT,
+        )
+        if response.is_error:
+            if response.error_message == "GEMINI_API_KEY is missing.":
+                text = (
+                    "Gemini real request was not sent.\n"
+                    "Reason: GEMINI_API_KEY is missing.\n"
+                    "Set the key as an environment variable outside the repository.\n"
+                    "The key value must never be committed or printed.\n"
+                    "Gemini free tier/quota may be used only after an explicit one-shot request."
+                )
+            else:
+                text = (
+                    "Gemini real request was not sent.\n"
+                    f"Reason: {response.error_message or response.text}\n"
+                    "Gemini was not enabled permanently.\n"
+                    "The key value was not printed.\n"
+                    "Gemini free tier/quota may be used only by one-shot."
+                )
+            return self._result("ai.gemini.one_shot.error", text)
+
+        guard = self.gemini_request_gate.request_guard
+        text = (
+            "Gemini real response:\n"
+            f"{response.text}\n\n"
+            "Safety:\n"
+            "- one-shot request completed\n"
+            f"- model: {response.model_name}\n"
+            f"- maxOutputTokens: {guard.config.max_output_tokens}\n"
+            "- Gemini was not enabled permanently\n"
+            "- dry_run remains default\n"
+            "- response was not executed as a command\n"
+            "- key value was not printed\n"
+            "- no memory/profile/files were sent automatically\n"
+            "- free tier/quota may be used"
+        )
+        return self._result("ai.gemini.one_shot", text)
+
     def _openai_status_text(self):
         status = self.ai_provider_config_manager.status_for("openai")
         if status is None:
@@ -2758,6 +2881,28 @@ class CommandProcessor:
             "- network: disabled by default\n"
             "- key value is never printed\n"
             "- no status network call is made"
+        )
+
+    def _gemini_status_text(self):
+        status = self.ai_provider_config_manager.status_for("gemini")
+        if status is None:
+            return (
+                "Gemini provider config не найден.\n"
+                "Сеть не используется, ключи не читаются."
+            )
+        enabled = "enabled" if status.enabled else "disabled"
+        return (
+            "Gemini provider status:\n"
+            f"- provider: {status.name}\n"
+            f"- enabled: {enabled}\n"
+            f"- env var: {status.api_key_env_var}\n"
+            f"- key status: {status.key_status.value}\n"
+            f"- model: {status.default_model}\n"
+            f"- runtime: {status.runtime_state.value}\n"
+            "- network: disabled except explicit one-shot\n"
+            "- key value is never printed\n"
+            "- no status network call is made\n"
+            "- dry_run remains default"
         )
 
     def _result(
@@ -3478,6 +3623,7 @@ class CommandProcessor:
             "AI foundation сейчас работает только в dry-run/offline режиме: статус ai; список ai провайдеров; спроси ai: <текст>; ai кратко: <текст>; ai классифицируй: <текст>. "
             "OpenAI adapter: статус openai; проверить openai ключ; спроси openai: <текст> пока показывает безопасный отказ без сетевого запроса. "
             "OpenAI one-shot: статус openai one shot; статус openai guard; лимиты openai; openai модель; openai реальный запрос: <текст>; только явная one-shot команда может сделать один реальный запрос, OpenAI не включается постоянно, dry_run остается default, ключ не печатается, ответ не выполняется как команда, max_output_tokens ограничен, реальный API может использовать лимит аккаунта. "
+            "Gemini adapter: статус gemini; проверить gemini ключ; статус gemini guard; лимиты gemini; gemini модель; спроси gemini: <текст> показывает безопасный отказ без сетевого запроса; gemini реальный запрос: <текст> или gemini one shot: <текст> делает только явный one-shot при наличии GEMINI_API_KEY, Gemini не включается постоянно, dry_run остается default, ключ не печатается, ответ не выполняется как команда, free tier/quota может использоваться. "
             "Безопасная конфигурация AI: статус ai конфигурации; статус ai ключей; конфигурация ai провайдеров; безопасность ai ключей; проверить groq ключ; проверить gemini ключ; проверить openai ключ. "
             "OpenAI real requests не активны по умолчанию, сеть не используется без явной one-shot команды, API-ключи не печатаются, AI-ответы не выполняются как команды. "
             "Зрение экрана и автоматизация запланированы позже. "

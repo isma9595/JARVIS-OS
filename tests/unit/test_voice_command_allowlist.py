@@ -119,6 +119,12 @@ def test_ai_config_and_key_safety_voice_commands_are_allowed():
         ("безопасность ai ключей", "безопасность ai ключей"),
         ("проверить groq ключ", "проверить groq ключ"),
         ("проверить gemini ключ", "проверить gemini ключ"),
+        ("проверить ключ gemini", "проверить gemini ключ"),
+        ("статус gemini", "статус gemini"),
+        ("статус джемини", "статус gemini"),
+        ("статус gemini guard", "статус gemini guard"),
+        ("лимиты gemini", "статус gemini guard"),
+        ("gemini модель", "gemini модель"),
         ("статус openai", "статус openai"),
         ("проверить openai ключ", "проверить openai ключ"),
         ("проверить ключ openai", "проверить openai ключ"),
@@ -155,6 +161,11 @@ def test_broad_ai_voice_queries_are_not_allowlisted():
     assert allowlist.decide("openai реальный запрос: привет").allowed is False
     assert allowlist.decide("реальный openai запрос: привет").allowed is False
     assert allowlist.decide("openai one shot: hello").allowed is False
+    assert allowlist.decide("спроси gemini: привет").allowed is False
+    assert allowlist.decide("gemini: привет").allowed is False
+    assert allowlist.decide("gemini реальный запрос: привет").allowed is False
+    assert allowlist.decide("реальный gemini запрос: привет").allowed is False
+    assert allowlist.decide("gemini one shot: hello").allowed is False
 
 
 def test_openai_one_shot_status_is_allowlisted_but_request_is_not():
@@ -194,6 +205,39 @@ def test_openai_real_request_and_model_or_key_setting_are_not_allowlisted():
         "openai one shot: hello",
         "установи openai модель gpt-5.6",
         "установи openai ключ abc123",
+        "установи gemini модель gemini-2.5-flash",
+        "установи gemini ключ abc123",
+        "добавь gemini ключ abc123",
+    ):
+        assert allowlist.decide(command).allowed is False
+
+
+def test_gemini_guard_status_and_model_commands_are_allowlisted_but_requests_are_not():
+    allowlist = SafeVoiceCommandAllowlist()
+
+    for command, canonical in (
+        ("статус gemini", "статус gemini"),
+        ("статус джемини", "статус gemini"),
+        ("проверить gemini ключ", "проверить gemini ключ"),
+        ("проверить ключ gemini", "проверить gemini ключ"),
+        ("статус gemini guard", "статус gemini guard"),
+        ("статус gemini cost guard", "статус gemini guard"),
+        ("лимиты gemini", "статус gemini guard"),
+        ("gemini модель", "gemini модель"),
+        ("gemini model", "gemini модель"),
+    ):
+        decision = allowlist.decide(command)
+        assert decision.allowed is True
+        assert decision.canonical_command == canonical
+
+    for command in (
+        "спроси gemini: привет",
+        "gemini: привет",
+        "gemini реальный запрос: привет",
+        "реальный gemini запрос: привет",
+        "gemini one shot: hello",
+        "установи gemini ключ abc123",
+        "установи gemini модель gemini-2.5-flash",
     ):
         assert allowlist.decide(command).allowed is False
 
