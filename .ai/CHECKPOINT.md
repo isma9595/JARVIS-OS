@@ -1,10 +1,10 @@
 # JARVIS-OS Checkpoint
 
 - Project: JARVIS-OS
-- Current stable stage: TASK-050 — Voice Cycle Final Polish / Stability Review
-- Last stable commit: 9a5bc6b
-- Last stable commit message: Finalize voice cycle polish
-- Next stage: TASK-050A — Manual Voice Command Polish
+- Current stable stage: TASK-050A — Manual Voice Command Polish
+- Last stable commit: a63af4f
+- Last stable commit message: Polish manual voice commands
+- Next stage: TASK-051 — AI Provider Core Contracts / Router Foundation
 - Status: in progress
 
 ## Approved Workflow
@@ -33,4 +33,6 @@ JARVIS remains Russian-first for user-facing functionality, with future multilin
 
 TASK-050 is complete and stable at commit 9a5bc6b.
 
-TASK-050A is in progress for manual voice command polish only.
+TASK-050A is complete and stable at commit a63af4f.
+
+TASK-051 is in progress for AI provider core contracts and offline router foundation only.

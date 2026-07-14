@@ -1,5 +1,6 @@
 from pathlib import Path
 
+from ai import AIProviderCapability, AIProviderRouter, AIRequest
 from core.action_router import SafeActionRouter
 from dialogue import (
     AssistantResponseHistory,
@@ -78,6 +79,37 @@ class CommandProcessor:
         "какие сервисы работают",
         "системные сервисы",
     }
+    AI_STATUS_COMMANDS = {
+        "статус ai",
+        "статус ии",
+        "статус искусственного интеллекта",
+        "статус ai провайдеров",
+        "статус ии провайдеров",
+        "ai status",
+    }
+    AI_PROVIDER_LIST_COMMANDS = {
+        "список ai провайдеров",
+        "список ии провайдеров",
+        "ai провайдеры",
+        "ии провайдеры",
+        "провайдеры ai",
+    }
+    AI_CHAT_PREFIXES = (
+        "спроси ai:",
+        "спроси ии:",
+        "ai:",
+        "ии:",
+    )
+    AI_SUMMARY_PREFIXES = (
+        "ai кратко:",
+        "ии кратко:",
+        "ai резюме:",
+        "ии резюме:",
+    )
+    AI_CLASSIFICATION_PREFIXES = (
+        "ai классифицируй:",
+        "ии классифицируй:",
+    )
     VOICE_STATUS_COMMANDS = {
         "голос",
         "статус голоса",
@@ -789,6 +821,7 @@ class CommandProcessor:
         voice_output_manager=None,
         assistant_response_history=None,
         voice_dialogue_mode_manager=None,
+        ai_provider_router=None,
     ):
         self.user_profile = user_profile or {}
         self.dialogue_manager = dialogue_manager or DialogueManager(self.user_profile)
@@ -802,6 +835,7 @@ class CommandProcessor:
             user_profile=self.user_profile,
             dialogue_manager=self.dialogue_manager,
         )
+        self.ai_provider_router = ai_provider_router or AIProviderRouter()
         self.voice_input_manager = None
         if voice_output_manager is None:
             from voice.voice_output_manager import VoiceOutputManager
@@ -1515,6 +1549,43 @@ class CommandProcessor:
                 "listen_once_from_microphone",
             )
 
+        ai_chat_text = self._extract_ai_prefixed_text(
+            command_text,
+            command,
+            self.AI_CHAT_PREFIXES,
+        )
+        if ai_chat_text is not None:
+            return self._generate_ai_result(
+                ai_chat_text,
+                AIProviderCapability.CHAT,
+                "ai.chat",
+            )
+
+        ai_summary_text = self._extract_ai_prefixed_text(
+            command_text,
+            command,
+            self.AI_SUMMARY_PREFIXES,
+        )
+        if ai_summary_text is not None:
+            return self._generate_ai_result(
+                ai_summary_text,
+                AIProviderCapability.SUMMARY,
+                "ai.summary",
+                max_chars=160,
+            )
+
+        ai_classification_text = self._extract_ai_prefixed_text(
+            command_text,
+            command,
+            self.AI_CLASSIFICATION_PREFIXES,
+        )
+        if ai_classification_text is not None:
+            return self._generate_ai_result(
+                ai_classification_text,
+                AIProviderCapability.CLASSIFICATION,
+                "ai.classification",
+            )
+
         if self._is_voice_simulation_command(command):
             return self._process_voice_simulation(command)
 
@@ -1618,6 +1689,18 @@ class CommandProcessor:
             return self._result(
                 "system.services",
                 self.dialogue_manager.services_response(status["services"]),
+            )
+
+        if command in self.AI_STATUS_COMMANDS:
+            return self._result(
+                "ai.status",
+                self.ai_provider_router.status_text_ru(),
+            )
+
+        if command in self.AI_PROVIDER_LIST_COMMANDS:
+            return self._result(
+                "ai.providers",
+                self.ai_provider_router.providers_text_ru(),
             )
 
         if command in self.VOICE_STATUS_COMMANDS:
@@ -2410,6 +2493,30 @@ class CommandProcessor:
                 return original[len(prefix) :].strip()
         return None
 
+    @staticmethod
+    def _extract_ai_prefixed_text(command_text, normalized_command, prefixes):
+        for prefix in prefixes:
+            if normalized_command == prefix:
+                return ""
+            if normalized_command.startswith(prefix):
+                original = str(command_text).strip()
+                return original[len(prefix) :].strip()
+        return None
+
+    def _generate_ai_result(self, prompt, capability, intent, max_chars=None):
+        request = AIRequest(
+            prompt=prompt,
+            task_type=capability.value,
+            language="ru",
+            max_chars=max_chars,
+        )
+        response = self.ai_provider_router.generate(request, capability=capability)
+        result_intent = f"{intent}.error" if response.is_error else intent
+        return self._result(
+            result_intent,
+            response.text,
+        )
+
     def _result(
         self,
         intent,
@@ -3125,6 +3232,8 @@ class CommandProcessor:
             "Можно добавить исправление распознавания: я сказал не X, а Y; исправления действуют только в текущей сессии, их можно посмотреть или очистить. "
             "Рискованные действия не обходят безопасность, постоянное прослушивание не связано "
             "с реальным распознаванием. "
+            "AI foundation сейчас работает только в dry-run/offline режиме: статус ai; список ai провайдеров; спроси ai: <текст>; ai кратко: <текст>; ai классифицируй: <текст>. "
+            "Реальные внешние AI-провайдеры пока не подключены, сеть не используется, API-ключи не требуются, AI-ответы не выполняются как команды. "
             "Зрение экрана и автоматизация запланированы позже. "
             "Для выхода напишите: выход."
         )

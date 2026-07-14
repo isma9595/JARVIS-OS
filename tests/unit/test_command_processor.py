@@ -2784,6 +2784,88 @@ def test_help_mentions_repeat_and_clarify_commands():
     assert "последнюю голосовую команду" in response
     assert "объясни короче" in response
     assert "скажи проще" in response
+
+
+def test_ai_status_commands_work():
+    processor = CommandProcessor()
+
+    for command in ("статус ai", "статус ии"):
+        result = processor.process(command)
+
+        assert result["intent"] == "ai.status"
+        assert "dry_run" in result["response"]
+        assert "Сеть не используется" in result["response"]
+        assert "API-ключи не требуются" in result["response"]
+
+
+def test_ai_provider_list_command_works():
+    result = CommandProcessor().process("список ai провайдеров")
+
+    assert result["intent"] == "ai.providers"
+    assert "dry_run" in result["response"]
+    assert "chat" in result["response"]
+    assert "summary" in result["response"]
+    assert "classification" in result["response"]
+
+
+def test_ai_ask_commands_return_dry_run_text():
+    processor = CommandProcessor()
+
+    for command in ("спроси ai: привет", "ai: привет"):
+        result = processor.process(command)
+
+        assert result["intent"] == "ai.chat"
+        assert "AI dry-run" in result["response"]
+        assert "привет" in result["response"]
+
+
+def test_ai_summary_command_returns_deterministic_summary():
+    result = CommandProcessor().process(
+        "ai кратко: Это длинный тестовый текст. Он нужен только для проверки."
+    )
+
+    assert result["intent"] == "ai.summary"
+    assert result["response"] == "AI dry-run summary: Это длинный тестовый текст."
+
+
+def test_ai_classification_command_returns_code_category():
+    result = CommandProcessor().process("ai классифицируй: python код")
+
+    assert result["intent"] == "ai.classification"
+    assert result["response"] == "AI dry-run classification: code"
+
+
+def test_empty_ai_prompt_returns_safe_error():
+    result = CommandProcessor().process("спроси ai:")
+
+    assert result["intent"] == "ai.chat.error"
+    assert "AI prompt is empty" in result["response"]
+
+
+def test_ai_output_is_not_routed_to_action_router_as_command():
+    class FailingActionRouter:
+        def route(self, command):
+            raise AssertionError(f"ActionRouter must not receive AI command: {command}")
+
+    processor = CommandProcessor()
+    processor.action_router = FailingActionRouter()
+
+    result = processor.process("ai: статус системы")
+
+    assert result["intent"] == "ai.chat"
+    assert "AI dry-run" in result["response"]
+
+
+def test_help_mentions_ai_provider_foundation():
+    response = CommandProcessor().process("помощь")["response"]
+
+    assert "статус ai" in response
+    assert "список ai провайдеров" in response
+    assert "спроси ai: <текст>" in response
+    assert "ai кратко: <текст>" in response
+    assert "ai классифицируй: <текст>" in response
+    assert "Реальные внешние AI-провайдеры пока не подключены" in response
+    assert "AI-ответы не выполняются как команды" in response
     assert "не выполняет команду повторно" in response
 
 

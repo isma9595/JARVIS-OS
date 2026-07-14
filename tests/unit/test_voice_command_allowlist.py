@@ -94,6 +94,29 @@ def test_voice_output_safety_commands_are_allowed():
     )
 
 
+def test_ai_status_and_provider_list_commands_are_allowed():
+    allowlist = SafeVoiceCommandAllowlist()
+
+    assert allowlist.decide("статус ai").allowed is True
+    assert allowlist.decide("статус ai").canonical_command == "статус ai"
+    assert allowlist.decide("статус ии").canonical_command == "статус ai"
+    assert (
+        allowlist.decide("список ai провайдеров").canonical_command
+        == "список ai провайдеров"
+    )
+    assert (
+        allowlist.decide("список ии провайдеров").canonical_command
+        == "список ai провайдеров"
+    )
+
+
+def test_broad_ai_voice_queries_are_not_allowlisted():
+    allowlist = SafeVoiceCommandAllowlist()
+
+    assert allowlist.decide("спроси ai: привет").allowed is False
+    assert allowlist.decide("ai: привет").allowed is False
+
+
 def test_voice_interaction_info_commands_are_allowed_without_replay_execution():
     allowlist = SafeVoiceCommandAllowlist()
 
