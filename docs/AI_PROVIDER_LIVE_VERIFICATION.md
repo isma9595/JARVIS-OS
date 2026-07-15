@@ -1,5 +1,12 @@
 # AI Provider Live Verification
 
+## Command Registry
+
+TASK-068 records live verification commands in the metadata-only command
+registry for command search and future UI use. Verification behavior is still
+implemented by `CommandProcessor` and the live verification module. See
+`docs/COMMAND_REGISTRY.md`.
+
 ## Purpose
 
 TASK-067 adds a safe manual verification layer for the existing AI provider

@@ -1,5 +1,12 @@
 # AI Provider Router
 
+## TASK-068 Command Registry
+
+AI provider command families are now represented in the metadata-only command
+registry for future UI/search/help surfaces. The registry does not route or
+execute provider requests; `CommandProcessor` remains the execution source. See
+`docs/COMMAND_REGISTRY.md`.
+
 ## TASK-060 Language Policy
 
 External one-shot provider prompts pass through the AI provider language policy before

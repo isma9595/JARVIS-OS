@@ -1,5 +1,12 @@
 # Ollama Local Provider
 
+## Command Registry
+
+TASK-068 records Ollama status, model list, local request, and local readiness
+commands in the metadata-only command registry. Ollama execution remains
+localhost-only and explicit through `CommandProcessor`. See
+`docs/COMMAND_REGISTRY.md`.
+
 TASK-064 adds Ollama as the local/offline AI foundation for JARVIS.
 
 ## Purpose

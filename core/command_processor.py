@@ -20,6 +20,7 @@ from ai import (
     OpenAIRequestGate,
 )
 from core.action_router import SafeActionRouter
+from core.command_registry import CommandCategory, DEFAULT_COMMAND_REGISTRY
 from dialogue import (
     AssistantResponseHistory,
     DialogueManager,
@@ -96,6 +97,38 @@ class CommandProcessor:
         "список сервисов",
         "какие сервисы работают",
         "системные сервисы",
+    }
+    COMMAND_REGISTRY_STATUS_COMMANDS = {
+        "статус command registry",
+        "статус реестра команд",
+        "статус registry команд",
+        "статус capability manifest",
+    }
+    COMMAND_REGISTRY_LIST_COMMANDS = {
+        "реестр команд",
+        "список команд jarvis",
+        "команды jarvis",
+        "capability manifest",
+        "manifest команд",
+    }
+    COMMAND_REGISTRY_CATEGORIES_COMMANDS = {
+        "категории команд",
+        "категории jarvis",
+        "категории command registry",
+    }
+    COMMAND_REGISTRY_SEARCH_PREFIXES = (
+        "найти команду:",
+        "поиск команды:",
+        "command search:",
+    )
+    COMMAND_REGISTRY_CATEGORY_COMMANDS = {
+        "команды ai": CommandCategory.AI,
+        "команды голос": CommandCategory.VOICE,
+        "команды безопасность": CommandCategory.SAFETY,
+        "команды ollama": CommandCategory.OLLAMA,
+        "команды приложение": CommandCategory.APP,
+        "команды profile": CommandCategory.PROFILE,
+        "команды system": CommandCategory.SYSTEM,
     }
     AI_STATUS_COMMANDS = {
         "статус ai",
@@ -1211,6 +1244,7 @@ class CommandProcessor:
         ai_provider_fallback_executor=None,
         ai_provider_live_verification=None,
         ai_context_privacy_policy=None,
+        command_registry=None,
     ):
         self.user_profile = user_profile or {}
         self.dialogue_manager = dialogue_manager or DialogueManager(self.user_profile)
@@ -1355,6 +1389,7 @@ class CommandProcessor:
 
             microphone_listening_mode_manager = MicrophoneListeningModeManager()
         self.microphone_listening_mode_manager = microphone_listening_mode_manager
+        self.command_registry = command_registry or DEFAULT_COMMAND_REGISTRY
 
     def set_voice_input_manager(self, voice_input_manager):
         self.voice_input_manager = voice_input_manager
@@ -1373,6 +1408,10 @@ class CommandProcessor:
                 speakable=False,
                 allow_manual_dialogue=False,
             )
+
+        registry_result = self._command_registry_result(command)
+        if registry_result is not None:
+            return registry_result
 
         if command in self.SPEECH_BACKEND_STATUS_COMMANDS:
             status = (
@@ -2672,6 +2711,47 @@ class CommandProcessor:
             return ""
 
         return " ".join(str(command_text).strip().lower().split())
+
+    def _command_registry_result(self, command):
+        if command in self.COMMAND_REGISTRY_STATUS_COMMANDS:
+            return self._result(
+                "command_registry.status",
+                self.command_registry.status_text_ru(),
+                speakable=False,
+            )
+
+        if command in self.COMMAND_REGISTRY_LIST_COMMANDS:
+            return self._result(
+                "command_registry.list",
+                self.command_registry.list_text_ru(),
+                speakable=False,
+            )
+
+        if command in self.COMMAND_REGISTRY_CATEGORIES_COMMANDS:
+            return self._result(
+                "command_registry.categories",
+                self.command_registry.categories_text_ru(),
+                speakable=False,
+            )
+
+        category = self.COMMAND_REGISTRY_CATEGORY_COMMANDS.get(command)
+        if category is not None:
+            return self._result(
+                "command_registry.category",
+                self.command_registry.list_text_ru(category),
+                speakable=False,
+            )
+
+        for prefix in self.COMMAND_REGISTRY_SEARCH_PREFIXES:
+            if command.startswith(prefix):
+                query = command[len(prefix) :].strip()
+                return self._result(
+                    "command_registry.search",
+                    self.command_registry.search_text_ru(query),
+                    speakable=False,
+                )
+
+        return None
 
     def _get_vosk_preflight(self):
         if self.voice_input_manager is None:
@@ -4733,6 +4813,7 @@ class CommandProcessor:
             "Безопасная конфигурация AI: статус ai конфигурации; статус ai ключей; конфигурация ai провайдеров; безопасность ai ключей; проверить groq ключ; проверить ключ groq; проверить gemini ключ; проверить openai ключ. "
             "OpenAI real requests не активны по умолчанию, сеть не используется без явной one-shot команды, API-ключи не печатаются, AI-ответы не выполняются как команды. "
             "Зрение экрана и автоматизация запланированы позже. "
+            "Для списка команд используйте: реестр команд; категории команд; команды ai; команды голос. "
             "Для выхода напишите: выход."
         )
 

@@ -1,5 +1,12 @@
 # AI Provider Fallback Execution
 
+## Command Registry
+
+TASK-068 records fallback status, planning, and explicit execution commands in
+the metadata-only command registry. The registry does not run fallback; it only
+describes risk, privacy, network, and voice safety flags. See
+`docs/COMMAND_REGISTRY.md`.
+
 ## Purpose
 
 AI provider fallback execution is an explicit-only retry mode. It tries a safe

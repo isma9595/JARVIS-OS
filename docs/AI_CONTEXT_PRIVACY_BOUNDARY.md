@@ -1,5 +1,11 @@
 # AI Context Privacy Boundary
 
+## Command Registry
+
+TASK-068 marks privacy status/matrix commands as read-only metadata and marks
+arbitrary privacy checks as sensitive. The registry is informational only and
+does not bypass this privacy boundary. See `docs/COMMAND_REGISTRY.md`.
+
 ## Purpose
 
 JARVIS uses a deterministic AI context privacy preflight before any explicit AI provider request. The boundary exists so private data is not accidentally sent to external AI providers before file, screen, document, memory, and workflow features are added.

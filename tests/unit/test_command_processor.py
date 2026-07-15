@@ -4829,3 +4829,94 @@ def test_ai_live_verification_outputs_do_not_route_to_action_router():
 
         assert result["intent"].startswith("ai.live_verification.")
         assert processor.action_router.calls == 0
+
+
+def test_command_registry_status_commands_work_without_action_router():
+    class FailingActionRouter:
+        calls = 0
+
+        def route(self, command):
+            self.calls += 1
+            raise AssertionError("registry status must not route to ActionRouter")
+
+    processor = CommandProcessor()
+    processor.action_router = FailingActionRouter()
+
+    for command in (
+        "статус command registry",
+        "статус реестра команд",
+        "статус registry команд",
+        "статус capability manifest",
+    ):
+        result = processor.process(command)
+
+        assert result["intent"] == "command_registry.status"
+        assert "- enabled: yes" in result["response"]
+        assert "- mode: metadata foundation" in result["response"]
+        assert "- execution source: CommandProcessor remains active" in result["response"]
+        assert "- network: not called" in result["response"]
+        assert "- disk writes: none" in result["response"]
+        assert "- secrets: not used" in result["response"]
+        assert "- duplicate aliases: none" in result["response"]
+        assert processor.action_router.calls == 0
+
+
+def test_command_registry_list_categories_and_family_commands_work():
+    processor = CommandProcessor()
+
+    manifest = processor.process("реестр команд")
+    categories = processor.process("категории команд")
+    ai = processor.process("команды ai")
+    voice = processor.process("команды голос")
+    ollama = processor.process("команды ollama")
+    app = processor.process("команды приложение")
+
+    assert manifest["intent"] == "command_registry.list"
+    assert "Command registry manifest" in manifest["response"]
+    assert "risk=" in manifest["response"]
+    assert "voice_auto_allowed=" in manifest["response"]
+    assert categories["intent"] == "command_registry.categories"
+    assert "ai:" in categories["response"]
+    assert ai["intent"] == "command_registry.category"
+    assert "Command registry: ai" in ai["response"]
+    assert voice["intent"] == "command_registry.category"
+    assert "Command registry: voice" in voice["response"]
+    assert ollama["intent"] == "command_registry.category"
+    assert "Command registry: ollama" in ollama["response"]
+    assert app["intent"] == "command_registry.category"
+    assert "future/not implemented" in app["response"]
+    assert "app_ready=no" in app["response"]
+
+
+def test_command_registry_search_finds_fallback_ollama_and_privacy_without_execution():
+    class FailingActionRouter:
+        calls = 0
+
+        def route(self, command):
+            self.calls += 1
+            raise AssertionError("registry search must not route to ActionRouter")
+
+    processor = CommandProcessor()
+    processor.action_router = FailingActionRouter()
+
+    fallback = processor.process("найти команду: fallback")
+    ollama = processor.process("найти команду: ollama")
+    privacy = processor.process("найти команду: privacy")
+
+    assert fallback["intent"] == "command_registry.search"
+    assert "ai_fallback" in fallback["response"]
+    assert "- execution: not performed" in fallback["response"]
+    assert ollama["intent"] == "command_registry.search"
+    assert "ollama" in ollama["response"]
+    assert privacy["intent"] == "command_registry.search"
+    assert "ai_privacy" in privacy["response"]
+    assert processor.action_router.calls == 0
+
+
+def test_command_registry_commands_do_not_break_existing_ai_voice_provider_statuses():
+    processor = CommandProcessor(ollama_request_gate=FakeOllamaGate())
+
+    assert processor.process("статус ai verification")["intent"] == "ai.live_verification.status"
+    assert processor.process("статус ai fallback execution")["intent"] == "ai.fallback_execution.status"
+    assert processor.process("статус ai privacy")["intent"] == "ai.context_privacy.status"
+    assert processor.process("статус ollama")["intent"] == "ai.ollama.status"

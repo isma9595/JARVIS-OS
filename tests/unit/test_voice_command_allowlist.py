@@ -716,3 +716,61 @@ def test_safety_notes_mention_read_only_and_no_bypass():
     assert "CommandProcessor" in notes
     assert "ActionRouter" in notes
     assert "shell" in notes
+
+
+def test_command_registry_voice_status_list_and_categories_are_allowlisted():
+    allowlist = SafeVoiceCommandAllowlist()
+
+    for command, canonical in (
+        ("статус command registry", "статус command registry"),
+        ("статус реестра команд", "статус command registry"),
+        ("статус registry команд", "статус command registry"),
+        ("статус capability manifest", "статус command registry"),
+        ("категории команд", "категории команд"),
+        ("категории jarvis", "категории команд"),
+        ("реестр команд", "реестр команд"),
+        ("список команд jarvis", "реестр команд"),
+        ("команды jarvis", "реестр команд"),
+        ("команды ai", "команды ai"),
+        ("команды голос", "команды голос"),
+        ("команды безопасность", "команды безопасность"),
+        ("команды ollama", "команды ollama"),
+        ("команды приложение", "команды приложение"),
+    ):
+        decision = allowlist.decide(command)
+
+        assert decision.allowed is True
+        assert decision.canonical_command == canonical
+
+
+def test_command_registry_search_commands_are_not_allowlisted():
+    allowlist = SafeVoiceCommandAllowlist()
+
+    for command in (
+        "найти команду fallback",
+        "найти команду: fallback",
+        "поиск команды: ollama",
+        "command search: privacy",
+    ):
+        decision = allowlist.decide(command)
+
+        assert decision.allowed is False
+        assert decision.canonical_command is None
+
+
+def test_real_provider_fallback_and_consensus_commands_still_not_allowlisted():
+    allowlist = SafeVoiceCommandAllowlist()
+
+    for command in (
+        "openai реальный запрос: hello",
+        "gemini реальный запрос: hello",
+        "groq реальный запрос: hello",
+        "gigachat реальный запрос: hello",
+        "fallback ai запрос: hello",
+        "консенсус ai: hello",
+        "спроси все ai: hello",
+    ):
+        decision = allowlist.decide(command)
+
+        assert decision.allowed is False
+        assert decision.canonical_command is None
