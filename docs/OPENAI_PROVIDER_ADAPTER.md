@@ -85,3 +85,6 @@ Selection policy may recommend OpenAI for code/strong reasoning tasks when
 `OPENAI_API_KEY` is PRESENT. This is recommendation-only: no network is called,
 manual session pinning wins, and real OpenAI use still requires an explicit
 one-shot command.
+# AI Context Privacy Preflight
+
+OpenAI real one-shot requests are blocked by the context privacy boundary for sensitive/private/secret/file/memory/log/screen/audio context before any provider call.

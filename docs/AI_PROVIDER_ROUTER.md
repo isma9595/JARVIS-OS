@@ -178,3 +178,6 @@ remains the default provider.
 ## TASK-064 Ollama Update
 
 The router can list `ollama` as an implemented local-only provider. It remains disabled for automatic routing and `dry_run` remains the default. Ollama calls are available only through explicit local one-shot gates or manual session selection.
+# AI Context Privacy Preflight
+
+JARVIS now runs a deterministic AI context privacy preflight before real provider gates. Manual provider selection does not override it: sensitive/private/secret/file/memory/log/screen/audio context is blocked for external providers, and secrets/raw context packages are also blocked for Ollama until a future explicit context package flow exists. See `docs/AI_CONTEXT_PRIVACY_BOUNDARY.md`.

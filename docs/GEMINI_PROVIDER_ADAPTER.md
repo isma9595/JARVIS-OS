@@ -127,3 +127,6 @@ Selection policy may include Gemini as an alternative/general fallback when
 `GEMINI_API_KEY` is PRESENT. This is recommendation-only: no network is called,
 manual session pinning wins, and real Gemini use still requires an explicit
 one-shot command.
+# AI Context Privacy Preflight
+
+Gemini real one-shot requests are blocked by the context privacy boundary for sensitive/private/secret/file/memory/log/screen/audio context before any provider call.

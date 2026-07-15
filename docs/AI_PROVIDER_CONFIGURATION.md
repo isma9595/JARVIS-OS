@@ -143,3 +143,6 @@ Ollama configuration is local-only:
 - Default model preference: `qwen2.5:1.5b`.
 - API key: not required.
 - No cloud, automatic install, or model pull.
+# AI Context Privacy Preflight
+
+Provider configuration and key presence do not override the AI context privacy boundary. External providers remain explicit one-shot only and are blocked for sensitive/private/secret/file/memory/log/screen/audio context. Secrets are never printed.

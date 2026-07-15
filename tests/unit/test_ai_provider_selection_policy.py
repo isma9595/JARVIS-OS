@@ -115,6 +115,38 @@ def test_privacy_offline_prompt_recommends_ollama_then_dry_run():
     assert recommendation.network_called is False
 
 
+def test_secret_like_prompt_recommends_redaction_manual_handling():
+    secret = "sk-test-1234567890secret"
+    recommendation = policy({"GROQ_API_KEY": "fake-test-key"}).recommend(
+        f"my api key {secret}"
+    )
+    text = policy({"GROQ_API_KEY": "fake-test-key"}).recommendation_text_ru(
+        f"my api key {secret}"
+    )
+
+    assert recommendation.ok is False
+    assert recommendation.recommended_provider == "dry_run"
+    assert "redact" in recommendation.reason
+    assert "all AI providers skipped" in recommendation.skipped[0]
+    assert recommendation.network_called is False
+    assert secret not in text
+
+
+def test_raw_context_prompt_does_not_recommend_external_provider():
+    for prompt in (
+        "содержимое файла ниже",
+        "скриншот экрана",
+        "моя память",
+        "debug log traceback",
+    ):
+        recommendation = policy({"GROQ_API_KEY": "fake-test-key"}).recommend(prompt)
+
+        assert recommendation.recommended_provider == "dry_run"
+        assert "groq" not in recommendation.fallback_chain
+        assert "external providers skipped" in recommendation.skipped[0]
+        assert recommendation.network_called is False
+
+
 def test_consensus_compare_prompt_recommends_explicit_consensus_no_network():
     recommendation = policy({"GROQ_API_KEY": "fake-test-key"}).recommend(
         "сравни ответы нескольких ии"

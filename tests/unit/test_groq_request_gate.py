@@ -110,6 +110,38 @@ def test_present_key_fake_client_succeeds_with_cyrillic_prompt():
     assert secret not in gate.status_text_ru()
 
 
+def test_private_prompt_blocks_before_fake_provider_call():
+    client = FakeHTTPClient()
+    gate = GroqRequestGate(
+        config_manager=AIProviderConfigManager(environ={"GROQ_API_KEY": "fake-key"}),
+        http_client=client,
+        environ={"GROQ_API_KEY": "fake-key"},
+    )
+
+    response = gate.generate_one_shot(AIRequest(prompt="это приватный файл, не отправляй в интернет"))
+
+    assert response.is_error is True
+    assert "privacy boundary blocked" in response.error_message
+    assert client.calls == []
+
+
+def test_secret_prompt_blocks_and_redacts_before_fake_provider_call():
+    secret = "sk-test-1234567890secret"
+    client = FakeHTTPClient()
+    gate = GroqRequestGate(
+        config_manager=AIProviderConfigManager(environ={"GROQ_API_KEY": "fake-key"}),
+        http_client=client,
+        environ={"GROQ_API_KEY": "fake-key"},
+    )
+
+    response = gate.generate_one_shot(AIRequest(prompt=f"my api key {secret}"))
+
+    assert response.is_error is True
+    assert secret not in response.error_message
+    assert "[REDACTED]" in response.error_message
+    assert client.calls == []
+
+
 def test_success_status_mentions_limits_quota_and_no_key():
     secret = "fake-groq-key-that-must-not-leak"
     gate = GroqRequestGate(

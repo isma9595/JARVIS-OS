@@ -97,6 +97,35 @@ def test_one_provider_key_attempts_only_that_provider():
     assert "only one provider succeeded" in result.final_answer
 
 
+def test_private_prompt_blocks_consensus_before_provider_attempts():
+    calls = []
+    result = manager(
+        {"GROQ_API_KEY": "fake"},
+        {"groq": lambda request: calls.append(request)},
+    ).run_consensus("это приватный файл, не отправляй в интернет")
+
+    assert result.ok is False
+    assert result.attempted_count == 0
+    assert "privacy boundary blocked" in result.final_answer
+    assert calls == []
+
+
+def test_secret_prompt_blocks_consensus_and_redacts_before_provider_attempts():
+    secret = "sk-test-1234567890secret"
+    calls = []
+    result = manager(
+        {"GROQ_API_KEY": "fake"},
+        {"groq": lambda request: calls.append(request)},
+    ).run_consensus(f"my api key {secret}")
+    text = manager({"GROQ_API_KEY": "fake"}).format_result_text(result)
+
+    assert result.ok is False
+    assert result.attempted_count == 0
+    assert secret not in text
+    assert "[REDACTED]" in text
+    assert calls == []
+
+
 def test_two_providers_succeed_final_answer_has_synthesis_sections():
     result = manager(
         {"GROQ_API_KEY": "fake", "GIGACHAT_AUTH_KEY": "fake"},

@@ -9,6 +9,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 import os
 
+from ai.context_privacy_policy import AIContextPrivacyPolicy, AIContextSensitivity
 from ai.provider_config import AIProviderKeyStatus
 from ai.provider_config_manager import AIProviderConfigManager
 
@@ -63,11 +64,13 @@ class AIProviderSelectionPolicy:
         self,
         config_manager: AIProviderConfigManager | None = None,
         environ=None,
+        context_privacy_policy: AIContextPrivacyPolicy | None = None,
     ):
         self.environ = os.environ if environ is None else environ
         self.config_manager = config_manager or AIProviderConfigManager(
             environ=self.environ
         )
+        self.context_privacy_policy = context_privacy_policy or AIContextPrivacyPolicy()
 
     def roles(self) -> tuple[AIProviderRole, ...]:
         configured = {
@@ -231,9 +234,76 @@ class AIProviderSelectionPolicy:
         consensus_requested: bool = False,
     ) -> AIProviderSelectionRecommendation:
         text = self._safe_prompt(prompt)
+        sensitivity = self.context_privacy_policy.classify_text(text)
         task_type = self.classify_task(text)
         key_presence = self.key_presence()
         role_by_provider = {role.provider: role for role in self.roles()}
+
+        if sensitivity == AIContextSensitivity.SECRET_LIKE:
+            return AIProviderSelectionRecommendation(
+                ok=False,
+                recommended_provider="dry_run",
+                recommended_model=role_by_provider["dry_run"].default_model,
+                reason=(
+                    "secret-like context detected; redact or handle manually before "
+                    "sending to any provider"
+                ),
+                fallback_chain=["dry_run"],
+                skipped=["all AI providers skipped for secret-like context"],
+                warnings=self._base_warnings()
+                + [
+                    "do not paste API keys, tokens, passwords, or bearer values into AI prompts",
+                    "redact the secret and retry with a non-secret summary",
+                ],
+            )
+
+        if sensitivity in {
+            AIContextSensitivity.FILE_CONTENT,
+            AIContextSensitivity.MEMORY_PROFILE,
+            AIContextSensitivity.LOG_OR_DEBUG,
+            AIContextSensitivity.SCREEN_OR_OCR,
+            AIContextSensitivity.AUDIO_TRANSCRIPT,
+            AIContextSensitivity.UNKNOWN_SENSITIVE,
+        }:
+            return AIProviderSelectionRecommendation(
+                ok=True,
+                recommended_provider="dry_run",
+                recommended_model=role_by_provider["dry_run"].default_model,
+                reason=(
+                    "raw file/memory/log/screen/audio context needs a future explicit "
+                    "context package and confirmation flow; external providers are skipped"
+                ),
+                fallback_chain=["dry_run"],
+                skipped=["external providers skipped for raw context safety"],
+                warnings=self._base_warnings()
+                + [
+                    "use Ollama only for a short user-typed summary, not raw context",
+                    "no files, logs, screen, audio, or memory were read or sent",
+                ],
+            )
+
+        if sensitivity in {
+            AIContextSensitivity.PRIVATE_OR_PERSONAL,
+            AIContextSensitivity.FILE_PATH_REFERENCE,
+        }:
+            return AIProviderSelectionRecommendation(
+                ok=True,
+                recommended_provider="ollama",
+                recommended_model=role_by_provider["ollama"].default_model,
+                reason=(
+                    "private/offline context detected; prefer Ollama for local-only "
+                    "analysis, then dry_run if unavailable"
+                ),
+                fallback_chain=["ollama", "dry_run"],
+                skipped=["external providers skipped by context privacy boundary"],
+                warnings=self._base_warnings()
+                + [
+                    "Ollama recommendation does not call runtime",
+                    "manual provider selection does not override the privacy boundary",
+                    "check local runtime with: СЃРїРёСЃРѕРє ollama РјРѕРґРµР»РµР№",
+                    "run explicit local request with: ollama СЂРµР°Р»СЊРЅС‹Р№ Р·Р°РїСЂРѕСЃ: <text>",
+                ],
+            )
 
         if self._manual_session_selected(session_snapshot):
             provider = session_snapshot.selected_provider
@@ -311,7 +381,10 @@ class AIProviderSelectionPolicy:
             f"- {provider}: {status}"
             for provider, status in self.key_presence().items()
         ]
-        next_commands = self._next_commands(recommendation, prompt)
+        next_commands = self._next_commands(
+            recommendation,
+            self.context_privacy_policy.redacted_preview(prompt),
+        )
         return "\n".join(
             [
                 "AI provider selection recommendation:",

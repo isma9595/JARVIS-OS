@@ -8,6 +8,12 @@ from ai.provider_contracts import (
     AIRequest,
     AIResponse,
 )
+from ai.context_privacy_policy import (
+    AIContextDecision,
+    AIContextPrivacyPolicy,
+    AIContextSensitivity,
+    AIContextTarget,
+)
 from ai.provider_config import (
     AIProviderConfig,
     AIProviderConfigStatus,
@@ -73,6 +79,10 @@ from ai.providers.ollama_provider import OllamaProvider
 
 __all__ = [
     "AIProvider",
+    "AIContextDecision",
+    "AIContextPrivacyPolicy",
+    "AIContextSensitivity",
+    "AIContextTarget",
     "AIProviderCapability",
     "AIProviderConfig",
     "AIProviderConfigManager",

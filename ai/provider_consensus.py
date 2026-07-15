@@ -11,6 +11,7 @@ import os
 import re
 from typing import Callable
 
+from ai.context_privacy_policy import AIContextPrivacyPolicy, AIContextTarget
 from ai.provider_config import AIProviderKeyStatus
 from ai.provider_config_manager import AIProviderConfigManager
 from ai.provider_contracts import AIProviderCapability, AIRequest, AIResponse
@@ -68,6 +69,7 @@ class AIProviderConsensusManager:
         request_gates: dict[str, object] | None = None,
         provider_callers: dict[str, Callable[[AIRequest], AIResponse]] | None = None,
         environ=None,
+        context_privacy_policy: AIContextPrivacyPolicy | None = None,
     ):
         self.config = config or AIProviderConsensusConfig()
         self.environ = os.environ if environ is None else environ
@@ -76,6 +78,7 @@ class AIProviderConsensusManager:
         )
         self.request_gates = request_gates or {}
         self.provider_callers = provider_callers or {}
+        self.context_privacy_policy = context_privacy_policy or AIContextPrivacyPolicy()
 
     def status_text_ru(self) -> str:
         providers = ", ".join(self.config.provider_order)
@@ -99,6 +102,18 @@ class AIProviderConsensusManager:
         validation_error = self._validate_prompt(prompt)
         if validation_error:
             return self._blocked_result(prompt, validation_error)
+        privacy_decision = self.context_privacy_policy.decide(
+            prompt,
+            AIContextTarget.CONSENSUS_EXTERNAL,
+        )
+        if not privacy_decision.allowed:
+            return self._blocked_result(
+                self.context_privacy_policy.redacted_preview(prompt),
+                self.context_privacy_policy.format_refusal(
+                    prompt,
+                    AIContextTarget.CONSENSUS_EXTERNAL,
+                ),
+            )
 
         results: list[AIProviderConsensusProviderResult] = []
         for provider in self.config.provider_order:

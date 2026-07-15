@@ -92,3 +92,6 @@ does not call providers, and does not change the explicit-only safety gate.
 ## TASK-064 Ollama Update
 
 Ollama is available separately as a local-only provider. TASK-064 does not add Ollama to the default consensus provider order. Consensus remains explicit-only, and a later task may define local plus external consensus mixing.
+# AI Context Privacy Preflight
+
+Consensus uses the stricter external-consensus privacy target before attempting any provider. Private, secret, file, memory, log, screen, audio, and unknown-sensitive context blocks the whole consensus request before any provider quota or network call.

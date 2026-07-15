@@ -51,3 +51,6 @@ Runtime session pinning supports `ollama`:
 - `продолжи через ту же модель: <text>`
 
 Selection is runtime-only and does not call the network. Selected Ollama requests call localhost only and fail safely if Ollama or the model is unavailable.
+# AI Context Privacy Preflight
+
+Session pinning/manual provider selection does not override the context privacy boundary. A pinned external provider is still blocked for private, secret, file, memory, log, screen, audio, or unknown-sensitive context.

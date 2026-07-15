@@ -1,6 +1,8 @@
 from pathlib import Path
 
 from ai import (
+    AIContextPrivacyPolicy,
+    AIContextTarget,
     AIProviderCapability,
     AIProviderConfigManager,
     AIProviderConsensusManager,
@@ -139,6 +141,35 @@ class CommandProcessor:
         "ai route:",
         "ai выбрать модель:",
         "ai selection:",
+    )
+    AI_CONTEXT_PRIVACY_STATUS_COMMANDS = {
+        "статус ai privacy",
+        "статус ai privacy boundary",
+        "статус ai context",
+        "статус ai context boundary",
+        "статус приватности ai",
+        "статус контекста ai",
+        "политика приватности ai",
+    }
+    AI_CONTEXT_PRIVACY_MATRIX_COMMANDS = {
+        "матрица приватности ai",
+        "матрица контекста ai",
+        "что можно отправлять ai",
+        "ai context matrix",
+        "ai privacy matrix",
+    }
+    AI_CONTEXT_PRIVACY_CHECK_PREFIXES = (
+        "проверить ai контекст:",
+        "проверить приватность ai:",
+        "можно ли отправить ai:",
+        "ai privacy check:",
+        "ai context check:",
+    )
+    AI_CONTEXT_PRIVACY_EXTERNAL_CHECK_PREFIXES = (
+        "можно ли отправить во внешний ai:",
+    )
+    AI_CONTEXT_PRIVACY_OLLAMA_CHECK_PREFIXES = (
+        "можно ли отправить в ollama:",
     )
     AI_SESSION_STATUS_COMMANDS = {
         "статус ai сессии",
@@ -1120,6 +1151,7 @@ class CommandProcessor:
         ai_provider_session_state=None,
         ai_provider_consensus_manager=None,
         ai_provider_selection_policy=None,
+        ai_context_privacy_policy=None,
     ):
         self.user_profile = user_profile or {}
         self.dialogue_manager = dialogue_manager or DialogueManager(self.user_profile)
@@ -1138,26 +1170,35 @@ class CommandProcessor:
             or getattr(ai_provider_router, "config_manager", None)
             or AIProviderConfigManager()
         )
+        self.ai_context_privacy_policy = (
+            ai_context_privacy_policy or AIContextPrivacyPolicy()
+        )
         self.ai_provider_router = ai_provider_router or AIProviderRouter(
             config_manager=self.ai_provider_config_manager
         )
         self.openai_request_gate = openai_request_gate or OpenAIRequestGate(
             config_manager=self.ai_provider_config_manager,
             router=self.ai_provider_router,
+            context_privacy_policy=self.ai_context_privacy_policy,
         )
         self.gemini_request_gate = gemini_request_gate or GeminiRequestGate(
             config_manager=self.ai_provider_config_manager,
             router=self.ai_provider_router,
+            context_privacy_policy=self.ai_context_privacy_policy,
         )
         self.groq_request_gate = groq_request_gate or GroqRequestGate(
             config_manager=self.ai_provider_config_manager,
             router=self.ai_provider_router,
+            context_privacy_policy=self.ai_context_privacy_policy,
         )
         self.gigachat_request_gate = gigachat_request_gate or GigaChatRequestGate(
             config_manager=self.ai_provider_config_manager,
             router=self.ai_provider_router,
+            context_privacy_policy=self.ai_context_privacy_policy,
         )
-        self.ollama_request_gate = ollama_request_gate or OllamaRequestGate()
+        self.ollama_request_gate = ollama_request_gate or OllamaRequestGate(
+            context_privacy_policy=self.ai_context_privacy_policy,
+        )
         self.ai_provider_language_policy = (
             ai_provider_language_policy
             or getattr(self.openai_request_gate, "language_policy", None)
@@ -1176,12 +1217,14 @@ class CommandProcessor:
                     "groq": self.groq_request_gate,
                     "gigachat": self.gigachat_request_gate,
                 },
+                context_privacy_policy=self.ai_context_privacy_policy,
             )
         )
         self.ai_provider_selection_policy = (
             ai_provider_selection_policy
             or AIProviderSelectionPolicy(
-                config_manager=self.ai_provider_config_manager
+                config_manager=self.ai_provider_config_manager,
+                context_privacy_policy=self.ai_context_privacy_policy,
             )
         )
         self.voice_input_manager = None
@@ -2247,6 +2290,48 @@ class CommandProcessor:
                 self.ai_provider_language_policy.status_text_ru(),
             )
 
+        if command in self.AI_CONTEXT_PRIVACY_STATUS_COMMANDS:
+            return self._result(
+                "ai.context_privacy.status",
+                self.ai_context_privacy_policy.status_text_ru(),
+            )
+
+        if command in self.AI_CONTEXT_PRIVACY_MATRIX_COMMANDS:
+            return self._result(
+                "ai.context_privacy.matrix",
+                self.ai_context_privacy_policy.matrix_text_ru(),
+            )
+
+        ai_context_check_text = self._extract_ai_prefixed_text(
+            command_text,
+            command,
+            self.AI_CONTEXT_PRIVACY_CHECK_PREFIXES,
+        )
+        if ai_context_check_text is not None:
+            return self._ai_context_privacy_check_result(ai_context_check_text)
+
+        ai_context_external_check_text = self._extract_ai_prefixed_text(
+            command_text,
+            command,
+            self.AI_CONTEXT_PRIVACY_EXTERNAL_CHECK_PREFIXES,
+        )
+        if ai_context_external_check_text is not None:
+            return self._ai_context_privacy_check_result(
+                ai_context_external_check_text,
+                AIContextTarget.EXTERNAL_PROVIDER,
+            )
+
+        ai_context_ollama_check_text = self._extract_ai_prefixed_text(
+            command_text,
+            command,
+            self.AI_CONTEXT_PRIVACY_OLLAMA_CHECK_PREFIXES,
+        )
+        if ai_context_ollama_check_text is not None:
+            return self._ai_context_privacy_check_result(
+                ai_context_ollama_check_text,
+                AIContextTarget.LOCAL_OLLAMA,
+            )
+
         if command in self.OPENAI_STATUS_COMMANDS:
             return self._result(
                 "ai.openai.status",
@@ -3202,6 +3287,12 @@ class CommandProcessor:
             session_snapshot=self.ai_provider_session_state.snapshot(),
         )
         return self._result("ai.selection_policy.recommendation", text)
+
+    def _ai_context_privacy_check_result(self, text, target=None):
+        return self._result(
+            "ai.context_privacy.check",
+            self.ai_context_privacy_policy.check_text_ru(text, target=target),
+        )
 
     def _generate_named_ai_result(
         self,

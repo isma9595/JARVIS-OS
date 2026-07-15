@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 import re
 
+from ai.context_privacy_policy import AIContextPrivacyPolicy, AIContextTarget
 from ai.ollama_runtime import OllamaRuntime
 from ai.provider_contracts import (
     AIProviderCapability,
@@ -35,10 +36,12 @@ class OllamaRequestGate:
         runtime: OllamaRuntime | None = None,
         provider_factory=None,
         language_policy: AIProviderLanguagePolicy | None = None,
+        context_privacy_policy: AIContextPrivacyPolicy | None = None,
     ):
         self.runtime = runtime or OllamaRuntime()
         self.provider_factory = provider_factory or OllamaProvider
         self.language_policy = language_policy or AIProviderLanguagePolicy()
+        self.context_privacy_policy = context_privacy_policy or AIContextPrivacyPolicy()
 
     def status_text(self) -> str:
         status = self.runtime.status(check_models=False)
@@ -134,6 +137,20 @@ class OllamaRequestGate:
         validation_error = self._validate_prompt(prompt)
         if validation_error:
             return OllamaRequestResult(False, self.runtime.config.model, "", validation_error)
+        privacy_decision = self.context_privacy_policy.decide(
+            prompt,
+            AIContextTarget.LOCAL_OLLAMA,
+        )
+        if not privacy_decision.allowed:
+            return OllamaRequestResult(
+                False,
+                self.runtime.config.model,
+                "",
+                self.context_privacy_policy.format_refusal(
+                    prompt,
+                    AIContextTarget.LOCAL_OLLAMA,
+                ),
+            )
         model = model_override or self.runtime.config.model
         model_error = self.validate_model(model)
         if model_error:

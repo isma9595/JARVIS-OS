@@ -127,3 +127,6 @@ Selection policy may recommend Groq for fast/general external answers when
 `GROQ_API_KEY` is PRESENT. This is recommendation-only: no network is called,
 manual session pinning wins, and real Groq use still requires an explicit
 one-shot command.
+# AI Context Privacy Preflight
+
+Groq real one-shot requests are blocked by the context privacy boundary for sensitive/private/secret/file/memory/log/screen/audio context before any provider call.

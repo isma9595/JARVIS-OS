@@ -97,3 +97,6 @@ one-shot commands, and consensus remains explicit-only.
 ## TASK-064 Ollama Update
 
 The same provider language policy is applied to explicit Ollama one-shot prompts. It does not send memory, profile, files, or logs automatically, and model responses are not executed as commands.
+# AI Context Privacy Preflight
+
+Language policy runs only after the context privacy preflight allows a request. If the prompt is blocked as sensitive, no language rewrite is sent to a provider.

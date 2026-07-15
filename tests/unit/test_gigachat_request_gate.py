@@ -113,6 +113,44 @@ def test_present_key_fake_token_and_client_succeeds_without_persistence():
     assert "fake-token" not in result.text
 
 
+def test_private_prompt_blocks_before_fake_provider_call():
+    client = FakeHTTPClient()
+    token_manager = FakeTokenManager()
+    gate = GigaChatRequestGate(
+        config_manager=AIProviderConfigManager(environ={"GIGACHAT_AUTH_KEY": "fake-key"}),
+        http_client=client,
+        token_manager=token_manager,
+        environ={"GIGACHAT_AUTH_KEY": "fake-key"},
+    )
+
+    response = gate.generate_one_shot(AIRequest(prompt="это приватный файл, не отправляй в интернет"))
+
+    assert response.is_error is True
+    assert "privacy boundary blocked" in response.error_message
+    assert client.calls == []
+    assert token_manager.calls == 0
+
+
+def test_secret_prompt_blocks_and_redacts_before_fake_provider_call():
+    secret = "sk-test-1234567890secret"
+    client = FakeHTTPClient()
+    token_manager = FakeTokenManager()
+    gate = GigaChatRequestGate(
+        config_manager=AIProviderConfigManager(environ={"GIGACHAT_AUTH_KEY": "fake-key"}),
+        http_client=client,
+        token_manager=token_manager,
+        environ={"GIGACHAT_AUTH_KEY": "fake-key"},
+    )
+
+    response = gate.generate_one_shot(AIRequest(prompt=f"my api key {secret}"))
+
+    assert response.is_error is True
+    assert secret not in response.error_message
+    assert "[REDACTED]" in response.error_message
+    assert client.calls == []
+    assert token_manager.calls == 0
+
+
 def test_status_and_request_shape_safe_no_secrets():
     secret = "fake-auth-key-that-must-not-leak"
     gate = GigaChatRequestGate(

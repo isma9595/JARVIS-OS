@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, replace
 import os
 
+from ai.context_privacy_policy import AIContextPrivacyPolicy, AIContextTarget
 from ai.gigachat_cost_guard import GigaChatRequestCostGuard
 from ai.gigachat_token_manager import GigaChatTokenManager
 from ai.provider_language_policy import AIProviderLanguagePolicy
@@ -43,6 +44,7 @@ class GigaChatRequestGate:
         environ=None,
         request_guard: GigaChatRequestCostGuard | None = None,
         language_policy: AIProviderLanguagePolicy | None = None,
+        context_privacy_policy: AIContextPrivacyPolicy | None = None,
     ):
         self.config_manager = config_manager or AIProviderConfigManager(environ=environ)
         self.router = router
@@ -51,6 +53,7 @@ class GigaChatRequestGate:
         self.environ = os.environ if environ is None else environ
         self.request_guard = request_guard or GigaChatRequestCostGuard(environ=self.environ)
         self.language_policy = language_policy or AIProviderLanguagePolicy()
+        self.context_privacy_policy = context_privacy_policy or AIContextPrivacyPolicy()
         self.token_manager = token_manager or GigaChatTokenManager(
             environ=self.environ,
             http_client=token_http_client,
@@ -94,6 +97,19 @@ class GigaChatRequestGate:
         validation_error = request.validation_error()
         if validation_error:
             return self._error_response(capability, validation_error)
+
+        privacy_decision = self.context_privacy_policy.decide(
+            request.prompt,
+            AIContextTarget.EXTERNAL_PROVIDER,
+        )
+        if not privacy_decision.allowed:
+            return self._error_response(
+                capability,
+                self.context_privacy_policy.format_refusal(
+                    request.prompt,
+                    AIContextTarget.EXTERNAL_PROVIDER,
+                ),
+            )
 
         guard_result = self.request_guard.guard_request(
             request.prompt,

@@ -68,6 +68,38 @@ def test_present_key_fake_client_calls_provider_once():
     assert response.model_name == "gpt-5.6"
 
 
+def test_private_prompt_blocks_before_fake_provider_call():
+    client = FakeHTTPClient()
+    gate = OpenAIRequestGate(
+        config_manager=AIProviderConfigManager(environ={"OPENAI_API_KEY": "fake-key"}),
+        http_client=client,
+        environ={"OPENAI_API_KEY": "fake-key"},
+    )
+
+    response = gate.generate_one_shot(AIRequest(prompt="это приватный файл, не отправляй в интернет"))
+
+    assert response.is_error is True
+    assert "privacy boundary blocked" in response.error_message
+    assert client.calls == []
+
+
+def test_secret_prompt_blocks_and_redacts_before_fake_provider_call():
+    secret = "sk-test-1234567890secret"
+    client = FakeHTTPClient()
+    gate = OpenAIRequestGate(
+        config_manager=AIProviderConfigManager(environ={"OPENAI_API_KEY": "fake-key"}),
+        http_client=client,
+        environ={"OPENAI_API_KEY": "fake-key"},
+    )
+
+    response = gate.generate_one_shot(AIRequest(prompt=f"my api key {secret}"))
+
+    assert response.is_error is True
+    assert secret not in response.error_message
+    assert "[REDACTED]" in response.error_message
+    assert client.calls == []
+
+
 def test_one_shot_does_not_change_router_default():
     router = AIProviderRouter()
     client = FakeHTTPClient()

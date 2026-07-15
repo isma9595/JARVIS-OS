@@ -459,6 +459,37 @@ def test_selection_policy_recommendation_commands_are_not_allowlisted():
         assert decision.canonical_command is None
 
 
+def test_ai_privacy_status_and_matrix_voice_commands_are_allowlisted_but_checks_are_not():
+    allowlist = SafeVoiceCommandAllowlist()
+
+    for command, canonical in (
+        ("статус ai privacy", "статус ai privacy"),
+        ("статус ai context boundary", "статус ai privacy"),
+        ("статус приватности ai", "статус ai privacy"),
+        ("статус контекста ai", "статус ai privacy"),
+        ("политика приватности ai", "статус ai privacy"),
+        ("матрица приватности ai", "матрица приватности ai"),
+        ("матрица контекста ai", "матрица приватности ai"),
+        ("что можно отправлять ai", "матрица приватности ai"),
+    ):
+        decision = allowlist.decide(command)
+
+        assert decision.allowed is True
+        assert decision.canonical_command == canonical
+
+    for command in (
+        "проверить ai контекст: приватный файл",
+        "проверить приватность ai: token abc",
+        "можно ли отправить ai: hello",
+        "ai privacy check: hello",
+        "ai context check: hello",
+    ):
+        decision = allowlist.decide(command)
+
+        assert decision.allowed is False
+        assert decision.canonical_command is None
+
+
 def test_real_ai_requests_remain_not_allowlisted():
     allowlist = SafeVoiceCommandAllowlist()
 

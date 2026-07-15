@@ -103,3 +103,6 @@ Selection policy may recommend GigaChat for Russian/Russia-oriented tasks when
 `GIGACHAT_AUTH_KEY` is PRESENT. This is recommendation-only: no network is
 called, manual session pinning wins, and real GigaChat use still requires an
 explicit one-shot command.
+# AI Context Privacy Preflight
+
+GigaChat real one-shot requests are blocked by the context privacy boundary for sensitive/private/secret/file/memory/log/screen/audio context before auth token or provider calls.

@@ -68,3 +68,6 @@ Recommendation commands only recommend the next explicit command, such as
 Ollama is now implemented as a local-only explicit one-shot provider. For private/offline prompts the policy recommends `ollama -> dry_run`: Ollama if the user wants real local intelligence and has a local runtime/model ready, otherwise `dry_run` as the safest no-AI/no-service fallback.
 
 Policy recommendations do not call Ollama. Safe next steps are `список ollama моделей` and `ollama реальный запрос: <text>`. No external network or API key is required.
+# AI Context Privacy Preflight
+
+Provider selection now uses the context privacy classifier. Private/offline prompts recommend `ollama -> dry_run`; secret-like prompts recommend redaction/manual handling; raw file, memory, screen, audio, and log context does not recommend external providers.

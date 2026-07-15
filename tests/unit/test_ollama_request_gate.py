@@ -75,6 +75,33 @@ def test_one_shot_success_applies_language_policy_and_stream_false():
     assert "JARVIS" in client.post_calls[0]["payload"]["messages"][0]["content"]
 
 
+def test_ollama_allows_private_typed_prompt_for_local_call():
+    client = FakeOllamaClient()
+    request_gate = gate(client)
+
+    response = request_gate.generate_one_shot(
+        AIRequest(prompt="это приватный файл, не отправляй в интернет"),
+        capability=AIProviderCapability.CHAT,
+    )
+
+    assert response.is_error is False
+    assert len(client.post_calls) == 1
+
+
+def test_ollama_blocks_secret_like_prompt_before_local_call():
+    secret = "sk-test-1234567890secret"
+    client = FakeOllamaClient()
+    request_gate = gate(client)
+
+    response = request_gate.generate_one_shot(AIRequest(prompt=f"my api key {secret}"))
+
+    assert response.is_error is True
+    assert secret not in response.error_message
+    assert "[REDACTED]" in response.error_message
+    assert client.get_calls == []
+    assert client.post_calls == []
+
+
 def test_unsafe_model_override_rejected_before_network():
     client = FakeOllamaClient()
     request_gate = gate(client)

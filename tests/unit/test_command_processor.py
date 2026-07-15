@@ -4532,3 +4532,68 @@ def test_ai_selection_output_not_routed_to_action_router():
     assert result["intent"] == "ai.selection_policy.recommendation"
     assert "provider response execution: not applicable" in result["response"]
     assert processor.action_router.calls == 0
+
+
+def test_ai_context_privacy_status_matrix_and_check_commands_work_without_action_router():
+    class FailingActionRouter:
+        calls = 0
+
+        def route(self, command):
+            self.calls += 1
+            raise AssertionError("privacy commands must not route to ActionRouter")
+
+    processor = CommandProcessor()
+    processor.action_router = FailingActionRouter()
+
+    for command in ("статус ai privacy", "политика приватности ai"):
+        result = processor.process(command)
+
+        assert result["intent"] == "ai.context_privacy.status"
+        assert "deterministic preflight" in result["response"]
+        assert "network: not called" in result["response"]
+
+    result = processor.process("матрица приватности ai")
+    assert result["intent"] == "ai.context_privacy.matrix"
+    assert "external providers" in result["response"]
+    assert "Ollama/local" in result["response"]
+
+    result = processor.process("проверить ai контекст: обычный вопрос")
+    assert result["intent"] == "ai.context_privacy.check"
+    assert "user_typed_general" in result["response"]
+
+    result = processor.process("можно ли отправить ai: обычный вопрос")
+    assert result["intent"] == "ai.context_privacy.check"
+    assert "Decisions:" in result["response"]
+    assert processor.action_router.calls == 0
+
+
+def test_ai_context_privacy_check_redacts_secret():
+    secret = "sk-test-1234567890secret"
+
+    result = CommandProcessor().process(f"проверить ai контекст: мой api key {secret}")
+
+    assert result["intent"] == "ai.context_privacy.check"
+    assert secret not in result["response"]
+    assert "[REDACTED]" in result["response"]
+    assert "secret_like" in result["response"]
+
+
+def test_external_ollama_and_consensus_privacy_blocks_before_attempts(monkeypatch):
+    for env_var in ("GROQ_API_KEY", "OLLAMA_MODEL"):
+        monkeypatch.delenv(env_var, raising=False)
+    processor = CommandProcessor()
+
+    groq_result = processor.process("groq реальный запрос: это приватный файл, не отправляй в интернет")
+    assert groq_result["intent"] == "ai.groq.one_shot.error"
+    assert "privacy boundary blocked" in groq_result["response"]
+    assert "GROQ_API_KEY is missing" not in groq_result["response"]
+
+    secret = "sk-test-1234567890secret"
+    ollama_result = processor.process(f"ollama реальный запрос: мой api key {secret}")
+    assert ollama_result["intent"] == "ai.ollama.one_shot.error"
+    assert "privacy boundary blocked" in ollama_result["response"]
+    assert secret not in ollama_result["response"]
+
+    consensus_result = processor.process("консенсус ai: это приватный файл, не отправляй в интернет")
+    assert consensus_result["intent"] == "ai.consensus.error"
+    assert "privacy boundary blocked" in consensus_result["response"]

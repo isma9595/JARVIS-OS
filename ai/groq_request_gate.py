@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, replace
 import os
 
+from ai.context_privacy_policy import AIContextPrivacyPolicy, AIContextTarget
 from ai.groq_cost_guard import GroqRequestCostGuard
 from ai.provider_language_policy import AIProviderLanguagePolicy
 from ai.provider_config import AIProviderConfig, AIProviderKeyStatus
@@ -40,6 +41,7 @@ class GroqRequestGate:
         environ=None,
         request_guard: GroqRequestCostGuard | None = None,
         language_policy: AIProviderLanguagePolicy | None = None,
+        context_privacy_policy: AIContextPrivacyPolicy | None = None,
     ):
         self.config_manager = config_manager or AIProviderConfigManager(environ=environ)
         self.router = router
@@ -48,6 +50,7 @@ class GroqRequestGate:
         self.environ = os.environ if environ is None else environ
         self.request_guard = request_guard or GroqRequestCostGuard(environ=self.environ)
         self.language_policy = language_policy or AIProviderLanguagePolicy()
+        self.context_privacy_policy = context_privacy_policy or AIContextPrivacyPolicy()
 
     def can_make_real_request(self) -> GroqRequestGateStatus:
         status = self.config_manager.status_for("groq")
@@ -86,6 +89,19 @@ class GroqRequestGate:
         validation_error = request.validation_error()
         if validation_error:
             return self._error_response(capability, validation_error)
+
+        privacy_decision = self.context_privacy_policy.decide(
+            request.prompt,
+            AIContextTarget.EXTERNAL_PROVIDER,
+        )
+        if not privacy_decision.allowed:
+            return self._error_response(
+                capability,
+                self.context_privacy_policy.format_refusal(
+                    request.prompt,
+                    AIContextTarget.EXTERNAL_PROVIDER,
+                ),
+            )
 
         guard_result = self.request_guard.guard_request(
             request.prompt,
