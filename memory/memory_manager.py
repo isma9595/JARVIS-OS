@@ -1,7 +1,8 @@
 import json
-from datetime import datetime
 from pathlib import Path
 from uuid import uuid4
+
+from core.time_utils import utc_now_iso_z
 
 
 class LocalMemoryManager:
@@ -118,7 +119,7 @@ class LocalMemoryManager:
             memory_file.write("\n")
 
     def _timestamp(self):
-        return datetime.utcnow().replace(microsecond=0).isoformat() + "Z"
+        return utc_now_iso_z()
 
     def _matches_query(self, content, query):
         if query in content:
