@@ -89,3 +89,10 @@ Do not paste the auth key into chat logs or JARVIS commands.
 - 429: quota or rate limit.
 - Token expired: the next explicit one-shot obtains a fresh token.
 - TLS/certificate/network error: local network or certificate trust issue.
+
+## TASK-062 Consensus Note
+
+GigaChat may be attempted by explicit consensus commands only when
+`GIGACHAT_AUTH_KEY` is present. Consensus uses the GigaChat one-shot gate, does
+not enable GigaChat permanently, does not override session pinning, and does not
+include `dry_run` as a real consensus provider.

@@ -1,8 +1,9 @@
 # JARVIS-OS Checkpoint
 
-- Current stable stage: TASK-060 — AI Provider Language Policy / Russian-First Responses
-- Last stable commit: 61c10da
-- Next stage: TASK-061 — AI Provider Session Pinning / Manual Model Selection
+- Current stable stage: TASK-061 — AI Provider Session Pinning / Manual Model Selection
+- Last stable commit: 77c3a4b
+- Last stable commit message: Add AI provider session pinning
+- Next stage: TASK-062 — Multi-Provider Consensus / Compare AI Answers
 - Status: in progress
 
 ## Approved Workflow

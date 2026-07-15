@@ -353,6 +353,39 @@ def test_language_policy_status_commands_are_allowlisted():
         assert decision.canonical_command == "статус ai language policy"
 
 
+def test_consensus_status_commands_are_allowlisted():
+    allowlist = SafeVoiceCommandAllowlist()
+
+    for command in (
+        "статус ai consensus",
+        "статус ai консенсуса",
+        "статус консенсус ai",
+        "статус сравнения ai",
+    ):
+        decision = allowlist.decide(command)
+
+        assert decision.allowed is True
+        assert decision.canonical_command == "статус ai consensus"
+
+
+def test_consensus_real_commands_are_not_allowlisted():
+    allowlist = SafeVoiceCommandAllowlist()
+
+    for command in (
+        "консенсус ai привет",
+        "консенсус ai: привет",
+        "ai консенсус: привет",
+        "спроси все ai привет",
+        "спроси все ai: привет",
+        "сравни ответы ai: привет",
+        "ai compare: hello",
+        "ai consensus: hello",
+    ):
+        decision = allowlist.decide(command)
+
+        assert decision.allowed is False
+
+
 def test_real_ai_requests_remain_not_allowlisted():
     allowlist = SafeVoiceCommandAllowlist()
 

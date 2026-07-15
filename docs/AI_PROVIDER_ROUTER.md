@@ -161,3 +161,10 @@ order is now `dry_run`, OpenAI, Gemini, Groq, GigaChat.
 The default provider remains `dry_run`. Normal GigaChat ask commands return a
 safe no-network message, and real GigaChat requests are explicit one-shot only.
 Auth key and OAuth token values are never printed.
+
+## TASK-062 Consensus Note
+
+Multi-provider consensus is explicit-only. It uses the existing one-shot gates
+for Groq, GigaChat, OpenAI, and Gemini, does not override session pinning, and
+does not include `dry_run` as a real consensus provider. `dry_run` remains the
+default router provider.

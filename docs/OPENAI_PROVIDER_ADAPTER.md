@@ -71,3 +71,10 @@ The adapter still does not send memory, profile data, files, logs, tools, stream
 ## TASK-058 Note
 
 OpenAI remains optional and may require paid billing. Gemini and Groq are tracked as free-tier candidates, but they also remain disabled by default and explicit one-shot only.
+
+## TASK-062 Consensus Note
+
+OpenAI may be attempted by explicit consensus commands only when
+`OPENAI_API_KEY` is present. Consensus uses the OpenAI one-shot gate, does not
+enable OpenAI permanently, does not override session pinning, and does not
+include `dry_run` as a real consensus provider.

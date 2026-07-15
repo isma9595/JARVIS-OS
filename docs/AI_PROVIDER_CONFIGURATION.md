@@ -119,3 +119,11 @@ for OAuth scope. The default model is `GigaChat`, and the default scope is
 OAuth access tokens are cached in memory only, never written to disk, and never
 printed. GigaChat remains disabled by default, `dry_run` remains default, and
 status/key/token checks stay offline.
+
+## TASK-062 Consensus Note
+
+Consensus mode is explicit-only. It considers Groq, GigaChat, OpenAI, and
+Gemini in deterministic order, attempts only providers with a present required
+environment key, and uses existing one-shot gates. It does not make any external
+provider default, does not store prompts or responses, and does not include
+`dry_run` as a real consensus provider.

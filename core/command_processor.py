@@ -3,6 +3,7 @@ from pathlib import Path
 from ai import (
     AIProviderCapability,
     AIProviderConfigManager,
+    AIProviderConsensusManager,
     AIProviderRouter,
     AIProviderSessionState,
     AIRequest,
@@ -106,6 +107,13 @@ class CommandProcessor:
         "язык ai",
         "ai язык",
     }
+    AI_CONSENSUS_STATUS_COMMANDS = {
+        "статус ai consensus",
+        "статус ai консенсуса",
+        "статус консенсус ai",
+        "ai consensus status",
+        "статус сравнения ai",
+    }
     AI_SESSION_STATUS_COMMANDS = {
         "статус ai сессии",
         "статус ai session",
@@ -147,6 +155,15 @@ class CommandProcessor:
         "ai continue:",
         "ai continuation:",
         "continue ai:",
+    )
+    AI_CONSENSUS_PREFIXES = (
+        "консенсус ai:",
+        "ai консенсус:",
+        "спроси все ai:",
+        "сравни ответы ai:",
+        "сравнить ответы ai:",
+        "ai compare:",
+        "ai consensus:",
     )
     OPENAI_STATUS_COMMANDS = {
         "статус openai",
@@ -1041,6 +1058,7 @@ class CommandProcessor:
         gigachat_request_gate=None,
         ai_provider_language_policy=None,
         ai_provider_session_state=None,
+        ai_provider_consensus_manager=None,
     ):
         self.user_profile = user_profile or {}
         self.dialogue_manager = dialogue_manager or DialogueManager(self.user_profile)
@@ -1085,6 +1103,18 @@ class CommandProcessor:
         )
         self.ai_provider_session_state = (
             ai_provider_session_state or AIProviderSessionState()
+        )
+        self.ai_provider_consensus_manager = (
+            ai_provider_consensus_manager
+            or AIProviderConsensusManager(
+                config_manager=self.ai_provider_config_manager,
+                request_gates={
+                    "openai": self.openai_request_gate,
+                    "gemini": self.gemini_request_gate,
+                    "groq": self.groq_request_gate,
+                    "gigachat": self.gigachat_request_gate,
+                },
+            )
         )
         self.voice_input_manager = None
         if voice_output_manager is None:
@@ -1805,6 +1835,12 @@ class CommandProcessor:
                 self.ai_provider_session_state.status_text_ru(),
             )
 
+        if command in self.AI_CONSENSUS_STATUS_COMMANDS:
+            return self._result(
+                "ai.consensus.status",
+                self.ai_provider_consensus_manager.status_text_ru(),
+            )
+
         if command in self.AI_SESSION_MODEL_LIST_COMMANDS:
             return self._result(
                 "ai.session.models",
@@ -1844,6 +1880,14 @@ class CommandProcessor:
         )
         if ai_continuation_text is not None:
             return self._generate_ai_continuation_result(ai_continuation_text)
+
+        ai_consensus_text = self._extract_ai_prefixed_text(
+            command_text,
+            command,
+            self.AI_CONSENSUS_PREFIXES,
+        )
+        if ai_consensus_text is not None:
+            return self._generate_ai_consensus_result(ai_consensus_text)
 
         ai_chat_text = self._extract_ai_prefixed_text(
             command_text,
@@ -3025,6 +3069,12 @@ class CommandProcessor:
             result_intent,
             response.text,
         )
+
+    def _generate_ai_consensus_result(self, prompt):
+        result = self.ai_provider_consensus_manager.run_consensus(prompt)
+        text = self.ai_provider_consensus_manager.format_result_text(result)
+        intent = "ai.consensus" if result.ok else "ai.consensus.error"
+        return self._result(intent, text)
 
     def _generate_named_ai_result(
         self,
@@ -4242,6 +4292,7 @@ class CommandProcessor:
             "с реальным распознаванием. "
             "AI foundation сейчас работает только в dry-run/offline режиме: статус ai; список ai провайдеров; спроси ai: <текст>; ai кратко: <текст>; ai классифицируй: <текст>. "
             "AI session/model pinning: статус ai сессии; список ai моделей; выбрать ai модель <provider> <model>; ai реальный запрос: <текст>; продолжи через ту же модель: <текст>; сбросить ai сессию. "
+            "AI consensus: статус ai consensus; консенсус ai: <текст>; спроси все ai: <текст>; сравни ответы ai: <текст>; только явная команда может вызвать несколько внешних one-shot провайдеров, dry_run не входит в реальный consensus, ответы не выполняются как команды. "
             "OpenAI adapter: статус openai; проверить openai ключ; спроси openai: <текст> пока показывает безопасный отказ без сетевого запроса. "
             "OpenAI one-shot: статус openai one shot; статус openai guard; лимиты openai; openai модель; openai реальный запрос: <текст>; только явная one-shot команда может сделать один реальный запрос, OpenAI не включается постоянно, dry_run остается default, ключ не печатается, ответ не выполняется как команда, max_output_tokens ограничен, реальный API может использовать лимит аккаунта. "
             "Gemini adapter: статус gemini; проверить gemini ключ; статус gemini guard; лимиты gemini; gemini модель; спроси gemini: <текст> показывает безопасный отказ без сетевого запроса; gemini реальный запрос: <текст> или gemini one shot: <текст> делает только явный one-shot при наличии GEMINI_API_KEY, Gemini не включается постоянно, dry_run остается default, ключ не печатается, ответ не выполняется как команда, free tier/quota может использоваться. "

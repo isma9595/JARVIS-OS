@@ -52,6 +52,12 @@ class SafeVoiceCommandAllowlist:
             "язык ai",
             "ai язык",
         },
+        "статус ai consensus": {
+            "статус ai consensus",
+            "статус ai консенсуса",
+            "статус консенсус ai",
+            "статус сравнения ai",
+        },
         "статус ai сессии": {
             "статус ai сессии",
         },

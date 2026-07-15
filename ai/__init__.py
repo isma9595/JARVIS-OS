@@ -22,6 +22,12 @@ from ai.provider_language_policy import (
     AIProviderLanguagePolicyResult,
 )
 from ai.provider_session import AIProviderSessionSnapshot, AIProviderSessionState
+from ai.provider_consensus import (
+    AIProviderConsensusConfig,
+    AIProviderConsensusManager,
+    AIProviderConsensusProviderResult,
+    AIProviderConsensusResult,
+)
 from ai.openai_cost_guard import (
     OpenAIRequestCostGuard,
     OpenAIRequestGuardConfig,
@@ -58,6 +64,10 @@ __all__ = [
     "AIProviderConfig",
     "AIProviderConfigManager",
     "AIProviderConfigStatus",
+    "AIProviderConsensusConfig",
+    "AIProviderConsensusManager",
+    "AIProviderConsensusProviderResult",
+    "AIProviderConsensusResult",
     "AIProviderInfo",
     "AIProviderKeyStatus",
     "AIProviderLanguagePolicy",

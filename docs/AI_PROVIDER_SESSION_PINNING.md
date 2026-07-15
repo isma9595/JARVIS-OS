@@ -28,3 +28,9 @@ Safety rules:
 - One-shot selected-provider requests use existing provider gates and refuse safely when the required key is missing.
 - Provider responses are never executed as commands.
 - Session state stores only provider/model metadata and last successful provider metadata.
+
+## TASK-062 Consensus Note
+
+Consensus mode does not overwrite manual selected provider/model state. It is an
+explicit comparison path that uses existing one-shot gates and leaves `dry_run`
+as the default provider.

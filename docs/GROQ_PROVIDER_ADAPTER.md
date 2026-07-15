@@ -113,3 +113,10 @@ Remove-Item Env:GROQ_MODEL
 - Never paste real keys into chat, logs, docs, tests, or shell history examples.
 - Revoke leaked keys immediately in Groq Console.
 - JARVIS should never print the key value. It should only show whether the key is present.
+
+## TASK-062 Consensus Note
+
+Groq may be attempted by explicit consensus commands only when `GROQ_API_KEY` is
+present. Consensus uses the Groq one-shot gate, does not enable Groq
+permanently, does not override session pinning, and does not include `dry_run`
+as a real consensus provider.

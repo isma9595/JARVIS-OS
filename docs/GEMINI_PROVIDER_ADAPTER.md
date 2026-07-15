@@ -113,3 +113,10 @@ Remove-Item Env:GEMINI_MODEL
 ## TASK-058 Note
 
 Gemini live checks may fail when Google API location or free-tier availability is blocked. In that case Groq is the next disabled, one-shot fallback candidate.
+
+## TASK-062 Consensus Note
+
+Gemini may be attempted by explicit consensus commands only when
+`GEMINI_API_KEY` is present. Consensus uses the Gemini one-shot gate, does not
+enable Gemini permanently, does not override session pinning, and does not
+include `dry_run` as a real consensus provider.

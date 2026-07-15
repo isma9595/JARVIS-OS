@@ -82,3 +82,9 @@ Status output is read-only and reports that network is not called.
 - External providers may still ignore instructions.
 - Persistent language settings are intentionally not implemented in this task.
 - A later task can add user-configurable language preferences.
+
+## TASK-062 Consensus Note
+
+Consensus mode uses the existing one-shot gates, so the current language policy
+still applies to each provider request. The deterministic JARVIS synthesis is
+Russian-first by default and does not send memory, profile, files, or logs.

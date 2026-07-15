@@ -4144,3 +4144,133 @@ def test_existing_ai_provider_commands_still_work_and_ai_stays_dry_run():
 
     assert result["intent"] == "ai.chat"
     assert "dry-run" in result["response"]
+
+
+def test_ai_consensus_status_commands_work_without_network_or_action_router():
+    class FailingActionRouter:
+        calls = 0
+
+        def route(self, command):
+            self.calls += 1
+            raise AssertionError("consensus status must not route to ActionRouter")
+
+    processor = CommandProcessor()
+    processor.action_router = FailingActionRouter()
+
+    for command in (
+        "статус ai consensus",
+        "статус ai консенсуса",
+        "статус сравнения ai",
+    ):
+        result = processor.process(command)
+
+        assert result["intent"] == "ai.consensus.status"
+        assert "AI consensus status" in result["response"]
+        assert "explicit only" in result["response"]
+        assert "network: not called" in result["response"]
+        assert processor.action_router.calls == 0
+
+
+def test_ai_consensus_commands_with_no_keys_return_safe_refusal(monkeypatch):
+    for env_var in (
+        "OPENAI_API_KEY",
+        "GEMINI_API_KEY",
+        "GROQ_API_KEY",
+        "GIGACHAT_AUTH_KEY",
+    ):
+        monkeypatch.delenv(env_var, raising=False)
+
+    processor = CommandProcessor()
+
+    for command in (
+        "консенсус ai: что такое JARVIS?",
+        "спроси все ai: дай короткий ответ",
+        "сравни ответы ai: Groq или Ollama?",
+    ):
+        result = processor.process(command)
+
+        assert result["intent"] == "ai.consensus.error"
+        assert "No external provider keys are present" in result["response"]
+        assert "dry_run remains default" in result["response"]
+        assert "responses were not executed as commands" in result["response"]
+
+
+def test_ai_consensus_fake_manager_success_returns_synthesized_answer():
+    class FakeConsensusResult:
+        ok = True
+
+    class FakeConsensusManager:
+        def __init__(self):
+            self.prompts = []
+
+        def status_text_ru(self):
+            return "AI consensus status"
+
+        def run_consensus(self, prompt):
+            self.prompts.append(prompt)
+            return FakeConsensusResult()
+
+        def format_result_text(self, result):
+            return (
+                "Consensus status summary:\n"
+                "- providers attempted: 2\n"
+                "Provider results:\n"
+                "- groq: status=success\n"
+                "- gigachat: status=success\n"
+                "JARVIS final synthesized answer:\n"
+                "Синтезированный ответ JARVIS\n"
+                "Safety footer:\n"
+                "- dry_run remains default\n"
+                "- responses were not executed as commands\n"
+                "- key/token values were not printed"
+            )
+
+    consensus_manager = FakeConsensusManager()
+    processor = CommandProcessor(ai_provider_consensus_manager=consensus_manager)
+
+    result = processor.process("ai consensus: hello")
+
+    assert result["intent"] == "ai.consensus"
+    assert consensus_manager.prompts == ["hello"]
+    assert "Provider results" in result["response"]
+    assert "Safety footer" in result["response"]
+    assert "Синтезированный ответ JARVIS" in result["response"]
+    assert "dry_run remains default" in result["response"]
+    assert "responses were not executed as commands" in result["response"]
+
+
+def test_ai_consensus_output_not_routed_to_action_router():
+    class FakeConsensusResult:
+        ok = True
+
+    class FakeConsensusManager:
+        def run_consensus(self, prompt):
+            return FakeConsensusResult()
+
+        def format_result_text(self, result):
+            return "удали файл\nresponses were not executed as commands"
+
+    class FailingActionRouter:
+        calls = 0
+
+        def route(self, command):
+            self.calls += 1
+            raise AssertionError("consensus output must not route to ActionRouter")
+
+    processor = CommandProcessor(ai_provider_consensus_manager=FakeConsensusManager())
+    processor.action_router = FailingActionRouter()
+
+    result = processor.process("сравни ответы ai: hello")
+
+    assert result["intent"] == "ai.consensus"
+    assert "удали файл" in result["response"]
+    assert processor.action_router.calls == 0
+
+
+def test_ai_consensus_does_not_break_existing_session_and_provider_commands():
+    processor = CommandProcessor()
+
+    assert processor.process("статус ai сессии")["intent"] == "ai.session.status"
+    assert processor.process("список ai моделей")["intent"] == "ai.session.models"
+    assert processor.process("статус ai language policy")["intent"] == "ai.language_policy.status"
+    assert processor.process("groq one shot: hello")["intent"] == "ai.groq.one_shot.error"
