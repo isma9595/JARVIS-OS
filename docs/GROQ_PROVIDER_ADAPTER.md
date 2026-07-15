@@ -1,5 +1,12 @@
 # Groq Provider Adapter
 
+## TASK-060 Language Policy
+
+Groq real one-shot prompts pass through the shared AI provider language policy before
+the HTTP request. The default is Russian-first, while explicit user language requests
+and translation targets are respected. `dry_run` remains default, Groq is not enabled
+permanently, and AI responses are not executed as commands.
+
 TASK-058 adds Groq as the next free-tier fallback candidate after Gemini live availability was blocked by location/free-tier access.
 
 TASK-059 adds GigaChat after Groq as the next Russia-friendly fallback provider.

@@ -58,11 +58,12 @@ def test_present_key_fake_client_calls_provider_once():
     assert response.is_error is False
     assert response.text == "fake answer"
     assert len(client.calls) == 1
-    assert client.calls[0]["payload"] == {
-        "model": "gpt-5.6",
-        "input": "hello",
-        "max_output_tokens": 128,
-    }
+    sent_prompt = client.calls[0]["payload"]["input"]
+    assert client.calls[0]["payload"]["model"] == "gpt-5.6"
+    assert client.calls[0]["payload"]["max_output_tokens"] == 128
+    assert sent_prompt.startswith("Системная инструкция JARVIS:")
+    assert "Отвечай на русском языке" in sent_prompt
+    assert sent_prompt.endswith("hello")
     assert secret not in response.text
     assert response.model_name == "gpt-5.6"
 
@@ -193,3 +194,21 @@ def test_guard_status_mentions_limits_and_cost_warning():
     assert "max prompt chars: 1200" in text
     assert "max_output_tokens: 128" in text
     assert "account credits/limits" in text
+
+
+def test_explicit_english_prompt_does_not_force_russian():
+    client = FakeHTTPClient()
+    gate = OpenAIRequestGate(
+        config_manager=AIProviderConfigManager(environ={"OPENAI_API_KEY": "fake-key"}),
+        http_client=client,
+        environ={"OPENAI_API_KEY": "fake-key"},
+    )
+
+    response = gate.generate_one_shot(AIRequest(prompt="Answer in English: hello"))
+
+    assert response.is_error is False
+    sent_prompt = client.calls[0]["payload"]["input"]
+    assert sent_prompt.startswith("Системная инструкция JARVIS:")
+    assert "Отвечай на русском языке" not in sent_prompt
+    assert "Соблюдай эту просьбу" in sent_prompt
+    assert sent_prompt.endswith("Answer in English: hello")

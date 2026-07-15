@@ -85,10 +85,11 @@ def test_present_key_fake_client_succeeds():
     assert response.is_error is False
     assert response.text == "fake answer"
     assert len(client.calls) == 1
-    assert client.calls[0]["payload"] == {
-        "contents": [{"parts": [{"text": "hello"}]}],
-        "generationConfig": {"maxOutputTokens": 128},
-    }
+    sent_prompt = client.calls[0]["payload"]["contents"][0]["parts"][0]["text"]
+    assert client.calls[0]["payload"]["generationConfig"] == {"maxOutputTokens": 128}
+    assert sent_prompt.startswith("Системная инструкция JARVIS:")
+    assert "Отвечай на русском языке" in sent_prompt
+    assert sent_prompt.endswith("hello")
     assert response.model_name == "gemini-2.5-flash-lite"
     assert secret not in response.text
 
@@ -125,3 +126,21 @@ def test_one_shot_does_not_change_router_default_or_persist_enabled_state():
     assert router.get_default_provider().get_info().name == "dry_run"
     assert manager.get_config("gemini").enabled is False
     assert manager.status_for("gemini").enabled is False
+
+
+def test_explicit_russian_text_asking_english_does_not_force_russian():
+    client = FakeHTTPClient()
+    gate = GeminiRequestGate(
+        config_manager=AIProviderConfigManager(environ={"GEMINI_API_KEY": "fake-key"}),
+        http_client=client,
+        environ={"GEMINI_API_KEY": "fake-key"},
+    )
+
+    response = gate.generate_one_shot(AIRequest(prompt="отвечай на английском: hello"))
+
+    assert response.is_error is False
+    sent_prompt = client.calls[0]["payload"]["contents"][0]["parts"][0]["text"]
+    assert sent_prompt.startswith("Системная инструкция JARVIS:")
+    assert "Отвечай на русском языке" not in sent_prompt
+    assert "Соблюдай эту просьбу" in sent_prompt
+    assert sent_prompt.endswith("отвечай на английском: hello")

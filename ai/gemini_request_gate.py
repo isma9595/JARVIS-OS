@@ -6,6 +6,7 @@ from dataclasses import dataclass, replace
 import os
 
 from ai.gemini_cost_guard import GeminiRequestCostGuard
+from ai.provider_language_policy import AIProviderLanguagePolicy
 from ai.provider_config import AIProviderConfig, AIProviderKeyStatus
 from ai.provider_config_manager import AIProviderConfigManager
 from ai.provider_contracts import (
@@ -38,6 +39,7 @@ class GeminiRequestGate:
         http_client=None,
         environ=None,
         request_guard: GeminiRequestCostGuard | None = None,
+        language_policy: AIProviderLanguagePolicy | None = None,
     ):
         self.config_manager = config_manager or AIProviderConfigManager(environ=environ)
         self.router = router
@@ -45,6 +47,7 @@ class GeminiRequestGate:
         self.http_client = http_client
         self.environ = os.environ if environ is None else environ
         self.request_guard = request_guard or GeminiRequestCostGuard(environ=self.environ)
+        self.language_policy = language_policy or AIProviderLanguagePolicy()
 
     def can_make_real_request(self) -> GeminiRequestGateStatus:
         status = self.config_manager.status_for("gemini")
@@ -97,9 +100,10 @@ class GeminiRequestGate:
         provider = self._build_provider(config)
         metadata = dict(request.metadata or {})
         metadata["max_output_tokens"] = str(guard_result.max_output_tokens)
+        language_result = self.language_policy.apply(guard_result.prompt)
         one_shot_request = replace(
             request,
-            prompt=guard_result.prompt,
+            prompt=language_result.prompt,
             task_type=capability.value,
             metadata=metadata,
         )

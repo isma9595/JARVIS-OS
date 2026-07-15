@@ -7,6 +7,7 @@ import os
 
 from ai.gigachat_cost_guard import GigaChatRequestCostGuard
 from ai.gigachat_token_manager import GigaChatTokenManager
+from ai.provider_language_policy import AIProviderLanguagePolicy
 from ai.provider_config import AIProviderConfig, AIProviderKeyStatus
 from ai.provider_config_manager import AIProviderConfigManager
 from ai.provider_contracts import (
@@ -41,6 +42,7 @@ class GigaChatRequestGate:
         token_http_client=None,
         environ=None,
         request_guard: GigaChatRequestCostGuard | None = None,
+        language_policy: AIProviderLanguagePolicy | None = None,
     ):
         self.config_manager = config_manager or AIProviderConfigManager(environ=environ)
         self.router = router
@@ -48,6 +50,7 @@ class GigaChatRequestGate:
         self.http_client = http_client
         self.environ = os.environ if environ is None else environ
         self.request_guard = request_guard or GigaChatRequestCostGuard(environ=self.environ)
+        self.language_policy = language_policy or AIProviderLanguagePolicy()
         self.token_manager = token_manager or GigaChatTokenManager(
             environ=self.environ,
             http_client=token_http_client,
@@ -106,9 +109,10 @@ class GigaChatRequestGate:
         provider = self._build_provider(config)
         metadata = dict(request.metadata or {})
         metadata["max_output_tokens"] = str(guard_result.max_output_tokens)
+        language_result = self.language_policy.apply(guard_result.prompt)
         one_shot_request = replace(
             request,
-            prompt=guard_result.prompt,
+            prompt=language_result.prompt,
             task_type=capability.value,
             metadata=metadata,
         )

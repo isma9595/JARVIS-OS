@@ -318,6 +318,39 @@ def test_gigachat_status_key_guard_token_limits_model_and_shape_are_allowlisted_
         assert allowlist.decide(command).allowed is False
 
 
+def test_language_policy_status_commands_are_allowlisted():
+    allowlist = SafeVoiceCommandAllowlist()
+
+    for command in (
+        "статус ai language policy",
+        "статус language policy",
+        "языковая политика ai",
+        "язык ai",
+        "ai язык",
+    ):
+        decision = allowlist.decide(command)
+
+        assert decision.allowed is True
+        assert decision.canonical_command == "статус ai language policy"
+
+
+def test_real_ai_requests_remain_not_allowlisted():
+    allowlist = SafeVoiceCommandAllowlist()
+
+    for command in (
+        "groq реальный запрос hello",
+        "groq реальный запрос: hello",
+        "gigachat реальный запрос hello",
+        "openai one shot: hello",
+        "gemini one shot: hello",
+        "спроси ai: hello",
+    ):
+        decision = allowlist.decide(command)
+
+        assert decision.allowed is False
+        assert decision.canonical_command is None
+
+
 def test_voice_interaction_info_commands_are_allowed_without_replay_execution():
     allowlist = SafeVoiceCommandAllowlist()
 

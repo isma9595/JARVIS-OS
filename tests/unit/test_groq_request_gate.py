@@ -96,9 +96,10 @@ def test_present_key_fake_client_succeeds_with_cyrillic_prompt():
     assert response.text == "реальный ответ"
     assert len(client.calls) == 1
     assert client.calls[0]["payload"]["model"] == "llama-3.1-8b-instant"
-    assert client.calls[0]["payload"]["messages"] == [
-        {"role": "user", "content": "Привет, проверь связь"}
-    ]
+    sent_prompt = client.calls[0]["payload"]["messages"][0]["content"]
+    assert sent_prompt.startswith("Системная инструкция JARVIS:")
+    assert "Отвечай на русском языке" in sent_prompt
+    assert sent_prompt.endswith("Привет, проверь связь")
     assert client.calls[0]["payload"]["max_tokens"] == 128
     assert client.calls[0]["headers"]["Authorization"] == f"Bearer {secret}"
     assert client.calls[0]["headers"]["User-Agent"] == "JARVIS-OS/0.2"
@@ -175,3 +176,21 @@ def test_one_shot_config_keeps_real_groq_env_var_and_never_masked_key():
     assert manager.get_config("groq").api_key_env_var == "MASKED_GROQ_KEY"
     assert manager.get_config("groq").enabled is False
     assert secret not in gate.request_shape_text_ru()
+
+
+def test_explicit_english_prompt_does_not_force_russian():
+    client = FakeHTTPClient()
+    gate = GroqRequestGate(
+        config_manager=AIProviderConfigManager(environ={"GROQ_API_KEY": "fake-key"}),
+        http_client=client,
+        environ={"GROQ_API_KEY": "fake-key"},
+    )
+
+    response = gate.generate_one_shot(AIRequest(prompt="Answer in English: hello"))
+
+    assert response.is_error is False
+    sent_prompt = client.calls[0]["payload"]["messages"][0]["content"]
+    assert sent_prompt.startswith("Системная инструкция JARVIS:")
+    assert "Отвечай на русском языке" not in sent_prompt
+    assert "Соблюдай эту просьбу" in sent_prompt
+    assert sent_prompt.endswith("Answer in English: hello")

@@ -101,7 +101,10 @@ def test_present_key_fake_token_and_client_succeeds_without_persistence():
     assert token_manager.calls == 1
     assert len(client.calls) == 1
     assert client.calls[0]["payload"]["model"] == "GigaChat"
-    assert client.calls[0]["payload"]["messages"] == [{"role": "user", "content": "Привет"}]
+    sent_prompt = client.calls[0]["payload"]["messages"][0]["content"]
+    assert sent_prompt.startswith("Системная инструкция JARVIS:")
+    assert "Отвечай на русском языке" in sent_prompt
+    assert sent_prompt.endswith("Привет")
     assert client.calls[0]["payload"]["max_tokens"] == 128
     assert client.calls[0]["headers"]["Authorization"] == "Bearer fake-token"
     assert router.get_default_provider().get_info().name == "dry_run"
@@ -135,3 +138,22 @@ def test_status_and_request_shape_safe_no_secrets():
     assert "Authorization Basic: PRESENT" in text
     assert secret not in text
     assert "fake-token" not in text
+
+
+def test_explicit_english_prompt_does_not_force_russian():
+    client = FakeHTTPClient()
+    gate = GigaChatRequestGate(
+        config_manager=AIProviderConfigManager(environ={"GIGACHAT_AUTH_KEY": "fake-key"}),
+        http_client=client,
+        token_manager=FakeTokenManager(),
+        environ={"GIGACHAT_AUTH_KEY": "fake-key"},
+    )
+
+    result = gate.generate_one_shot(AIRequest(prompt="Answer in English: hello"))
+
+    assert result.is_error is False
+    sent_prompt = client.calls[0]["payload"]["messages"][0]["content"]
+    assert sent_prompt.startswith("Системная инструкция JARVIS:")
+    assert "Отвечай на русском языке" not in sent_prompt
+    assert "Соблюдай эту просьбу" in sent_prompt
+    assert sent_prompt.endswith("Answer in English: hello")

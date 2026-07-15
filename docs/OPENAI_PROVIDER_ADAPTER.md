@@ -1,5 +1,12 @@
 # OpenAI Provider Adapter
 
+## TASK-060 Language Policy
+
+OpenAI real one-shot prompts pass through the shared AI provider language policy before
+the Responses API call. The default is Russian-first, explicit language requests and
+translation targets are respected, `dry_run` remains default, and no memory/profile/files/logs
+or secrets are added to the prompt.
+
 ## Purpose
 
 TASK-053 adds a safe OpenAI provider adapter behind `AIProviderRouter` using the OpenAI Responses API pattern.

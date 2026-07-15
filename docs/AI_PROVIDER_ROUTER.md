@@ -1,5 +1,12 @@
 # AI Provider Router
 
+## TASK-060 Language Policy
+
+External one-shot provider prompts pass through the AI provider language policy before
+the provider call. The policy is Russian-first by default, respects explicit user
+language requests and translation tasks, does not send memory/profile/files/logs, and
+does not change `dry_run` as the default provider.
+
 ## Purpose
 
 TASK-051 starts the AI Brain / Provider Router Foundation cycle. The goal is to define stable provider contracts and a deterministic local router before any real Groq, Gemini, OpenAI, or other external adapter is connected.

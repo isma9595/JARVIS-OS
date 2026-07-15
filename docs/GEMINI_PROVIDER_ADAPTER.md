@@ -1,5 +1,12 @@
 # Gemini Provider Adapter
 
+## TASK-060 Language Policy
+
+Gemini real one-shot prompts pass through the shared AI provider language policy before
+the API request. The default is Russian-first, while explicit user language requests
+and translation targets are respected. `dry_run` remains default, Gemini is not enabled
+permanently, and no memory/profile/files/logs or secrets are added.
+
 ## Purpose
 
 TASK-056 adds a safe Gemini adapter behind `AIProviderRouter` for controlled free-tier-first testing.

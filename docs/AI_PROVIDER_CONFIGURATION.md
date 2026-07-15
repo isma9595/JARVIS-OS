@@ -1,5 +1,13 @@
 # AI Provider Configuration
 
+## TASK-060 Language Policy
+
+OpenAI, Gemini, Groq, and GigaChat one-shot prompts are passed through the shared AI
+provider language policy before a real external request. Russian is the default
+response language unless the user explicitly asks for another language or a translation
+target. The policy does not add persistent settings, does not send memory/profile/files/logs,
+does not expose secrets, and does not call the network from status commands.
+
 ## Purpose
 
 TASK-052 adds an offline-safe configuration and API key readiness layer for future providers such as Groq and Gemini. TASK-053 adds OpenAI as a disabled external provider config and adapter. Status/key checks still do not make network calls.

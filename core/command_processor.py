@@ -8,6 +8,7 @@ from ai import (
     GeminiRequestGate,
     GigaChatRequestGate,
     GroqRequestGate,
+    AIProviderLanguagePolicy,
     OpenAIRequestGate,
 )
 from core.action_router import SafeActionRouter
@@ -95,6 +96,14 @@ class CommandProcessor:
         "статус ai провайдеров",
         "статус ии провайдеров",
         "ai status",
+    }
+    AI_LANGUAGE_POLICY_STATUS_COMMANDS = {
+        "статус ai language policy",
+        "статус language policy",
+        "ai language policy",
+        "языковая политика ai",
+        "язык ai",
+        "ai язык",
     }
     OPENAI_STATUS_COMMANDS = {
         "статус openai",
@@ -986,6 +995,7 @@ class CommandProcessor:
         gemini_request_gate=None,
         groq_request_gate=None,
         gigachat_request_gate=None,
+        ai_provider_language_policy=None,
     ):
         self.user_profile = user_profile or {}
         self.dialogue_manager = dialogue_manager or DialogueManager(self.user_profile)
@@ -1022,6 +1032,11 @@ class CommandProcessor:
         self.gigachat_request_gate = gigachat_request_gate or GigaChatRequestGate(
             config_manager=self.ai_provider_config_manager,
             router=self.ai_provider_router,
+        )
+        self.ai_provider_language_policy = (
+            ai_provider_language_policy
+            or getattr(self.openai_request_gate, "language_policy", None)
+            or AIProviderLanguagePolicy()
         )
         self.voice_input_manager = None
         if voice_output_manager is None:
@@ -1966,6 +1981,12 @@ class CommandProcessor:
             return self._result(
                 "ai.status",
                 self.ai_provider_router.status_text_ru(),
+            )
+
+        if command in self.AI_LANGUAGE_POLICY_STATUS_COMMANDS:
+            return self._result(
+                "ai.language_policy.status",
+                self.ai_provider_language_policy.status_text_ru(),
             )
 
         if command in self.OPENAI_STATUS_COMMANDS:

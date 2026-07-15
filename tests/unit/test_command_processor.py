@@ -2802,7 +2802,7 @@ def test_ai_provider_list_command_works():
     result = CommandProcessor().process("список ai провайдеров")
 
     assert result["intent"] == "ai.providers"
-    assert "dry_run" in result["response"]
+    assert "dry-run" in result["response"]
     assert "chat" in result["response"]
     assert "summary" in result["response"]
     assert "classification" in result["response"]
@@ -2812,7 +2812,7 @@ def test_ai_config_status_command_works():
     result = CommandProcessor().process("статус ai конфигурации")
 
     assert result["intent"] == "ai.config.status"
-    assert "dry_run" in result["response"]
+    assert "dry-run" in result["response"]
     assert "groq" in result["response"]
     assert "gemini" in result["response"]
     assert "openai" in result["response"]
@@ -3121,6 +3121,10 @@ def test_gemini_one_shot_fake_client_success_without_real_network():
     assert "free tier/quota may be used" in result["response"]
     assert router.get_default_provider().get_info().name == "dry_run"
     assert len(client.calls) == 1
+    sent_prompt = client.calls[0]["contents"][0]["parts"][0]["text"]
+    assert sent_prompt.startswith("Системная инструкция JARVIS:")
+    assert "Отвечай на русском языке" in sent_prompt
+    assert sent_prompt.endswith("hello")
 
 
 def test_gemini_one_shot_response_not_routed_to_action_router():
@@ -3461,6 +3465,10 @@ def test_openai_one_shot_fake_client_success_without_real_network():
     assert "real API usage may consume account credits/limits" in result["response"]
     assert router.get_default_provider().get_info().name == "dry_run"
     assert len(client.calls) == 1
+    sent_prompt = client.calls[0]["input"]
+    assert sent_prompt.startswith("Системная инструкция JARVIS:")
+    assert "Отвечай на русском языке" in sent_prompt
+    assert sent_prompt.endswith("hello")
 
 
 def test_openai_legacy_prompt_still_does_not_network():
@@ -3721,7 +3729,10 @@ def test_groq_one_shot_fake_client_success_without_real_network():
     assert "free/developer quota or rate limits may be used" in result["response"]
     assert router.get_default_provider().get_info().name == "dry_run"
     assert len(client.calls) == 1
-    assert client.calls[0]["messages"] == [{"role": "user", "content": "Привет"}]
+    sent_prompt = client.calls[0]["messages"][0]["content"]
+    assert sent_prompt.startswith("Системная инструкция JARVIS:")
+    assert "Отвечай на русском языке" in sent_prompt
+    assert sent_prompt.endswith("Привет")
 
 
 def test_groq_one_shot_response_not_routed_to_action_router():
@@ -3916,7 +3927,10 @@ def test_gigachat_one_shot_fake_client_success_without_real_network():
     assert "free/paid quota may be used" in result["response"]
     assert router.get_default_provider().get_info().name == "dry_run"
     assert len(client.calls) == 1
-    assert client.calls[0]["messages"] == [{"role": "user", "content": "Привет"}]
+    sent_prompt = client.calls[0]["messages"][0]["content"]
+    assert sent_prompt.startswith("Системная инструкция JARVIS:")
+    assert "Отвечай на русском языке" in sent_prompt
+    assert sent_prompt.endswith("Привет")
     assert secret not in result["response"]
     assert "fake-token" not in result["response"]
 
@@ -3980,3 +3994,53 @@ def test_help_mentions_gigachat_safely():
     assert "лимиты gigachat" in result["response"]
     assert "gigachat модель" in result["response"]
     assert "gigachat реальный запрос" in result["response"]
+
+
+def test_ai_language_policy_status_commands_work_without_network_or_action_router():
+    class FailingActionRouter:
+        calls = 0
+
+        def route(self, command):
+            self.calls += 1
+            raise AssertionError("language policy status must not route to ActionRouter")
+
+    processor = CommandProcessor()
+    processor.action_router = FailingActionRouter()
+
+    for command in (
+        "статус ai language policy",
+        "языковая политика ai",
+        "язык ai",
+    ):
+        result = processor.process(command)
+
+        assert result["intent"] == "ai.language_policy.status"
+        assert "default language: Russian / ru" in result["response"]
+        assert "explicit language requests respected" in result["response"]
+        assert "memory/profile/files/logs not sent" in result["response"]
+        assert "network: not called" in result["response"]
+        assert "dry_run: unchanged" in result["response"]
+        assert processor.action_router.calls == 0
+
+
+def test_ai_language_policy_status_aliases_work():
+    processor = CommandProcessor()
+
+    for command in ("статус language policy", "ai language policy", "ai язык"):
+        result = processor.process(command)
+
+        assert result["intent"] == "ai.language_policy.status"
+        assert "Russian / ru" in result["response"]
+
+
+def test_existing_ai_provider_commands_still_work_and_ai_stays_dry_run():
+    processor = CommandProcessor()
+
+    assert processor.process("статус ai")["intent"] == "ai.status"
+    assert processor.process("статус groq")["intent"] == "ai.groq.status"
+    assert processor.process("статус gigachat")["intent"] == "ai.gigachat.status"
+
+    result = processor.process("спроси ai: this should still be dry-run")
+
+    assert result["intent"] == "ai.chat"
+    assert "dry-run" in result["response"]

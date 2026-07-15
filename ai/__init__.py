@@ -16,6 +16,11 @@ from ai.provider_config import (
 )
 from ai.provider_config_manager import AIProviderConfigManager
 from ai.provider_router import AIProviderRouter
+from ai.provider_language_policy import (
+    AIProviderLanguagePolicy,
+    AIProviderLanguagePolicyConfig,
+    AIProviderLanguagePolicyResult,
+)
 from ai.openai_cost_guard import (
     OpenAIRequestCostGuard,
     OpenAIRequestGuardConfig,
@@ -54,6 +59,9 @@ __all__ = [
     "AIProviderConfigStatus",
     "AIProviderInfo",
     "AIProviderKeyStatus",
+    "AIProviderLanguagePolicy",
+    "AIProviderLanguagePolicyConfig",
+    "AIProviderLanguagePolicyResult",
     "AIProviderRouter",
     "AIProviderRuntimeState",
     "AIProviderSafetyLevel",

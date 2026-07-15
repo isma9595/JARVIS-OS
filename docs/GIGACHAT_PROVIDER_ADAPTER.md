@@ -1,5 +1,12 @@
 # GigaChat Provider Adapter
 
+## TASK-060 Language Policy
+
+GigaChat real one-shot prompts pass through the shared AI provider language policy
+before the chat request. The default is Russian-first, while explicit user language
+requests and translation targets are respected. No memory/profile/files/logs or
+secrets are added, `dry_run` remains default, and responses are not executed.
+
 ## Purpose
 
 GigaChat is registered as a Russia-friendly fallback provider after Groq. It is

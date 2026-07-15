@@ -45,6 +45,13 @@ class SafeVoiceCommandAllowlist:
             "статус ии провайдеров",
             "ai status",
         },
+        "статус ai language policy": {
+            "статус ai language policy",
+            "статус language policy",
+            "языковая политика ai",
+            "язык ai",
+            "ai язык",
+        },
         "статус openai": {
             "статус openai",
             "статус опенай",
