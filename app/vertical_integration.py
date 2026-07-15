@@ -59,6 +59,7 @@ class VerticalIntegrationService:
         CommandCategory.AUDIO,
         CommandCategory.VOICE,
         CommandCategory.SAFETY,
+        CommandCategory.CONVERSATION,
     )
     SAFE_VOICE_COMMANDS = (
         "статус vertical integration",
@@ -73,6 +74,15 @@ class VerticalIntegrationService:
         "vertical integration summary",
         "кратко vertical integration",
         "кратко интеграция jarvis",
+        "статус conversational loop",
+        "статус conversation loop",
+        "статус диалога jarvis",
+        "статус разговорного режима",
+        "conversational loop status",
+        "conversational loop capabilities",
+        "возможности conversational loop",
+        "возможности диалога jarvis",
+        "возможности разговорного режима",
     )
     RISKY_VOICE_COMMANDS = (
         "groq реальный запрос: test",
@@ -81,6 +91,9 @@ class VerticalIntegrationService:
         "импортировать groq ключ из env",
         "reset audio lifecycle",
         "app preview: статус ai",
+        "диалог: привет",
+        "чат: что ты умеешь",
+        "jarvis: удали все файлы",
     )
 
     def __init__(
@@ -110,6 +123,7 @@ class VerticalIntegrationService:
             self._audio_lifecycle_safe(),
             self._voice_allowlist_safe(),
             self._ai_safety_safe(),
+            self._conversational_loop_safe(),
             self._no_network_no_secret_integration(),
             self._command_processor_smoke_safe(),
         )
@@ -384,6 +398,40 @@ class VerticalIntegrationService:
             "AI Safety",
             passed,
             (f"explicit provider commands: {len(provider_commands)}", "providers called: no"),
+        )
+
+    def _conversational_loop_safe(self) -> VerticalIntegrationCheck:
+        status = self.app_service.conversational_status()
+        greeting = self.app_service.conversational_preview("привет")
+        risky = self.app_service.conversational_preview("удали все файлы")
+        passed = (
+            status["ready"]
+            and not status["network_default"]
+            and not status["providers_called"]
+            and not status["command_execution_default"]
+            and greeting.intent == "small_talk"
+            and not greeting.network_used
+            and not greeting.providers_called
+            and not greeting.command_executed
+            and risky.intent == "risky_action"
+            and risky.requires_confirmation
+            and risky.safety_level == "risky_blocked"
+            and not risky.network_used
+            and not risky.providers_called
+            and not risky.command_executed
+            and not risky.microphone_started
+            and not risky.tts_started
+        )
+        return self._check(
+            "conversational_loop_safe",
+            "Conversational loop классифицирует текст без выполнения",
+            "Conversational Loop",
+            passed,
+            (
+                f"greeting intent: {greeting.intent}",
+                f"risky intent: {risky.intent}",
+                "network/providers/audio/command execution: no",
+            ),
         )
 
     def _no_network_no_secret_integration(self) -> VerticalIntegrationCheck:

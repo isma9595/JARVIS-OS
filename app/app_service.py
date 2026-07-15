@@ -20,6 +20,11 @@ from app.app_contracts import (
     AppStatusCard,
     safe_contract_text,
 )
+from app.conversational_loop import (
+    ConversationalRequest,
+    ConversationalResult,
+    SafeConversationalLoop,
+)
 from core.command_registry import (
     CommandCategory,
     CommandMetadata,
@@ -108,6 +113,10 @@ class JarvisAppService:
             command_processor = CommandProcessor(command_registry=self.command_registry)
         self.command_processor = command_processor
         self.audio_lifecycle_controller = self._build_audio_lifecycle_controller()
+        self.conversational_loop = SafeConversationalLoop(
+            app_service=self,
+            command_registry=self.command_registry,
+        )
 
     def status_snapshot(self) -> AppStatusSnapshot:
         return AppStatusSnapshot(
@@ -205,6 +214,22 @@ class JarvisAppService:
     def status_cards(self) -> tuple[AppStatusCard, ...]:
         return (
             self.audio_status_card(),
+            AppStatusCard(
+                card_id="conversational_loop",
+                title_ru="Conversational loop",
+                value_ru="foundation ready/safe",
+                status="safe",
+                category="conversation",
+                safe=True,
+                ui_visible=True,
+                details_ru=(
+                    "No network by default.",
+                    "No command execution by default.",
+                    "No providers called.",
+                    "No microphone/TTS.",
+                    "AI responses are not executed as commands.",
+                ),
+            ),
             AppStatusCard(
                 card_id="app_service",
                 title_ru="AppService",
@@ -400,6 +425,53 @@ class JarvisAppService:
                 "- no response execution",
             ]
         )
+
+    def conversational_status(self) -> dict[str, object]:
+        return self.conversational_loop.status()
+
+    def conversational_status_text_ru(self) -> str:
+        return self.conversational_loop.status_text_ru()
+
+    def conversational_preview(self, text: str) -> ConversationalResult:
+        return self.conversational_loop.preview(text)
+
+    def conversational_preview_text_ru(self, text: str) -> str:
+        return self.conversational_loop.result_text_ru(
+            self.conversational_preview(text)
+        )
+
+    def conversational_handle(
+        self,
+        text: str,
+        allow_network: bool = False,
+        allow_command_execution: bool = False,
+    ) -> ConversationalResult:
+        return self.conversational_loop.handle(
+            ConversationalRequest(
+                text=text,
+                source="app_service",
+                allow_network=allow_network,
+                allow_command_execution=allow_command_execution,
+                allow_risky_actions=False,
+            )
+        )
+
+    def conversational_handle_text_ru(
+        self,
+        text: str,
+        allow_network: bool = False,
+        allow_command_execution: bool = False,
+    ) -> str:
+        return self.conversational_loop.result_text_ru(
+            self.conversational_handle(
+                text,
+                allow_network=allow_network,
+                allow_command_execution=allow_command_execution,
+            )
+        )
+
+    def conversational_capabilities_text_ru(self) -> str:
+        return self.conversational_loop.capabilities_text_ru()
 
     def vertical_integration_report(self):
         from app.vertical_integration import VerticalIntegrationService

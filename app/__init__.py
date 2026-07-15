@@ -7,6 +7,14 @@ from app.app_service import (
     AppStatusSnapshot,
     JarvisAppService,
 )
+from app.conversational_loop import (
+    ConversationIntent,
+    ConversationRoute,
+    ConversationSafetyLevel,
+    ConversationalRequest,
+    ConversationalResult,
+    SafeConversationalLoop,
+)
 from app.app_contracts import (
     APP_CONTRACT_SCHEMA_NAME,
     APP_CONTRACT_VERSION,
@@ -42,10 +50,16 @@ __all__ = [
     "AppStatusCard",
     "APP_CONTRACT_SCHEMA_NAME",
     "APP_CONTRACT_VERSION",
+    "ConversationIntent",
+    "ConversationRoute",
+    "ConversationSafetyLevel",
+    "ConversationalRequest",
+    "ConversationalResult",
     "DesktopShellState",
     "DesktopShellViewModel",
     "JarvisAppService",
     "JarvisDesktopShell",
+    "SafeConversationalLoop",
     "VerticalIntegrationCheck",
     "VerticalIntegrationReport",
     "VerticalIntegrationService",

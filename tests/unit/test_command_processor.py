@@ -1866,6 +1866,18 @@ def test_delete_system32_is_forbidden():
     assert "не могу выполнить" in result["response"]
 
 
+def test_conversational_fallback_does_not_downgrade_direct_risky_commands():
+    processor = CommandProcessor(sample_profile())
+
+    send_email = processor.process("отправь письмо")
+    delete_file = processor.process("удали файл")
+    delete_system32 = processor.process("удали system32")
+
+    assert send_email["intent"] == "action.confirmation_required"
+    assert delete_file["intent"] == "action.confirmation_required"
+    assert delete_system32["intent"] == "action.forbidden"
+
+
 def test_unknown_action_is_future_idea_without_execution():
     result = CommandProcessor(sample_profile()).process("настрой утренний сценарий")
 
@@ -5219,3 +5231,55 @@ def test_vertical_integration_does_not_break_existing_status_commands():
     assert processor.process("статус secure keys")["intent"] == "secure_keys.status"
     assert processor.process("статус audio lifecycle")["intent"] == "audio_lifecycle.status"
     assert processor.process("статус command registry")["intent"] == "command_registry.status"
+
+
+def test_conversational_loop_status_and_capabilities_commands_work():
+    processor = CommandProcessor(sample_profile())
+
+    status = processor.process("статус conversational loop")
+    status_ru = processor.process("статус диалога jarvis")
+    capabilities = processor.process("conversational loop capabilities")
+
+    assert status["intent"] == "conversation.status"
+    assert "Conversational loop status:" in status["response"]
+    assert "no providers called" in status["response"]
+    assert status_ru["intent"] == "conversation.status"
+    assert capabilities["intent"] == "conversation.capabilities"
+    assert "Разговорный режим JARVIS" in capabilities["response"]
+
+
+def test_conversational_loop_prefixed_dialog_commands_are_safe_plans():
+    processor = CommandProcessor(sample_profile())
+
+    greeting = processor.process("диалог: привет")
+    capability = processor.process("чат: что ты умеешь")
+    drafting = processor.process("jarvis: напиши письмо мэру")
+    simple = processor.process("джарвис: открой папку документы")
+    complex_task = processor.process("поговори: найди фильм на вечер и запусти")
+    risky = processor.process("диалог: удали все файлы")
+
+    assert greeting["intent"] == "conversation.preview"
+    assert "Привет, Исмаил" in greeting["response"]
+    assert capability["intent"] == "conversation.preview"
+    assert "intent: ai_question" in capability["response"]
+    assert "intent: drafting_task" in drafting["response"]
+    assert "intent: simple_action" in simple["response"]
+    assert "реальное открытие папок" in simple["response"]
+    assert "intent: complex_agent_task" in complex_task["response"]
+    assert "Запустить что-либо только после подтверждения" in complex_task["response"]
+    assert "intent: risky_action" in risky["response"]
+    assert "route: risky_blocked_or_confirmation_required" in risky["response"]
+    assert "requires confirmation: yes" in risky["response"]
+    assert "command executed: no" in risky["response"]
+
+
+def test_plain_unknown_natural_text_routes_safely_but_existing_status_still_work():
+    processor = CommandProcessor(sample_profile())
+
+    assert processor.process("привет")["intent"] == "assistant.greeting"
+    assert processor.process("что ты умеешь")["intent"] == "assistant.help"
+    assert processor.process("напиши письмо мэру")["intent"] == "conversation.preview"
+    assert processor.process("статус vertical integration")["intent"] == "vertical_integration.status"
+    assert processor.process("статус app service")["intent"] == "app_service.status"
+    assert processor.process("статус audio lifecycle")["intent"] == "audio_lifecycle.status"
+    assert processor.process("статус ai")["intent"] == "ai.status"

@@ -26,6 +26,7 @@ class CommandCategory(Enum):
     SAFETY = "safety"
     INTEGRATION = "integration"
     APP = "app"
+    CONVERSATION = "conversation"
     FILES_FUTURE = "files_future"
     DEVELOPMENT = "development"
     UNKNOWN = "unknown"
@@ -80,6 +81,7 @@ class CommandRegistry:
         CommandCategory.SAFETY: "безопасность выполнения и голосовые ограничения",
         CommandCategory.INTEGRATION: "вертикальная интеграция слоев JARVIS без выполнения",
         CommandCategory.APP: "будущая desktop app поверхность",
+        CommandCategory.CONVERSATION: "безопасная классификация обычного текста и разговорных задач",
         CommandCategory.FILES_FUTURE: "будущие файловые возможности",
         CommandCategory.DEVELOPMENT: "разработка и диагностика",
         CommandCategory.UNKNOWN: "нераспределенные команды",
@@ -418,6 +420,9 @@ def default_command_metadata() -> tuple[CommandMetadata, ...]:
         _meta("app_service.capabilities", "Возможности App Service", "Возможности будущего UI boundary без сети.", CommandCategory.APP, ("app service capabilities", "возможности app service", "возможности приложения jarvis", "app service manifest"), voice_auto_allowed=True, introduced_in="TASK-069", notes_ru="capabilities only; no network"),
         _meta("app_service.preview", "Предпросмотр команды App Service", "Предпросмотр произвольной команды по metadata без выполнения.", CommandCategory.APP, ("app preview: <text>", "предпросмотр команды: <text>", "preview command: <text>", "предварительная проверка команды: <text>"), risk_level=CommandRiskLevel.SENSITIVE, requires_privacy_check=True, voice_auto_allowed=False, introduced_in="TASK-069", notes_ru="preview only; target command is not executed"),
         _meta("app_service.commands", "Команды App Service", "Список app-facing команд через CommandRegistry.", CommandCategory.APP, ("app service commands", "команды app service"), voice_auto_allowed=True, introduced_in="TASK-069", notes_ru="list only; no network"),
+        _meta("conversation.status", "Статус conversational loop", "Статус безопасного разговорного слоя без сети, провайдеров и аудио.", CommandCategory.CONVERSATION, ("статус conversational loop", "статус conversation loop", "статус диалога jarvis", "статус разговорного режима", "conversational loop status"), voice_auto_allowed=True, introduced_in="TASK-076", notes_ru="status only; no network; no providers; no audio"),
+        _meta("conversation.capabilities", "Возможности conversational loop", "Возможности безопасной классификации обычного текста.", CommandCategory.CONVERSATION, ("conversational loop capabilities", "возможности conversational loop", "возможности диалога jarvis", "возможности разговорного режима"), voice_auto_allowed=True, introduced_in="TASK-076", notes_ru="capabilities only; no network; no providers; no audio"),
+        _meta("conversation.preview", "Предпросмотр диалога", "Безопасная классификация свободного текста без выполнения.", CommandCategory.CONVERSATION, ("диалог: <text>", "чат: <text>", "jarvis: <text>", "джарвис: <text>", "поговори: <text>", "conversational preview: <text>", "предпросмотр диалога: <text>"), risk_level=CommandRiskLevel.SENSITIVE, requires_privacy_check=True, voice_auto_allowed=False, introduced_in="TASK-076", notes_ru="classification/plan only; no network; no command execution"),
         _meta("app_contracts.status", "Статус AppService contracts", "Версия и safety-status контрактов AppService без сети.", CommandCategory.APP, ("статус app contracts", "статус app service contracts", "статус контрактов приложения", "статус контрактов appservice", "app contracts status"), voice_auto_allowed=True, introduced_in="TASK-073", notes_ru="contract status only; no secrets; no network"),
         _meta("app_contracts.manifest", "Манифест AppService contracts", "Манифест версии, status cards, command cards и категорий без выполнения.", CommandCategory.APP, ("app contracts manifest", "manifest app contracts", "манифест контрактов приложения", "app service contract manifest"), voice_auto_allowed=True, introduced_in="TASK-073", notes_ru="manifest only; no secrets; no network; no execution"),
         _meta("app_contracts.status_cards", "Карточки статуса приложения", "UI-safe status cards для будущих приложений.", CommandCategory.APP, ("app status cards", "карточки статуса приложения"), voice_auto_allowed=True, introduced_in="TASK-073", notes_ru="status cards only; no secrets; no network"),

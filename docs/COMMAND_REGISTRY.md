@@ -77,6 +77,21 @@ for a future desktop UI. Future app entries are visible but marked
 
 Search is metadata-only and does not execute matching commands.
 
+TASK-076 adds the `conversation` category:
+
+- `статус conversational loop`
+- `статус диалога jarvis`
+- `conversational loop capabilities`
+- `возможности диалога jarvis`
+- `диалог: <text>`
+- `чат: <text>`
+- `jarvis: <text>`
+- `джарвис: <text>`
+- `поговори: <text>`
+
+Status and capabilities are read-only and voice auto-allowed. Free-form dialog
+aliases are sensitive metadata/preview commands and are not voice auto-allowed.
+
 ## Safety
 
 - Metadata only.

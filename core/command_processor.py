@@ -217,6 +217,28 @@ class CommandProcessor:
         "preview command:",
         "предварительная проверка команды:",
     )
+    CONVERSATIONAL_STATUS_COMMANDS = {
+        "статус conversational loop",
+        "статус conversation loop",
+        "статус диалога jarvis",
+        "статус разговорного режима",
+        "conversational loop status",
+    }
+    CONVERSATIONAL_CAPABILITIES_COMMANDS = {
+        "conversational loop capabilities",
+        "возможности conversational loop",
+        "возможности диалога jarvis",
+        "возможности разговорного режима",
+    }
+    CONVERSATIONAL_PREVIEW_PREFIXES = (
+        "диалог:",
+        "чат:",
+        "jarvis:",
+        "джарвис:",
+        "поговори:",
+        "conversational preview:",
+        "предпросмотр диалога:",
+    )
     DESKTOP_SHELL_STATUS_COMMANDS = {
         "статус desktop app",
         "статус jarvis desktop",
@@ -2898,6 +2920,13 @@ class CommandProcessor:
             return self._count_ideas()
 
         route = self.action_router.route(command)
+        if route["category"] != "idea":
+            return self._route_result(route)
+
+        conversational_result = self._conversational_natural_fallback(command)
+        if conversational_result is not None:
+            return conversational_result
+
         return self._route_result(route)
 
     def _normalize(self, command_text):
@@ -2984,6 +3013,34 @@ class CommandProcessor:
             return self._result(
                 "app_service.commands",
                 self._get_app_service().list_commands(CommandCategory.APP.value),
+                speakable=False,
+            )
+
+        if command in self.CONVERSATIONAL_STATUS_COMMANDS:
+            return self._result(
+                "conversation.status",
+                self._get_app_service().conversational_status_text_ru(),
+                speakable=False,
+            )
+
+        if command in self.CONVERSATIONAL_CAPABILITIES_COMMANDS:
+            return self._result(
+                "conversation.capabilities",
+                self._get_app_service().conversational_capabilities_text_ru(),
+                speakable=False,
+            )
+
+        conversational_text = None
+        for prefix in self.CONVERSATIONAL_PREVIEW_PREFIXES:
+            if command.startswith(prefix):
+                conversational_text = command[len(prefix) :].strip()
+                break
+        if conversational_text is not None:
+            return self._result(
+                "conversation.preview",
+                self._get_app_service().conversational_preview_text_ru(
+                    conversational_text
+                ),
                 speakable=False,
             )
 
@@ -3126,6 +3183,29 @@ class CommandProcessor:
         return JarvisAppService(
             command_processor=self,
             command_registry=self.command_registry,
+        )
+
+    def _conversational_natural_fallback(self, command):
+        if getattr(self, "_suppress_conversational_fallback", False):
+            return None
+        app_service = self._get_app_service()
+        result = app_service.conversational_preview(command)
+        conversational_intents = {
+            "small_talk",
+            "ai_question",
+            "drafting_task",
+            "simple_action",
+            "research_task",
+            "complex_agent_task",
+            "risky_action",
+        }
+        if result.intent not in conversational_intents:
+            return None
+        return self._result(
+            "conversation.preview",
+            app_service.conversational_loop.result_text_ru(result),
+            speakable=False,
+            allow_manual_dialogue=False,
         )
 
     def _get_vosk_preflight(self):
@@ -3499,7 +3579,16 @@ class CommandProcessor:
         pending_command = self.get_pending_voice_command()
         if command in self.PENDING_VOICE_COMMAND_POSITIVE_CONFIRMATIONS:
             self.clear_pending_voice_command()
-            result = self.process(pending_command)
+            previous_suppression = getattr(
+                self,
+                "_suppress_conversational_fallback",
+                False,
+            )
+            self._suppress_conversational_fallback = True
+            try:
+                result = self.process(pending_command)
+            finally:
+                self._suppress_conversational_fallback = previous_suppression
             canonical_command = result.get("canonical_voice_command") or pending_command
             status = self._confirmed_voice_command_history_status(result)
             self._record_voice_history(
@@ -4952,7 +5041,16 @@ class CommandProcessor:
                 self.dialogue_manager.voice_empty_input_response(),
             )
 
-        result = self.voice_input_manager.process_recognized_text(recognized_text)
+        previous_suppression = getattr(
+            self,
+            "_suppress_conversational_fallback",
+            False,
+        )
+        self._suppress_conversational_fallback = True
+        try:
+            result = self.voice_input_manager.process_recognized_text(recognized_text)
+        finally:
+            self._suppress_conversational_fallback = previous_suppression
         result = dict(result)
         if result["intent"] not in {
             "voice.empty",

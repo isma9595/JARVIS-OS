@@ -476,3 +476,51 @@ def test_no_vertical_integration_command_requires_network():
 
     assert commands
     assert all(command.requires_network is False for command in commands)
+
+
+def test_conversational_commands_registered():
+    registry = CommandRegistry()
+    command_ids = {command.command_id for command in registry.commands}
+
+    assert "conversation.status" in command_ids
+    assert "conversation.capabilities" in command_ids
+    assert "conversation.preview" in command_ids
+    assert CommandCategory.CONVERSATION in registry.categories()
+
+
+def test_conversational_status_and_capabilities_read_only_app_ready_voice_allowed():
+    registry = CommandRegistry()
+
+    for alias in (
+        "статус conversational loop",
+        "статус диалога jarvis",
+        "conversational loop capabilities",
+        "возможности разговорного режима",
+    ):
+        command = registry.find_by_alias(alias)
+        assert command is not None
+        assert command.category == CommandCategory.CONVERSATION
+        assert command.risk_level == CommandRiskLevel.READ_ONLY
+        assert command.read_only is True
+        assert command.app_ready is True
+        assert command.voice_auto_allowed is True
+        assert command.requires_network is False
+
+
+def test_conversational_free_form_dialog_commands_not_voice_auto_allowed():
+    registry = CommandRegistry()
+
+    for alias in ("диалог: <text>", "чат: <text>", "jarvis: <text>", "поговори: <text>"):
+        command = registry.find_by_alias(alias)
+        assert command is not None
+        assert command.command_id == "conversation.preview"
+        assert command.voice_auto_allowed is False
+        assert command.requires_network is False
+        assert command.requires_privacy_check is True
+
+
+def test_no_conversational_command_requires_network_by_default():
+    commands = CommandRegistry().list_by_category(CommandCategory.CONVERSATION)
+
+    assert commands
+    assert all(command.requires_network is False for command in commands)

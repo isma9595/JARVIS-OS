@@ -107,6 +107,19 @@ class SafeVoiceCommandAllowlist:
             "app service commands",
             "команды app service",
         },
+        "статус conversational loop": {
+            "статус conversational loop",
+            "статус conversation loop",
+            "статус диалога jarvis",
+            "статус разговорного режима",
+            "conversational loop status",
+        },
+        "conversational loop capabilities": {
+            "conversational loop capabilities",
+            "возможности conversational loop",
+            "возможности диалога jarvis",
+            "возможности разговорного режима",
+        },
         "статус vertical integration": {
             "статус vertical integration",
             "статус интеграции jarvis",

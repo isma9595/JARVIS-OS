@@ -1000,3 +1000,40 @@ def test_vertical_integration_adjacent_risky_commands_still_not_allowlisted():
 
         assert decision.allowed is False
         assert decision.canonical_command is None
+
+
+def test_conversational_status_and_capabilities_are_allowlisted():
+    allowlist = SafeVoiceCommandAllowlist()
+    expected = {
+        "статус conversational loop": "статус conversational loop",
+        "статус conversation loop": "статус conversational loop",
+        "статус диалога jarvis": "статус conversational loop",
+        "статус разговорного режима": "статус conversational loop",
+        "conversational loop status": "статус conversational loop",
+        "conversational loop capabilities": "conversational loop capabilities",
+        "возможности conversational loop": "conversational loop capabilities",
+        "возможности диалога jarvis": "conversational loop capabilities",
+        "возможности разговорного режима": "conversational loop capabilities",
+    }
+
+    for command, canonical in expected.items():
+        decision = allowlist.decide(command)
+        assert decision.allowed is True
+        assert decision.canonical_command == canonical
+
+
+def test_conversational_free_form_dialog_commands_are_not_allowlisted():
+    allowlist = SafeVoiceCommandAllowlist()
+
+    for command in (
+        "диалог: привет",
+        "чат: что ты умеешь",
+        "jarvis: напиши письмо мэру",
+        "джарвис: открой папку документы",
+        "поговори: найди фильм на вечер и запусти",
+        "conversational preview: привет",
+        "предпросмотр диалога: привет",
+    ):
+        decision = allowlist.decide(command)
+        assert decision.allowed is False
+        assert decision.canonical_command is None

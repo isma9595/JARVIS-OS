@@ -14,6 +14,8 @@ instead of calling `CommandProcessor` directly.
 - Previews command risk from registry metadata without execution.
 - Delegates execution to `CommandProcessor`.
 - Adds read-only AppService informational commands.
+- Exposes TASK-076 conversational loop status, capabilities, preview, and safe
+  handle methods without network/provider/audio execution.
 
 ## What This Does Not Do
 
@@ -61,6 +63,14 @@ preview reports `known_command=false`.
 AppService uses the registry as the app-facing capability manifest. A future
 desktop command palette or settings screen can use it to show command IDs,
 categories, risk levels, network flags, privacy flags, and `app_ready`.
+
+## TASK-076 Conversational Loop
+
+`JarvisAppService` exposes `conversational_preview_text_ru()` and related
+methods for safe Russian-first dialogue classification. The loop can classify
+known commands, small talk, drafting, research, simple action plans, complex
+agent plans, and risky requests. It does not call providers, use network, start
+audio, open browsers, touch files, or execute AI responses as commands.
 
 ## TASK-070 Desktop Shell
 

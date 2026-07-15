@@ -18,6 +18,7 @@ REQUIRED_CHECKS = {
     "audio_lifecycle_safe",
     "voice_allowlist_safe",
     "ai_safety_safe",
+    "conversational_loop_safe",
     "no_network_no_secret_integration",
     "command_processor_smoke_safe",
 }
@@ -58,6 +59,7 @@ def test_registry_categories_include_required_layers():
         CommandCategory.VOICE,
         CommandCategory.SAFETY,
         CommandCategory.INTEGRATION,
+        CommandCategory.CONVERSATION,
     ):
         assert category in categories
 
@@ -146,6 +148,18 @@ def test_ai_provider_real_requests_are_explicit_only():
     assert all(command.requires_privacy_check for command in provider_requests)
     assert all(command.requires_confirmation for command in provider_requests)
     assert all(command.voice_auto_allowed is False for command in provider_requests)
+
+
+def test_conversational_loop_check_passes_and_report_stays_safe():
+    report = VerticalIntegrationService().run_report()
+    check = next(check for check in report.checks if check.check_id == "conversational_loop_safe")
+
+    assert check.passed is True
+    assert report.network_used is False
+    assert report.providers_called is False
+    assert report.command_execution_used is False
+    assert report.microphone_started is False
+    assert report.tts_started is False
 
 
 def test_report_text_and_checklist_have_no_secret_like_strings():

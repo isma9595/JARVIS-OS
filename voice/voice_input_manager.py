@@ -332,7 +332,16 @@ class VoiceInputManager:
         if self.is_voice_cancel(command_text):
             return self.cancel_pending_action()
 
-        result = self.command_processor.process(command_text)
+        previous_suppression = getattr(
+            self.command_processor,
+            "_suppress_conversational_fallback",
+            False,
+        )
+        self.command_processor._suppress_conversational_fallback = True
+        try:
+            result = self.command_processor.process(command_text)
+        finally:
+            self.command_processor._suppress_conversational_fallback = previous_suppression
         category = result.get("category")
 
         if category == "confirmation_required" or result.get("requires_confirmation"):

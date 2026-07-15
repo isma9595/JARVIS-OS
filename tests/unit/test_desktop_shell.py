@@ -184,6 +184,19 @@ def test_execute_command_wraps_output_safely():
     assert "- no secrets" in text
 
 
+def test_execute_dialog_greeting_with_real_service_is_safe():
+    view_model = DesktopShellViewModel(JarvisAppService())
+
+    text = view_model.execute_command("диалог: привет")
+
+    assert "Desktop shell execution:" in text
+    assert "Привет, Исмаил" in text
+    assert "providers called: no" in text
+    assert "network used: no" in text
+    assert "command executed: no" in text
+    assert "microphone/TTS started: no" in text
+
+
 def test_clear_output_works_without_execution():
     service = FakeAppService()
     view_model = DesktopShellViewModel(service)

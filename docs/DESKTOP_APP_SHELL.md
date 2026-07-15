@@ -45,6 +45,8 @@ python run_desktop.py
 - List command registry categories and commands.
 - Preview command risk without execution.
 - Execute explicit command text through AppService.
+- Execute `диалог: <text>` through AppService/CommandProcessor as a safe
+  conversational preview/plan.
 
 ## Current Shell Does Not Do
 
@@ -65,6 +67,8 @@ python run_desktop.py
 - AI responses are not executed as commands.
 - Preview does not execute target commands.
 - Risky/network commands require explicit command text and Execute.
+- Conversational preview does not call providers, network, browser, audio, or
+  file/OS automation.
 
 ## Future
 

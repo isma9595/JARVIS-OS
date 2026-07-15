@@ -26,6 +26,10 @@ and app readiness come from the registry.
 
 The registry still does not execute commands.
 
+TASK-076 adds conversational loop command cards under the `conversation`
+category. These cards describe status, capabilities, and free-form preview
+metadata only; contracts still do not call providers or execute dialog text.
+
 ## Relationship To DesktopShell
 
 The desktop shell can read AppService contract status as a UI-safe status

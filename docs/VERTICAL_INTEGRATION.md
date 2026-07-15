@@ -18,6 +18,7 @@ Checked layers:
 - Audio Lifecycle
 - Voice Safety
 - AI Safety
+- Conversational Loop
 
 ## Report Checks
 
@@ -25,6 +26,11 @@ The report verifies registry categories, contract manifest safety, AppService
 status and preview behavior, DesktopShellViewModel construction, secure key
 metadata, audio lifecycle metadata, voice allowlist boundaries, explicit-only AI
 provider requests, and no-network/no-secret integration flags.
+
+TASK-076 adds a conversational loop check. It verifies that greeting text is
+classified locally, risky text such as `удали все файлы` is blocked or
+confirmation-required, and no network, providers, command execution,
+microphone, or TTS are used.
 
 ## Safety Guarantees
 

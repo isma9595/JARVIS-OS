@@ -114,6 +114,53 @@ def test_preview_command_does_not_execute_command_processor():
     assert processor.calls == []
 
 
+def test_conversational_status_text_ru_works():
+    text = JarvisAppService(command_processor=FakeCommandProcessor()).conversational_status_text_ru()
+
+    assert "Conversational loop status:" in text
+    assert "no network by default" in text
+    assert "no providers called" in text
+    assert "no microphone/TTS" in text
+
+
+def test_conversational_preview_text_ru_greeting_safe():
+    processor = FakeCommandProcessor()
+    service = JarvisAppService(command_processor=processor)
+    text = service.conversational_preview_text_ru("привет")
+    result = service.conversational_preview("привет")
+
+    assert result.intent == "small_talk"
+    assert "Привет, Исмаил" in text
+    assert result.network_used is False
+    assert result.providers_called is False
+    assert result.command_executed is False
+    assert processor.calls == []
+
+
+def test_conversational_preview_text_ru_known_command():
+    result = JarvisAppService(
+        command_processor=FakeCommandProcessor()
+    ).conversational_preview("статус ai")
+
+    assert result.intent == "known_command"
+    assert result.known_command is True
+    assert result.command_id == "ai.status"
+    assert result.command_executed is False
+
+
+def test_conversational_preview_text_ru_risky_requires_confirmation_or_blocked():
+    result = JarvisAppService(
+        command_processor=FakeCommandProcessor()
+    ).conversational_preview("удали все файлы")
+
+    assert result.intent == "risky_action"
+    assert result.requires_confirmation is True
+    assert result.safety_level == "risky_blocked"
+    assert result.network_used is False
+    assert result.providers_called is False
+    assert result.secrets_included is False
+
+
 def test_execute_command_calls_command_processor_once_and_wraps_result():
     processor = FakeCommandProcessor()
     service = JarvisAppService(command_processor=processor)
