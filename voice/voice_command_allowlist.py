@@ -23,6 +23,19 @@ class SafeVoiceCommandAllowlist:
     ]
 
     _ALIASES_BY_CANONICAL = {
+        "статус desktop app": {
+            "статус desktop app",
+            "статус jarvis desktop",
+            "статус desktop shell",
+            "статус app shell",
+            "статус окна jarvis",
+        },
+        "возможности desktop app": {
+            "возможности desktop app",
+            "возможности desktop shell",
+            "возможности окна jarvis",
+            "desktop app capabilities",
+        },
         "статус app service": {
             "статус app service",
             "статус jarvis app service",

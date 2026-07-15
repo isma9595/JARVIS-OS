@@ -100,3 +100,9 @@ TASK-069 adds `JarvisAppService` as the app-facing boundary for future desktop
 UI code. The service uses this registry for list/search/category/preview
 metadata and delegates execution to `CommandProcessor`. See
 `docs/JARVIS_APP_SERVICE.md`.
+
+## TASK-070 Desktop Shell
+
+TASK-070 registers read-only desktop shell status/capability commands in the
+APP category. No GUI launch command is executable or voice auto-allowlisted.
+The desktop shell uses registry metadata through `JarvisAppService`.

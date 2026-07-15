@@ -214,3 +214,10 @@ and consensus execution require confirmation.
 Future desktop UI code should reach AI live verification status through
 `JarvisAppService`, which previews command risk through `CommandRegistry` and
 executes only by delegating to `CommandProcessor`.
+
+# TASK-070 Desktop Shell Note
+
+The desktop shell prototype can preview live provider commands and show
+network/privacy risk metadata without executing them. A real provider call can
+only happen when the user explicitly types an existing provider command and
+clicks Execute.

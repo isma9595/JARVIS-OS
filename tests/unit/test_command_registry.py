@@ -234,3 +234,54 @@ def test_search_text_redacts_secrets_and_does_not_execute():
     assert "- network: not called" in text
     assert "- disk writes: none" in text
     assert "- execution: not performed" in text
+
+
+def test_desktop_shell_commands_registered():
+    registry = CommandRegistry()
+    command_ids = {command.command_id for command in registry.list_by_category(CommandCategory.APP)}
+
+    assert "desktop_shell.status" in command_ids
+    assert "desktop_shell.capabilities" in command_ids
+
+
+def test_desktop_shell_status_capabilities_are_read_only_app_ready():
+    registry = CommandRegistry()
+
+    for alias in (
+        "статус desktop app",
+        "статус jarvis desktop",
+        "статус desktop shell",
+        "статус app shell",
+        "статус окна jarvis",
+        "возможности desktop app",
+        "возможности desktop shell",
+        "возможности окна jarvis",
+        "desktop app capabilities",
+    ):
+        command = registry.find_by_alias(alias)
+
+        assert command is not None
+        assert command.category == CommandCategory.APP
+        assert command.read_only is True
+        assert command.risk_level == CommandRiskLevel.READ_ONLY
+        assert command.app_ready is True
+        assert command.requires_network is False
+
+
+def test_desktop_shell_status_capability_voice_auto_allowed_yes():
+    registry = CommandRegistry()
+
+    for alias in ("статус desktop app", "desktop app capabilities"):
+        command = registry.find_by_alias(alias)
+
+        assert command is not None
+        assert command.voice_auto_allowed is True
+
+
+def test_no_gui_launch_command_is_voice_auto_allowed():
+    registry = CommandRegistry()
+
+    for command in registry.commands:
+        aliases = " ".join(command.aliases).lower()
+        if "run_desktop.py" in aliases or "launch" in command.command_id:
+            assert command.voice_auto_allowed is False

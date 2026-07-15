@@ -1,9 +1,9 @@
 # JARVIS-OS Checkpoint
 
-- Current stable stage: TASK-068 — Command Registry & Capability Manifest Foundation
-- Last stable commit: 58993ed
-- Last stable commit message: Add command registry foundation
-- Next stage: TASK-069 — JARVIS App Service Layer
+- Current stable stage: TASK-069 — JARVIS App Service Layer
+- Last stable commit: e4b52c4
+- Last stable commit message: Add JARVIS app service layer
+- Next stage: TASK-070 — Desktop App Shell Prototype
 - Status: in progress
 
 ## Approved Workflow

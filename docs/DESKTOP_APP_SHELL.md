@@ -1,0 +1,69 @@
+# Desktop App Shell
+
+## Why This Exists
+
+TASK-070 adds the first safe desktop application shell prototype for JARVIS.
+It prepares the project for a future Windows desktop app, dashboard UI,
+command preview, command execution through AppService, registry/category
+browsing, AI provider settings, secure key storage, installer/product mode,
+and a future visual design system.
+
+This is not the final UI, installer, secure key storage, or AI settings screen.
+
+## Relationship To AppService
+
+The desktop shell uses `JarvisAppService` as its app-facing boundary.
+The shell can show service status, list registry commands, preview command
+risk, and execute explicit user commands only through AppService.
+
+## Relationship To CommandRegistry
+
+`CommandRegistry` remains the metadata source for categories, command lists,
+risk levels, network flags, privacy flags, and app readiness.
+
+## Why UI Must Not Call CommandProcessor Directly
+
+The UI is not an execution authority. It must not bypass AppService or call
+`ActionRouter` directly. AppService delegates execution to `CommandProcessor`
+so the existing safety boundaries remain in charge.
+
+## How To Run
+
+```powershell
+python run_desktop.py
+```
+
+`run.py` remains unchanged and is still the CLI entry point.
+
+## Current Shell Can Do
+
+- Show desktop/app service status.
+- List command registry categories and commands.
+- Preview command risk without execution.
+- Execute explicit command text through AppService.
+
+## Current Shell Does Not Do
+
+- No installer.
+- No secure key storage.
+- No AI settings UI yet.
+- No file reading.
+- No screen capture.
+- No automation.
+- No network by default.
+
+## Safety
+
+- No auto execution on startup.
+- No secrets are stored or printed by the shell.
+- No network by default.
+- AI responses are not executed as commands.
+- Preview does not execute target commands.
+- Risky/network commands require explicit command text and Execute.
+
+## Future
+
+- AI Provider Settings UI.
+- Secure Settings & API Key Storage.
+- Windows Installer Foundation.
+- Visual Design System.

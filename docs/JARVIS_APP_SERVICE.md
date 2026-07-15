@@ -57,6 +57,13 @@ AppService uses the registry as the app-facing capability manifest. A future
 desktop command palette or settings screen can use it to show command IDs,
 categories, risk levels, network flags, privacy flags, and `app_ready`.
 
+## TASK-070 Desktop Shell
+
+TASK-070 adds `app/desktop_shell.py` and `run_desktop.py` as a safe tkinter
+desktop shell prototype. The shell uses `JarvisAppService` for status,
+registry browsing, preview, and explicit execution. It does not call
+`CommandProcessor` directly.
+
 ## Future UI
 
 The desktop UI should call AppService for:

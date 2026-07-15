@@ -812,3 +812,63 @@ def test_app_service_preview_arbitrary_text_is_not_allowlisted():
 
         assert decision.allowed is False
         assert decision.canonical_command is None
+
+
+def test_desktop_shell_status_and_capability_commands_are_allowlisted():
+    allowlist = SafeVoiceCommandAllowlist()
+
+    for command in (
+        "статус desktop app",
+        "статус jarvis desktop",
+        "статус desktop shell",
+        "статус app shell",
+        "статус окна jarvis",
+    ):
+        decision = allowlist.decide(command)
+
+        assert decision.allowed is True
+        assert decision.canonical_command == "статус desktop app"
+
+    for command in (
+        "возможности desktop app",
+        "возможности desktop shell",
+        "возможности окна jarvis",
+        "desktop app capabilities",
+    ):
+        decision = allowlist.decide(command)
+
+        assert decision.allowed is True
+        assert decision.canonical_command == "возможности desktop app"
+
+
+def test_desktop_shell_gui_launch_and_arbitrary_execution_not_allowlisted():
+    allowlist = SafeVoiceCommandAllowlist()
+
+    for command in (
+        "запусти desktop app",
+        "запусти run_desktop.py",
+        "python run_desktop.py",
+        "desktop execute: статус ai",
+        "app execute: статус ai",
+        "app preview: статус ai",
+    ):
+        decision = allowlist.decide(command)
+
+        assert decision.allowed is False
+        assert decision.canonical_command is None
+
+
+def test_desktop_shell_real_provider_fallback_consensus_remain_not_allowlisted():
+    allowlist = SafeVoiceCommandAllowlist()
+
+    for command in (
+        "groq реальный запрос: hello",
+        "fallback ai запрос: hello",
+        "консенсус ai: hello",
+        "спроси все ai: hello",
+        "проверить ai контекст: token abc",
+    ):
+        decision = allowlist.decide(command)
+
+        assert decision.allowed is False
+        assert decision.canonical_command is None

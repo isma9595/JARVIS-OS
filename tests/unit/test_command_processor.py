@@ -5017,3 +5017,54 @@ def test_app_service_existing_registry_ai_voice_provider_commands_still_work():
     assert processor.process("статус ai fallback execution")["intent"] == "ai.fallback_execution.status"
     assert processor.process("статус ai")["intent"] == "ai.status"
     assert processor.process("статус ollama")["intent"] == "ai.ollama.status"
+
+
+def test_desktop_shell_status_commands_work():
+    processor = CommandProcessor()
+
+    for command in (
+        "статус desktop app",
+        "статус jarvis desktop",
+        "статус desktop shell",
+        "статус app shell",
+        "статус окна jarvis",
+    ):
+        result = processor.process(command)
+
+        assert result["intent"] == "desktop_shell.status"
+        assert "desktop shell foundation: yes" in result["response"]
+        assert "gui prototype: yes" in result["response"]
+        assert "run command: python run_desktop.py" in result["response"]
+        assert "app service used: yes" in result["response"]
+        assert "command registry used: yes" in result["response"]
+        assert "network default: no" in result["response"]
+        assert "run.py unchanged" in result["response"]
+
+
+def test_desktop_shell_capabilities_commands_work():
+    processor = CommandProcessor()
+
+    for command in (
+        "возможности desktop app",
+        "возможности desktop shell",
+        "возможности окна jarvis",
+        "desktop app capabilities",
+    ):
+        result = processor.process(command)
+
+        assert result["intent"] == "desktop_shell.capabilities"
+        assert "can show app/service status" in result["response"]
+        assert "can list command registry/categories" in result["response"]
+        assert "can preview command risk" in result["response"]
+        assert "can execute through AppService" in result["response"]
+        assert "future AI provider settings planned" in result["response"]
+
+
+def test_desktop_shell_does_not_break_existing_app_registry_ai_voice_provider_statuses():
+    processor = CommandProcessor(ollama_request_gate=FakeOllamaGate())
+
+    assert processor.process("статус app service")["intent"] == "app_service.status"
+    assert processor.process("статус command registry")["intent"] == "command_registry.status"
+    assert processor.process("статус ai")["intent"] == "ai.status"
+    assert processor.process("статус голосового цикла")["intent"] == "voice.cycle.status"
+    assert processor.process("статус groq")["intent"] == "ai.groq.status"

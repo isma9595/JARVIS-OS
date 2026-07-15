@@ -153,6 +153,19 @@ class CommandProcessor:
         "preview command:",
         "предварительная проверка команды:",
     )
+    DESKTOP_SHELL_STATUS_COMMANDS = {
+        "статус desktop app",
+        "статус jarvis desktop",
+        "статус desktop shell",
+        "статус app shell",
+        "статус окна jarvis",
+    }
+    DESKTOP_SHELL_CAPABILITIES_COMMANDS = {
+        "возможности desktop app",
+        "возможности desktop shell",
+        "возможности окна jarvis",
+        "desktop app capabilities",
+    }
     AI_STATUS_COMMANDS = {
         "статус ai",
         "статус ии",
@@ -2781,6 +2794,20 @@ class CommandProcessor:
         return None
 
     def _app_service_result(self, command):
+        if command in self.DESKTOP_SHELL_STATUS_COMMANDS:
+            return self._result(
+                "desktop_shell.status",
+                self._desktop_shell_status_text(),
+                speakable=False,
+            )
+
+        if command in self.DESKTOP_SHELL_CAPABILITIES_COMMANDS:
+            return self._result(
+                "desktop_shell.capabilities",
+                self._desktop_shell_capabilities_text(),
+                speakable=False,
+            )
+
         if command in self.APP_SERVICE_STATUS_COMMANDS:
             return self._result(
                 "app_service.status",
@@ -2812,6 +2839,42 @@ class CommandProcessor:
                 )
 
         return None
+
+    @staticmethod
+    def _desktop_shell_status_text():
+        return "\n".join(
+            [
+                "Desktop app shell status:",
+                "- desktop shell foundation: yes",
+                "- gui prototype: yes",
+                "- run command: python run_desktop.py",
+                "- app service used: yes",
+                "- command registry used: yes",
+                "- installer ready: no",
+                "- secure key storage ready: no",
+                "- provider settings UI ready: no",
+                "- network default: no",
+                "- no secrets",
+                "- no response execution",
+                "- run.py unchanged",
+            ]
+        )
+
+    @staticmethod
+    def _desktop_shell_capabilities_text():
+        return "\n".join(
+            [
+                "Desktop app shell capabilities:",
+                "- can show app/service status",
+                "- can list command registry/categories",
+                "- can preview command risk",
+                "- can execute through AppService",
+                "- future AI provider settings planned",
+                "- future secure key storage planned",
+                "- future installer planned",
+                "- no final design yet",
+            ]
+        )
 
     def _get_app_service(self):
         from app import JarvisAppService
