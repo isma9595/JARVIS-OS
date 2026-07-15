@@ -401,6 +401,38 @@ class JarvisAppService:
             ]
         )
 
+    def vertical_integration_report(self):
+        from app.vertical_integration import VerticalIntegrationService
+
+        return VerticalIntegrationService(
+            app_service=self,
+            command_registry=self.command_registry,
+        ).run_report()
+
+    def vertical_integration_report_text_ru(self) -> str:
+        from app.vertical_integration import VerticalIntegrationService
+
+        return VerticalIntegrationService(
+            app_service=self,
+            command_registry=self.command_registry,
+        ).report_text_ru()
+
+    def vertical_integration_checklist_text_ru(self) -> str:
+        from app.vertical_integration import VerticalIntegrationService
+
+        return VerticalIntegrationService(
+            app_service=self,
+            command_registry=self.command_registry,
+        ).checklist_text_ru()
+
+    def vertical_integration_summary_text_ru(self) -> str:
+        from app.vertical_integration import VerticalIntegrationService
+
+        return VerticalIntegrationService(
+            app_service=self,
+            command_registry=self.command_registry,
+        ).safe_summary_text_ru()
+
     def list_commands(self, category: str | None = None) -> str:
         command_category = self._parse_category(category)
         return self.command_registry.list_text_ru(command_category)

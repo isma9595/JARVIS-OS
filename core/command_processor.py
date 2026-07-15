@@ -129,6 +129,8 @@ class CommandProcessor:
         "команды ollama": CommandCategory.OLLAMA,
         "команды secure keys": CommandCategory.SECURE_KEYS,
         "команды api ключи": CommandCategory.SECURE_KEYS,
+        "команды integration": CommandCategory.INTEGRATION,
+        "команды интеграции": CommandCategory.INTEGRATION,
         "команды приложение": CommandCategory.APP,
         "команды profile": CommandCategory.PROFILE,
         "команды system": CommandCategory.SYSTEM,
@@ -149,6 +151,24 @@ class CommandProcessor:
     APP_SERVICE_COMMANDS_COMMANDS = {
         "app service commands",
         "команды app service",
+    }
+    VERTICAL_INTEGRATION_STATUS_COMMANDS = {
+        "статус vertical integration",
+        "статус интеграции jarvis",
+        "статус вертикальной интеграции",
+        "vertical integration status",
+        "integration status",
+    }
+    VERTICAL_INTEGRATION_CHECKLIST_COMMANDS = {
+        "vertical integration checklist",
+        "чеклист vertical integration",
+        "чеклист интеграции jarvis",
+        "чеклист вертикальной интеграции",
+    }
+    VERTICAL_INTEGRATION_SUMMARY_COMMANDS = {
+        "vertical integration summary",
+        "кратко vertical integration",
+        "кратко интеграция jarvis",
     }
     AUDIO_LIFECYCLE_STATUS_COMMANDS = {
         "статус audio lifecycle",
@@ -2964,6 +2984,27 @@ class CommandProcessor:
             return self._result(
                 "app_service.commands",
                 self._get_app_service().list_commands(CommandCategory.APP.value),
+                speakable=False,
+            )
+
+        if command in self.VERTICAL_INTEGRATION_STATUS_COMMANDS:
+            return self._result(
+                "vertical_integration.status",
+                self._get_app_service().vertical_integration_report_text_ru(),
+                speakable=False,
+            )
+
+        if command in self.VERTICAL_INTEGRATION_CHECKLIST_COMMANDS:
+            return self._result(
+                "vertical_integration.checklist",
+                self._get_app_service().vertical_integration_checklist_text_ru(),
+                speakable=False,
+            )
+
+        if command in self.VERTICAL_INTEGRATION_SUMMARY_COMMANDS:
+            return self._result(
+                "vertical_integration.summary",
+                self._get_app_service().vertical_integration_summary_text_ru(),
                 speakable=False,
             )
 

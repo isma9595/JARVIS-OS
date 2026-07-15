@@ -52,3 +52,8 @@ Status and capabilities are read-only and may be voice-auto-allowed. Reset/stop 
 - Safe one-shot capture button.
 - Safe output controls.
 - Audio resource cleanup for partial/continuous modes.
+## Vertical Integration
+
+TASK-075 checks audio lifecycle status as metadata only. The integration report
+verifies no microphone, TTS, continuous listening, network, or audio saving is
+started by the checkpoint.

@@ -5181,3 +5181,41 @@ def test_existing_app_service_desktop_secure_keys_and_registry_commands_still_wo
     assert processor.process("статус desktop app")["intent"] == "desktop_shell.status"
     assert processor.process("статус secure keys")["intent"] == "secure_keys.status"
     assert processor.process("статус command registry")["intent"] == "command_registry.status"
+def test_vertical_integration_commands_work_without_action_router():
+    class FailingActionRouter:
+        calls = 0
+
+        def route(self, command):
+            self.calls += 1
+            raise AssertionError("vertical integration status must not route to ActionRouter")
+
+    processor = CommandProcessor()
+    processor.action_router = FailingActionRouter()
+
+    status = processor.process("статус vertical integration")
+    status_ru = processor.process("статус интеграции jarvis")
+    checklist = processor.process("vertical integration checklist")
+    summary = processor.process("vertical integration summary")
+
+    assert status["intent"] == "vertical_integration.status"
+    assert "vertical integration foundation: yes" in status["response"]
+    assert "network used: no" in status["response"]
+    assert "secrets included: no" in status["response"]
+    assert "providers called: no" in status["response"]
+    assert status_ru["intent"] == "vertical_integration.status"
+    assert checklist["intent"] == "vertical_integration.checklist"
+    assert "Vertical integration checklist:" in checklist["response"]
+    assert summary["intent"] == "vertical_integration.summary"
+    assert "Vertical integration summary:" in summary["response"]
+    assert processor.action_router.calls == 0
+
+
+def test_vertical_integration_does_not_break_existing_status_commands():
+    processor = CommandProcessor()
+
+    assert processor.process("статус app contracts")["intent"] == "app_contracts.status"
+    assert processor.process("статус app service")["intent"] == "app_service.status"
+    assert processor.process("статус desktop app")["intent"] == "desktop_shell.status"
+    assert processor.process("статус secure keys")["intent"] == "secure_keys.status"
+    assert processor.process("статус audio lifecycle")["intent"] == "audio_lifecycle.status"
+    assert processor.process("статус command registry")["intent"] == "command_registry.status"

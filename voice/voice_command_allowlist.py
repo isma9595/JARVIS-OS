@@ -107,6 +107,24 @@ class SafeVoiceCommandAllowlist:
             "app service commands",
             "команды app service",
         },
+        "статус vertical integration": {
+            "статус vertical integration",
+            "статус интеграции jarvis",
+            "статус вертикальной интеграции",
+            "vertical integration status",
+            "integration status",
+        },
+        "vertical integration checklist": {
+            "vertical integration checklist",
+            "чеклист vertical integration",
+            "чеклист интеграции jarvis",
+            "чеклист вертикальной интеграции",
+        },
+        "vertical integration summary": {
+            "vertical integration summary",
+            "кратко vertical integration",
+            "кратко интеграция jarvis",
+        },
         "статус command registry": {
             "статус command registry",
             "статус реестра команд",

@@ -123,3 +123,8 @@ called.
 # Audio Lifecycle Commands
 
 TASK-074 adds the `audio` command category. Audio lifecycle status/capabilities are read-only, app-ready, voice-auto-allowed, and require no network. Metadata reset/stop is confirmation-required and not voice-auto-allowed.
+## Vertical Integration
+
+TASK-075 adds the `integration` command category for read-only vertical
+integration status, checklist, and summary commands. These commands are
+App-ready, voice-auto-allowed, and do not require network.

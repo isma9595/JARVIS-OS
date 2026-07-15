@@ -434,3 +434,45 @@ def test_no_audio_lifecycle_command_requires_network():
 
     assert commands
     assert all(command.requires_network is False for command in commands)
+
+
+def test_vertical_integration_commands_registered():
+    registry = CommandRegistry()
+    command_ids = {
+        command.command_id
+        for command in registry.list_by_category(CommandCategory.INTEGRATION)
+    }
+
+    assert "vertical_integration.status" in command_ids
+    assert "vertical_integration.checklist" in command_ids
+    assert "vertical_integration.summary" in command_ids
+
+
+def test_vertical_integration_commands_are_read_only_app_ready_and_voice_allowed():
+    registry = CommandRegistry()
+
+    for alias in (
+        "статус vertical integration",
+        "статус интеграции jarvis",
+        "vertical integration checklist",
+        "чеклист интеграции jarvis",
+        "vertical integration summary",
+        "кратко интеграция jarvis",
+    ):
+        command = registry.find_by_alias(alias)
+
+        assert command is not None
+        assert command.category == CommandCategory.INTEGRATION
+        assert command.read_only is True
+        assert command.risk_level == CommandRiskLevel.READ_ONLY
+        assert command.voice_auto_allowed is True
+        assert command.app_ready is True
+        assert command.requires_network is False
+
+
+def test_no_vertical_integration_command_requires_network():
+    registry = CommandRegistry()
+    commands = registry.list_by_category(CommandCategory.INTEGRATION)
+
+    assert commands
+    assert all(command.requires_network is False for command in commands)

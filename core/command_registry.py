@@ -24,6 +24,7 @@ class CommandCategory(Enum):
     OLLAMA = "ollama"
     SECURE_KEYS = "secure_keys"
     SAFETY = "safety"
+    INTEGRATION = "integration"
     APP = "app"
     FILES_FUTURE = "files_future"
     DEVELOPMENT = "development"
@@ -77,6 +78,7 @@ class CommandRegistry:
         CommandCategory.OLLAMA: "локальный Ollama provider",
         CommandCategory.SECURE_KEYS: "защищенное хранение API-ключей без вывода секретов",
         CommandCategory.SAFETY: "безопасность выполнения и голосовые ограничения",
+        CommandCategory.INTEGRATION: "вертикальная интеграция слоев JARVIS без выполнения",
         CommandCategory.APP: "будущая desktop app поверхность",
         CommandCategory.FILES_FUTURE: "будущие файловые возможности",
         CommandCategory.DEVELOPMENT: "разработка и диагностика",
@@ -420,6 +422,9 @@ def default_command_metadata() -> tuple[CommandMetadata, ...]:
         _meta("app_contracts.manifest", "Манифест AppService contracts", "Манифест версии, status cards, command cards и категорий без выполнения.", CommandCategory.APP, ("app contracts manifest", "manifest app contracts", "манифест контрактов приложения", "app service contract manifest"), voice_auto_allowed=True, introduced_in="TASK-073", notes_ru="manifest only; no secrets; no network; no execution"),
         _meta("app_contracts.status_cards", "Карточки статуса приложения", "UI-safe status cards для будущих приложений.", CommandCategory.APP, ("app status cards", "карточки статуса приложения"), voice_auto_allowed=True, introduced_in="TASK-073", notes_ru="status cards only; no secrets; no network"),
         _meta("app_contracts.command_cards", "Карточки команд приложения", "UI-safe command cards из CommandRegistry metadata.", CommandCategory.APP, ("app command cards", "карточки команд приложения"), voice_auto_allowed=True, introduced_in="TASK-073", notes_ru="command cards only; no secrets; no network"),
+        _meta("vertical_integration.status", "Статус vertical integration", "Read-only vertical integration report across registry, contracts, app service, desktop shell, keys, audio, voice, and AI safety.", CommandCategory.INTEGRATION, ("статус vertical integration", "статус интеграции jarvis", "статус вертикальной интеграции", "vertical integration status", "integration status"), voice_auto_allowed=True, introduced_in="TASK-075", notes_ru="metadata only; no network; no secrets; no audio; no providers"),
+        _meta("vertical_integration.checklist", "Чеклист vertical integration", "Read-only checklist for the vertical integration foundation.", CommandCategory.INTEGRATION, ("vertical integration checklist", "чеклист vertical integration", "чеклист интеграции jarvis", "чеклист вертикальной интеграции"), voice_auto_allowed=True, introduced_in="TASK-075", notes_ru="checklist only; no execution; no network; no secrets"),
+        _meta("vertical_integration.summary", "Кратко vertical integration", "Compact safe summary of the vertical integration foundation.", CommandCategory.INTEGRATION, ("vertical integration summary", "кратко vertical integration", "кратко интеграция jarvis"), voice_auto_allowed=True, introduced_in="TASK-075", notes_ru="summary only; no execution; no network; no secrets"),
         _meta("desktop_shell.status", "Статус Desktop App Shell", "Статус безопасного desktop shell prototype без сети.", CommandCategory.APP, ("статус desktop app", "статус jarvis desktop", "статус desktop shell", "статус app shell", "статус окна jarvis"), voice_auto_allowed=True, introduced_in="TASK-070", notes_ru="status only; no network; run_desktop.py is separate from run.py"),
         _meta("desktop_shell.capabilities", "Возможности Desktop App Shell", "Возможности desktop shell prototype и будущие экраны.", CommandCategory.APP, ("возможности desktop app", "возможности desktop shell", "возможности окна jarvis", "desktop app capabilities"), voice_auto_allowed=True, introduced_in="TASK-070", notes_ru="capabilities only; no network"),
         _meta("app.launch_future", "Приложение JARVIS", "Будущая desktop app команда.", CommandCategory.APP, ("приложение jarvis",), risk_level=CommandRiskLevel.FUTURE, read_only=False, app_ready=False, notes_ru="future/not implemented"),

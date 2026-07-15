@@ -23,6 +23,11 @@ from app.desktop_shell import (
     JarvisDesktopShell,
     launch_desktop_shell,
 )
+from app.vertical_integration import (
+    VerticalIntegrationCheck,
+    VerticalIntegrationReport,
+    VerticalIntegrationService,
+)
 
 __all__ = [
     "AppCommandPreview",
@@ -41,5 +46,8 @@ __all__ = [
     "DesktopShellViewModel",
     "JarvisAppService",
     "JarvisDesktopShell",
+    "VerticalIntegrationCheck",
+    "VerticalIntegrationReport",
+    "VerticalIntegrationService",
     "launch_desktop_shell",
 ]

@@ -1,9 +1,9 @@
 # JARVIS-OS Checkpoint
 
-- Current stable stage: TASK-073 — AppService Contracts
-- Last stable commit: 6cf56af
-- Last stable commit message: Add AppService contracts
-- Next stage: TASK-074 — Audio Lifecycle
+- Current stable stage: TASK-074 — Audio Lifecycle
+- Last stable commit: 1f6133b
+- Last stable commit message: Add audio lifecycle foundation
+- Next stage: TASK-075 — Vertical Integration
 - Status: in progress
 
 ## Approved Workflow

@@ -103,3 +103,7 @@ Help:
 TASK-073 contracts may report that secure key storage is ready, but they do not
 read, decrypt, serialize, or print stored key values. Future AI Provider
 Settings UI should use secure storage through an approved boundary.
+## Vertical Integration
+
+TASK-075 verifies secure key visibility through safe status/list metadata only.
+The integration report must not read decrypted secrets or print raw key values.

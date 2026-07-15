@@ -204,6 +204,24 @@ def test_audio_lifecycle_status_method_and_card_are_safe():
     assert "audio saved: no" in text
 
 
+def test_vertical_integration_report_text_is_safe_and_no_unsafe_execution():
+    processor = FakeCommandProcessor()
+    service = JarvisAppService(command_processor=processor)
+
+    text = service.vertical_integration_report_text_ru()
+    report = service.vertical_integration_report()
+
+    assert report.overall_passed is True
+    assert report.network_used is False
+    assert report.secrets_included is False
+    assert report.providers_called is False
+    assert report.command_execution_used is False
+    assert "network used: no" in text
+    assert "secrets included: no" in text
+    assert "providers called: no" in text
+    assert processor.calls == []
+
+
 def test_command_cards_filter_app_ai_and_secure_keys():
     service = JarvisAppService(command_processor=FakeCommandProcessor())
 

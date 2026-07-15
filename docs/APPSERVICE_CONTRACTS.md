@@ -110,3 +110,8 @@ metadata and are voice-allowlisted only for status/manifest/cards.
 # Audio Lifecycle Card
 
 Status cards now include `audio_lifecycle`, a safe metadata-only card for microphone/TTS lifecycle state. It reports no network use and no audio saving.
+## Vertical Integration
+
+TASK-075 uses AppService contracts as UI-safe serialization boundaries for the
+vertical integration report. Contract status and manifest data remain
+metadata-only: no secrets, no network, and no response execution.

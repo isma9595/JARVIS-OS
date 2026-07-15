@@ -135,3 +135,8 @@ Preview commands are not voice auto-allowlisted.
 # Audio Lifecycle
 
 AppService exposes `audio_lifecycle_status()`, `audio_lifecycle_status_text_ru()`, and `audio_status_card()` as metadata-only contracts. These methods do not start microphone capture, play TTS, use network, save audio, or expose secrets.
+## Vertical Integration
+
+TASK-075 adds `VerticalIntegrationService` access through AppService report,
+checklist, and summary methods. These methods are metadata/read-only and do not
+call providers, network, audio devices, or decrypted secret paths.

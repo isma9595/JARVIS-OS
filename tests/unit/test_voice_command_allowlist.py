@@ -959,3 +959,44 @@ def test_app_contract_arbitrary_preview_execute_and_risky_commands_not_allowlist
 
         assert decision.allowed is False
         assert decision.canonical_command is None
+
+
+def test_vertical_integration_status_checklist_and_summary_are_allowlisted():
+    allowlist = SafeVoiceCommandAllowlist()
+    expected = {
+        "статус vertical integration": "статус vertical integration",
+        "статус интеграции jarvis": "статус vertical integration",
+        "статус вертикальной интеграции": "статус vertical integration",
+        "vertical integration status": "статус vertical integration",
+        "integration status": "статус vertical integration",
+        "vertical integration checklist": "vertical integration checklist",
+        "чеклист vertical integration": "vertical integration checklist",
+        "чеклист интеграции jarvis": "vertical integration checklist",
+        "чеклист вертикальной интеграции": "vertical integration checklist",
+        "vertical integration summary": "vertical integration summary",
+        "кратко vertical integration": "vertical integration summary",
+        "кратко интеграция jarvis": "vertical integration summary",
+    }
+
+    for command, canonical in expected.items():
+        decision = allowlist.decide(command)
+
+        assert decision.allowed is True
+        assert decision.canonical_command == canonical
+
+
+def test_vertical_integration_adjacent_risky_commands_still_not_allowlisted():
+    allowlist = SafeVoiceCommandAllowlist()
+
+    for command in (
+        "groq реальный запрос: test",
+        "fallback ai запрос: test",
+        "консенсус ai: test",
+        "импортировать groq ключ из env",
+        "reset audio lifecycle",
+        "app preview: статус ai",
+    ):
+        decision = allowlist.decide(command)
+
+        assert decision.allowed is False
+        assert decision.canonical_command is None

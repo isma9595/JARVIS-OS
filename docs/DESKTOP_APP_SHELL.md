@@ -75,3 +75,8 @@ python run_desktop.py
 # Audio Lifecycle
 
 The desktop shell can consume the AppService audio lifecycle status card for future voice status UI. TASK-074 does not add microphone buttons, TTS controls, new windows, or real audio actions.
+## Vertical Integration
+
+TASK-075 verifies that `DesktopShellViewModel` can build and preview safe
+commands through AppService without opening a GUI, starting audio, or using
+network.
