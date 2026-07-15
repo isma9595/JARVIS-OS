@@ -168,3 +168,77 @@ def test_status_and_capabilities_mention_secure_key_storage_safely():
     assert secret not in capabilities
     assert "no secrets" in status
     assert "no secrets" in capabilities
+
+
+def test_contract_status_manifest_and_cards_work():
+    service = JarvisAppService(command_processor=FakeCommandProcessor())
+
+    status = service.contract_status()
+    manifest = service.contract_manifest()
+    status_cards = service.status_cards()
+    command_cards = service.command_cards()
+
+    assert status.schema_name == "jarvis.app_service.contracts"
+    assert status.version == "0.1"
+    assert manifest.command_cards_count == len(command_cards)
+    assert status_cards
+    assert any(card.card_id == "network_default" for card in status_cards)
+    assert any(card.command_id == "app_contracts.status" for card in command_cards)
+
+
+def test_command_cards_filter_app_ai_and_secure_keys():
+    service = JarvisAppService(command_processor=FakeCommandProcessor())
+
+    app_cards = service.command_cards("app")
+    ai_cards = service.command_cards("ai")
+    secure_cards = service.command_cards("secure_keys")
+
+    assert app_cards
+    assert ai_cards
+    assert secure_cards
+    assert all(card.category == "app" for card in app_cards)
+    assert all(card.category == "ai" for card in ai_cards)
+    assert all(card.category == "secure_keys" for card in secure_cards)
+
+
+def test_preview_contract_does_not_execute_command_processor():
+    processor = FakeCommandProcessor()
+    service = JarvisAppService(command_processor=processor)
+
+    preview = service.preview_contract("app contracts status")
+
+    assert preview.command_id == "app_contracts.status"
+    assert preview.executed is False
+    assert processor.calls == []
+
+
+def test_execute_contract_calls_normal_execution_path_once():
+    processor = FakeCommandProcessor()
+    service = JarvisAppService(command_processor=processor)
+
+    result = service.execute_contract("app contracts status", AppCommandSource.TEST)
+
+    assert processor.calls == ["app contracts status"]
+    assert result.ok is True
+    assert result.command_id == "app_contracts.status"
+    assert result.response_executed_as_command is False
+
+
+def test_contract_outputs_contain_no_secrets():
+    service = JarvisAppService(command_processor=FakeCommandProcessor())
+    secret = "sk-test-1234567890secret"
+
+    preview = service.preview_contract(f"app contracts status api key={secret}")
+    output = service.execute_contract(f"app contracts status api key={secret}")
+    text = "\n".join(
+        [
+            service.contract_status_text_ru(),
+            service.contract_manifest_text_ru(),
+            service.status_cards_text_ru(),
+            service.command_cards_text_ru(),
+            preview.safe_text_ru(),
+            output.safe_text_ru(),
+        ]
+    )
+
+    assert secret not in text

@@ -23,6 +23,27 @@ class SafeVoiceCommandAllowlist:
     ]
 
     _ALIASES_BY_CANONICAL = {
+        "статус app contracts": {
+            "статус app contracts",
+            "статус app service contracts",
+            "статус контрактов приложения",
+            "статус контрактов appservice",
+            "app contracts status",
+        },
+        "app contracts manifest": {
+            "app contracts manifest",
+            "manifest app contracts",
+            "манифест контрактов приложения",
+            "app service contract manifest",
+        },
+        "app status cards": {
+            "app status cards",
+            "карточки статуса приложения",
+        },
+        "app command cards": {
+            "app command cards",
+            "карточки команд приложения",
+        },
         "статус desktop app": {
             "статус desktop app",
             "статус jarvis desktop",

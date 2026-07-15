@@ -345,3 +345,44 @@ def test_no_raw_key_command_exists():
     for command in registry.commands:
         alias_text = " ".join(command.aliases).lower()
         assert all(marker not in alias_text for marker in raw_markers)
+
+
+def test_contract_commands_registered():
+    registry = CommandRegistry()
+    command_ids = {command.command_id for command in registry.list_by_category(CommandCategory.APP)}
+
+    assert "app_contracts.status" in command_ids
+    assert "app_contracts.manifest" in command_ids
+    assert "app_contracts.status_cards" in command_ids
+    assert "app_contracts.command_cards" in command_ids
+
+
+def test_contract_status_manifest_and_cards_are_read_only_app_ready_and_voice_allowed():
+    registry = CommandRegistry()
+
+    for alias in (
+        "статус app contracts",
+        "app contracts manifest",
+        "app status cards",
+        "app command cards",
+    ):
+        command = registry.find_by_alias(alias)
+
+        assert command is not None
+        assert command.category == CommandCategory.APP
+        assert command.read_only is True
+        assert command.app_ready is True
+        assert command.voice_auto_allowed is True
+        assert command.requires_network is False
+
+
+def test_contract_commands_do_not_require_network():
+    registry = CommandRegistry()
+    contract_commands = [
+        command
+        for command in registry.commands
+        if command.command_id.startswith("app_contracts.")
+    ]
+
+    assert contract_commands
+    assert all(command.requires_network is False for command in contract_commands)

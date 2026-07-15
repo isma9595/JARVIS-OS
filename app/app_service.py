@@ -9,6 +9,17 @@ from dataclasses import dataclass
 from enum import Enum
 import re
 
+from app.app_contracts import (
+    APP_CONTRACT_SCHEMA_NAME,
+    APP_CONTRACT_VERSION,
+    AppCommandCard,
+    AppContractManifest,
+    AppContractStatus,
+    AppExecutionContract,
+    AppPreviewContract,
+    AppStatusCard,
+    safe_contract_text,
+)
 from core.command_registry import (
     CommandCategory,
     CommandMetadata,
@@ -137,6 +148,209 @@ class JarvisAppService:
                 "- no secrets",
                 "- no response execution",
             ]
+        )
+
+    def contract_status(self) -> AppContractStatus:
+        return AppContractStatus(
+            schema_name=APP_CONTRACT_SCHEMA_NAME,
+            version=APP_CONTRACT_VERSION,
+            stable=True,
+            app_service_ready=True,
+            desktop_shell_ready=True,
+            secure_key_storage_ready=True,
+            provider_settings_ui_ready=False,
+            installer_ready=False,
+            mobile_ready=False,
+            admin_support_ready=False,
+            network_default=False,
+            secrets_included=False,
+            responses_executed_as_commands=False,
+            notes_ru=(
+                "Contracts are metadata/status only unless execute_contract is called explicitly.",
+                "Provider settings UI, installer, mobile, and admin/support surfaces are planned.",
+                "Contract/list/status/card methods do not call providers or read decrypted secrets.",
+            ),
+        )
+
+    def contract_status_text_ru(self) -> str:
+        return self.contract_status().safe_text_ru()
+
+    def status_cards(self) -> tuple[AppStatusCard, ...]:
+        return (
+            AppStatusCard(
+                card_id="app_service",
+                title_ru="AppService",
+                value_ru="ready",
+                status="ready",
+                category="app",
+                safe=True,
+                ui_visible=True,
+                details_ru=("Stable app-facing boundary is available.",),
+            ),
+            AppStatusCard(
+                card_id="desktop_shell",
+                title_ru="Desktop shell",
+                value_ru="foundation ready",
+                status="ready",
+                category="app",
+                safe=True,
+                ui_visible=True,
+                details_ru=("run_desktop.py remains the simple shell entry point.",),
+            ),
+            AppStatusCard(
+                card_id="secure_key_storage",
+                title_ru="Secure key storage",
+                value_ru="foundation ready",
+                status="ready",
+                category="secure_keys",
+                safe=True,
+                ui_visible=True,
+                details_ru=("Contracts expose status only; no secret values.",),
+            ),
+            AppStatusCard(
+                card_id="provider_settings_ui",
+                title_ru="AI provider settings UI",
+                value_ru="not built",
+                status="planned",
+                category="ai",
+                safe=True,
+                ui_visible=True,
+                details_ru=("Future UI will use these contracts and secure key storage.",),
+            ),
+            AppStatusCard(
+                card_id="installer",
+                title_ru="Installer",
+                value_ru="not built",
+                status="planned",
+                category="installer",
+                safe=True,
+                ui_visible=True,
+                details_ru=("Product mode and installer are outside this task.",),
+            ),
+            AppStatusCard(
+                card_id="mobile",
+                title_ru="Mobile companion",
+                value_ru="not built",
+                status="planned",
+                category="mobile",
+                safe=True,
+                ui_visible=True,
+                details_ru=("Future mobile clients should consume serialized contracts.",),
+            ),
+            AppStatusCard(
+                card_id="admin_support",
+                title_ru="Admin/support",
+                value_ru="planned/no",
+                status="planned",
+                category="admin_support",
+                safe=True,
+                ui_visible=True,
+                details_ru=("No admin/support backend is added by this task.",),
+            ),
+            AppStatusCard(
+                card_id="network_default",
+                title_ru="Network default",
+                value_ru="no",
+                status="safe",
+                category="safety",
+                safe=True,
+                ui_visible=True,
+                details_ru=("Contract methods do not make accidental network calls.",),
+            ),
+        )
+
+    def command_cards(self, category: str | None = None) -> tuple[AppCommandCard, ...]:
+        command_category = self._parse_category(category)
+        commands = (
+            self.command_registry.list_by_category(command_category)
+            if command_category is not None
+            else self.command_registry.commands
+        )
+        return tuple(self._command_card_from_metadata(command) for command in commands)
+
+    def contract_manifest(self) -> AppContractManifest:
+        categories = tuple(category.value for category in self.command_registry.categories())
+        return AppContractManifest(
+            schema_name=APP_CONTRACT_SCHEMA_NAME,
+            version=APP_CONTRACT_VERSION,
+            status=self.contract_status(),
+            status_cards=self.status_cards(),
+            command_cards_count=len(self.command_cards()),
+            categories=categories,
+        )
+
+    def contract_manifest_text_ru(self) -> str:
+        return self.contract_manifest().safe_text_ru()
+
+    def status_cards_text_ru(self) -> str:
+        lines = [
+            "App status cards:",
+            "- no secrets",
+            "- no network",
+            "- no execution",
+        ]
+        lines.extend(f"- {card.safe_text_ru()}" for card in self.status_cards())
+        return "\n".join(lines)
+
+    def command_cards_text_ru(self, category: str | None = None) -> str:
+        cards = self.command_cards(category)
+        counts: dict[str, int] = {}
+        for card in cards:
+            counts[card.category] = counts.get(card.category, 0) + 1
+        lines = [
+            "App command cards:",
+            "- source: CommandRegistry metadata",
+            "- no secrets",
+            "- no network",
+            "- no execution",
+            f"- total: {len(cards)}",
+            "- categories: "
+            + (", ".join(f"{name}={count}" for name, count in sorted(counts.items())) or "none"),
+        ]
+        for card in cards:
+            lines.append(f"- {card.safe_text_ru()}")
+        return "\n".join(lines)
+
+    def preview_contract(self, text: str) -> AppPreviewContract:
+        preview = self.preview_command(text)
+        return AppPreviewContract(
+            input_text=safe_contract_text(preview.input_text),
+            known_command=preview.known_command,
+            command_id=preview.registry_match_id,
+            title_ru=preview.title_ru,
+            category=preview.category or "unknown",
+            risk_level=preview.risk_level or "unknown",
+            read_only=preview.read_only,
+            requires_confirmation=preview.requires_confirmation,
+            requires_network=preview.requires_network,
+            requires_privacy_check=preview.requires_privacy_check,
+            voice_auto_allowed=preview.voice_auto_allowed,
+            app_ready=preview.app_ready,
+            safe_summary_ru=safe_contract_text(preview.safe_summary_ru),
+            secrets_included=False,
+            executed=False,
+        )
+
+    def execute_contract(
+        self,
+        text: str,
+        source: AppCommandSource = AppCommandSource.DESKTOP_UI,
+    ) -> AppExecutionContract:
+        result = self.execute_command(text, source)
+        return AppExecutionContract(
+            ok=result.ok,
+            input_text=safe_contract_text(result.input_text),
+            output_text=safe_contract_text(result.output_text),
+            source=result.source.value,
+            command_id=result.registry_match_id,
+            category=result.category,
+            risk_level=result.risk_level,
+            executed=result.executed,
+            requires_confirmation=result.requires_confirmation,
+            network_may_be_used=result.network_may_be_used,
+            response_executed_as_command=False,
+            secrets_included=False,
+            error=safe_contract_text(result.error) if result.error else None,
         )
 
     def capabilities_text_ru(self) -> str:
@@ -302,6 +516,26 @@ class JarvisAppService:
             lines.append("Output:")
             lines.append(result.output_text)
         return "\n".join(lines)
+
+    @staticmethod
+    def _command_card_from_metadata(metadata: CommandMetadata) -> AppCommandCard:
+        return AppCommandCard(
+            command_id=metadata.command_id,
+            title_ru=metadata.title_ru,
+            description_ru=metadata.description_ru,
+            category=metadata.category.value,
+            aliases=metadata.aliases,
+            risk_level=metadata.risk_level.value,
+            read_only=metadata.read_only,
+            voice_auto_allowed=metadata.voice_auto_allowed,
+            requires_confirmation=metadata.requires_confirmation,
+            requires_network=metadata.requires_network,
+            requires_ai_key=metadata.requires_ai_key,
+            requires_privacy_check=metadata.requires_privacy_check,
+            app_ready=metadata.app_ready,
+            ui_visible=metadata.ui_visible,
+            notes_ru=metadata.notes_ru,
+        )
 
     def _match_registry_command(self, text: str) -> CommandMetadata | None:
         exact = self.command_registry.find_by_alias(text)

@@ -5140,3 +5140,44 @@ def test_secure_key_import_from_fake_env_and_delete_do_not_print_value():
     assert secret not in imported["response"]
     assert secret not in listing["response"]
     assert secret not in deleted["response"]
+
+
+def test_app_contract_status_commands_work():
+    processor = CommandProcessor()
+
+    for command in ("статус app contracts", "статус контрактов приложения"):
+        result = processor.process(command)
+
+        assert result["intent"] == "app_contracts.status"
+        assert "schema name: jarvis.app_service.contracts" in result["response"]
+        assert "contract version: 0.1" in result["response"]
+        assert "network default: no" in result["response"]
+        assert "secrets included: no" in result["response"]
+        assert "responses executed as commands: no" in result["response"]
+
+
+def test_app_contract_manifest_and_cards_commands_work():
+    processor = CommandProcessor()
+
+    manifest = processor.process("app contracts manifest")
+    status_cards = processor.process("app status cards")
+    command_cards = processor.process("app command cards")
+
+    assert manifest["intent"] == "app_contracts.manifest"
+    assert "status cards count:" in manifest["response"]
+    assert "command cards count:" in manifest["response"]
+    assert "no network" in manifest["response"]
+    assert status_cards["intent"] == "app_contracts.status_cards"
+    assert "App status cards:" in status_cards["response"]
+    assert command_cards["intent"] == "app_contracts.command_cards"
+    assert "App command cards:" in command_cards["response"]
+    assert "app_contracts.status" in command_cards["response"]
+
+
+def test_existing_app_service_desktop_secure_keys_and_registry_commands_still_work():
+    processor = CommandProcessor()
+
+    assert processor.process("статус app service")["intent"] == "app_service.status"
+    assert processor.process("статус desktop app")["intent"] == "desktop_shell.status"
+    assert processor.process("статус secure keys")["intent"] == "secure_keys.status"
+    assert processor.process("статус command registry")["intent"] == "command_registry.status"

@@ -150,6 +150,27 @@ class CommandProcessor:
         "app service commands",
         "команды app service",
     }
+    APP_CONTRACTS_STATUS_COMMANDS = {
+        "статус app contracts",
+        "статус app service contracts",
+        "статус контрактов приложения",
+        "статус контрактов appservice",
+        "app contracts status",
+    }
+    APP_CONTRACTS_MANIFEST_COMMANDS = {
+        "app contracts manifest",
+        "manifest app contracts",
+        "манифест контрактов приложения",
+        "app service contract manifest",
+    }
+    APP_CONTRACTS_STATUS_CARDS_COMMANDS = {
+        "app status cards",
+        "карточки статуса приложения",
+    }
+    APP_CONTRACTS_COMMAND_CARDS_COMMANDS = {
+        "app command cards",
+        "карточки команд приложения",
+    }
     APP_SERVICE_PREVIEW_PREFIXES = (
         "app preview:",
         "предпросмотр команды:",
@@ -2907,6 +2928,34 @@ class CommandProcessor:
             return self._result(
                 "app_service.commands",
                 self._get_app_service().list_commands(CommandCategory.APP.value),
+                speakable=False,
+            )
+
+        if command in self.APP_CONTRACTS_STATUS_COMMANDS:
+            return self._result(
+                "app_contracts.status",
+                self._get_app_service().contract_status_text_ru(),
+                speakable=False,
+            )
+
+        if command in self.APP_CONTRACTS_MANIFEST_COMMANDS:
+            return self._result(
+                "app_contracts.manifest",
+                self._get_app_service().contract_manifest_text_ru(),
+                speakable=False,
+            )
+
+        if command in self.APP_CONTRACTS_STATUS_CARDS_COMMANDS:
+            return self._result(
+                "app_contracts.status_cards",
+                self._get_app_service().status_cards_text_ru(),
+                speakable=False,
+            )
+
+        if command in self.APP_CONTRACTS_COMMAND_CARDS_COMMANDS:
+            return self._result(
+                "app_contracts.command_cards",
+                self._get_app_service().command_cards_text_ru(),
                 speakable=False,
             )
 

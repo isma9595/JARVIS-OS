@@ -1,9 +1,9 @@
 # JARVIS-OS Checkpoint
 
-- Current stable stage: TASK-071 — Secure Settings & API Key Storage
-- Last stable commit: fe0cde1
-- Last stable commit message: Add secure API key storage foundation
-- Next stage: TASK-072 — Warnings Audit
+- Current stable stage: TASK-072 — Warnings Audit
+- Last stable commit: 9e12588
+- Last stable commit message: Fix project warnings audit
+- Next stage: TASK-073 — AppService Contracts
 - Status: in progress
 
 ## Approved Workflow

@@ -35,6 +35,11 @@ instead of calling `CommandProcessor` directly.
 - `AppStatusSnapshot`: service, registry, UI, installer, key storage, network,
   dry-run, privacy, fallback, consensus, and voice safety state.
 
+TASK-073 adds versioned contract dataclasses in `app/app_contracts.py`:
+`AppContractStatus`, `AppStatusCard`, `AppCommandCard`, `AppPreviewContract`,
+`AppExecutionContract`, and `AppContractManifest`. See
+`docs/APPSERVICE_CONTRACTS.md`.
+
 ## Command Preview
 
 `preview_command(text)` uses `CommandRegistry` metadata only. It does not call
@@ -72,6 +77,7 @@ The desktop UI should call AppService for:
 - command search
 - command preview
 - status cards
+- versioned contract status/manifests/cards
 - explicit execution through `CommandProcessor`
 
 The UI should not call `CommandProcessor` directly.

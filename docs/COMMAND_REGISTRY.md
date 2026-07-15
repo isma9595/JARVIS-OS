@@ -113,3 +113,10 @@ TASK-071 adds the `secure_keys` category. Status/list/help commands are
 read-only, app-ready, and voice auto-allowed. Import-from-env and delete
 commands are `SENSITIVE`, require confirmation, are not voice auto-allowed, and
 do not require network or real provider validation.
+
+## TASK-073 AppService Contracts
+
+TASK-073 adds read-only APP metadata for AppService contract status, manifest,
+status cards, and command cards. `AppCommandCard` objects are generated from
+registry metadata; registry behavior remains metadata-only and no network is
+called.

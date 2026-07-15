@@ -97,3 +97,9 @@ Help:
 - Enable/disable providers and models.
 - Provider health checks.
 - Safe integration between real provider request gates and secure storage.
+
+## AppService Contracts
+
+TASK-073 contracts may report that secure key storage is ready, but they do not
+read, decrypt, serialize, or print stored key values. Future AI Provider
+Settings UI should use secure storage through an approved boundary.

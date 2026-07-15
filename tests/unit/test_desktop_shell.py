@@ -32,6 +32,17 @@ class FakeAppService:
             ]
         )
 
+    def contract_status_text_ru(self):
+        return "\n".join(
+            [
+                "AppService contracts status:",
+                "- schema name: jarvis.app_service.contracts",
+                "- contract version: 0.1",
+                "- network default: no",
+                "- secrets included: no",
+            ]
+        )
+
     def categories_text_ru(self):
         return "Command registry categories:\n- app: 8 command(s)\n- ai: 10 command(s)\n- voice: 12 command(s)"
 
@@ -91,6 +102,7 @@ def test_status_text_mentions_app_service_and_no_network_default():
     assert "command registry used: yes" in text
     assert "network default: no" in text
     assert "no secrets" in text
+    assert "AppService contracts status:" in text
 
 
 def test_list_categories_uses_app_service_registry_text():

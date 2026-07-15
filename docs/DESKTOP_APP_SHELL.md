@@ -17,6 +17,9 @@ The desktop shell uses `JarvisAppService` as its app-facing boundary.
 The shell can show service status, list registry commands, preview command
 risk, and execute explicit user commands only through AppService.
 
+TASK-073 adds versioned AppService contracts. The shell may read contract
+status/cards through AppService, but TASK-073 adds no new screens or key input.
+
 ## Relationship To CommandRegistry
 
 `CommandRegistry` remains the metadata source for categories, command lists,

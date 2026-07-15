@@ -125,6 +125,7 @@ class DesktopShellViewModel:
 
     def safe_status_text_ru(self) -> str:
         service_status = self.app_service.status_text_ru()
+        contract_status = self.app_service.contract_status_text_ru()
         return self._safe_text(
             "\n".join(
                 [
@@ -143,6 +144,8 @@ class DesktopShellViewModel:
                     "- run.py unchanged",
                     "",
                     service_status,
+                    "",
+                    contract_status,
                 ]
             )
         )

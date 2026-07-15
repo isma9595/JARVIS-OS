@@ -914,3 +914,48 @@ def test_secure_key_import_delete_and_provider_requests_not_allowlisted():
 
         assert decision.allowed is False
         assert decision.canonical_command is None
+
+
+def test_app_contract_status_manifest_and_cards_are_allowlisted():
+    allowlist = SafeVoiceCommandAllowlist()
+    expected = {
+        "статус app contracts": "статус app contracts",
+        "статус app service contracts": "статус app contracts",
+        "статус контрактов приложения": "статус app contracts",
+        "статус контрактов appservice": "статус app contracts",
+        "app contracts status": "статус app contracts",
+        "app contracts manifest": "app contracts manifest",
+        "manifest app contracts": "app contracts manifest",
+        "манифест контрактов приложения": "app contracts manifest",
+        "app service contract manifest": "app contracts manifest",
+        "app status cards": "app status cards",
+        "карточки статуса приложения": "app status cards",
+        "app command cards": "app command cards",
+        "карточки команд приложения": "app command cards",
+    }
+
+    for command, canonical in expected.items():
+        decision = allowlist.decide(command)
+
+        assert decision.allowed is True
+        assert decision.canonical_command == canonical
+
+
+def test_app_contract_arbitrary_preview_execute_and_risky_commands_not_allowlisted():
+    allowlist = SafeVoiceCommandAllowlist()
+
+    for command in (
+        "app preview: статус app contracts",
+        "preview command: статус app contracts",
+        "execute app contracts status",
+        "app contracts execute: статус ai",
+        "groq реальный запрос: hello",
+        "fallback ai запрос: hello",
+        "консенсус ai: hello",
+        "импортировать groq ключ из env",
+        "удалить groq ключ",
+    ):
+        decision = allowlist.decide(command)
+
+        assert decision.allowed is False
+        assert decision.canonical_command is None
