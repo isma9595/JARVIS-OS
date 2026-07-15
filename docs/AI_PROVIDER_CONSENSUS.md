@@ -100,3 +100,12 @@ Consensus uses the stricter external-consensus privacy target before attempting 
 Fallback execution is separate from consensus. Fallback tries providers in
 order and stops at the first success. Consensus compares multiple provider
 answers and synthesizes a result. Neither mode is automatic.
+## TASK-067 Live Verification Polish
+
+Consensus remains explicit-only. `статус ai consensus` is read-only. Commands
+such as `консенсус ai: <text>` may call multiple external providers only after
+privacy preflight and only through the explicit consensus command. Private,
+secret, file, memory, log, screen, and audio context is blocked before provider
+calls.
+
+See `docs/AI_PROVIDER_LIVE_VERIFICATION.md`.

@@ -7,6 +7,7 @@ from ai import (
     AIProviderConfigManager,
     AIProviderConsensusManager,
     AIProviderFallbackExecutor,
+    AIProviderLiveVerification,
     AIProviderRouter,
     AIProviderSelectionPolicy,
     AIProviderSessionState,
@@ -163,6 +164,41 @@ class CommandProcessor:
         "controlled ai retry:",
         "ai retry запрос:",
     )
+    AI_LIVE_VERIFICATION_STATUS_COMMANDS = {
+        "статус ai verification",
+        "статус ai live verification",
+        "статус ai polish",
+        "статус проверки ai",
+        "статус live ai",
+    }
+    AI_LIVE_VERIFICATION_CHECKLIST_COMMANDS = {
+        "ai verification checklist",
+        "чеклист ai проверки",
+        "чеклист проверки ai",
+        "план проверки ai",
+        "план live проверки ai",
+    }
+    AI_LIVE_VERIFICATION_NO_KEY_COMMANDS = {
+        "проверка ai без ключей",
+        "ai no key check",
+        "ai safe mode check",
+    }
+    AI_LIVE_VERIFICATION_PRIVACY_COMMANDS = {
+        "проверка ai privacy",
+        "проверка приватности ai",
+        "ai privacy verification",
+    }
+    AI_LIVE_VERIFICATION_LOCAL_COMMANDS = {
+        "проверка ollama local",
+        "проверка локального ai",
+        "ai ollama readiness",
+        "ollama readiness",
+    }
+    AI_LIVE_VERIFICATION_READINESS_COMMANDS = {
+        "проверка live ai readiness",
+        "проверка внешних ai",
+        "ai live readiness",
+    }
     AI_CONTEXT_PRIVACY_STATUS_COMMANDS = {
         "статус ai privacy",
         "статус ai privacy boundary",
@@ -1173,6 +1209,7 @@ class CommandProcessor:
         ai_provider_consensus_manager=None,
         ai_provider_selection_policy=None,
         ai_provider_fallback_executor=None,
+        ai_provider_live_verification=None,
         ai_context_privacy_policy=None,
     ):
         self.user_profile = user_profile or {}
@@ -1262,6 +1299,14 @@ class CommandProcessor:
                     "gigachat": self.gigachat_request_gate,
                     "ollama": self.ollama_request_gate,
                 },
+            )
+        )
+        self.ai_provider_live_verification = (
+            ai_provider_live_verification
+            or AIProviderLiveVerification(
+                config_manager=self.ai_provider_config_manager,
+                context_privacy_policy=self.ai_context_privacy_policy,
+                ollama_runtime=self.ollama_request_gate.runtime,
             )
         )
         self.voice_input_manager = None
@@ -1993,6 +2038,42 @@ class CommandProcessor:
             return self._result(
                 "ai.fallback_execution.status",
                 self.ai_provider_fallback_executor.status_text_ru(),
+            )
+
+        if command in self.AI_LIVE_VERIFICATION_STATUS_COMMANDS:
+            return self._result(
+                "ai.live_verification.status",
+                self.ai_provider_live_verification.status_text_ru(),
+            )
+
+        if command in self.AI_LIVE_VERIFICATION_CHECKLIST_COMMANDS:
+            return self._result(
+                "ai.live_verification.checklist",
+                self.ai_provider_live_verification.checklist_text_ru(),
+            )
+
+        if command in self.AI_LIVE_VERIFICATION_NO_KEY_COMMANDS:
+            return self._result(
+                "ai.live_verification.no_key",
+                self.ai_provider_live_verification.no_key_check_text_ru(),
+            )
+
+        if command in self.AI_LIVE_VERIFICATION_PRIVACY_COMMANDS:
+            return self._result(
+                "ai.live_verification.privacy",
+                self.ai_provider_live_verification.privacy_check_text_ru(),
+            )
+
+        if command in self.AI_LIVE_VERIFICATION_LOCAL_COMMANDS:
+            return self._result(
+                "ai.live_verification.ollama_local",
+                self.ai_provider_live_verification.local_check_text_ru(),
+            )
+
+        if command in self.AI_LIVE_VERIFICATION_READINESS_COMMANDS:
+            return self._result(
+                "ai.live_verification.readiness",
+                self.ai_provider_live_verification.live_readiness_text_ru(),
             )
 
         if command in self.AI_SELECTION_POLICY_STATUS_COMMANDS:
@@ -4612,6 +4693,7 @@ class CommandProcessor:
         return (
             f"{self.dialogue_manager.get_preferred_name()}, сейчас я умею работать с профилем, "
             "AI fallback execution: статус ai fallback execution; план ai fallback: <текст>; fallback ai запрос: <текст>; "
+            "AI live verification: статус ai verification; чеклист ai проверки; проверка ai без ключей; проверка ai privacy; проверка live ai readiness; проверка ollama local. "
             "показывать статус системы, вести локальную память и идеи, выполнять безопасную "
             "маршрутизацию действий и обнаружение рискованных команд; "
             "имя ассистента можно посмотреть, изменить или сбросить; "
@@ -4640,12 +4722,14 @@ class CommandProcessor:
             "с реальным распознаванием. "
             "AI foundation сейчас работает только в dry-run/offline режиме: статус ai; список ai провайдеров; спроси ai: <текст>; ai кратко: <текст>; ai классифицируй: <текст>. "
             "AI session/model pinning: статус ai сессии; список ai моделей; выбрать ai модель <provider> <model>; ai реальный запрос: <текст>; продолжи через ту же модель: <текст>; сбросить ai сессию. "
+            "AI privacy boundary: статус ai privacy; матрица приватности ai; проверить приватность ai: <текст>; внешние провайдеры блокируются для приватного/секретного контекста. "
             "AI consensus: статус ai consensus; консенсус ai: <текст>; спроси все ai: <текст>; сравни ответы ai: <текст>; только явная команда может вызвать несколько внешних one-shot провайдеров, dry_run не входит в реальный consensus, ответы не выполняются как команды. "
             "OpenAI adapter: статус openai; проверить openai ключ; спроси openai: <текст> пока показывает безопасный отказ без сетевого запроса. "
             "OpenAI one-shot: статус openai one shot; статус openai guard; лимиты openai; openai модель; openai реальный запрос: <текст>; только явная one-shot команда может сделать один реальный запрос, OpenAI не включается постоянно, dry_run остается default, ключ не печатается, ответ не выполняется как команда, max_output_tokens ограничен, реальный API может использовать лимит аккаунта. "
             "Gemini adapter: статус gemini; проверить gemini ключ; статус gemini guard; лимиты gemini; gemini модель; спроси gemini: <текст> показывает безопасный отказ без сетевого запроса; gemini реальный запрос: <текст> или gemini one shot: <текст> делает только явный one-shot при наличии GEMINI_API_KEY, Gemini не включается постоянно, dry_run остается default, ключ не печатается, ответ не выполняется как команда, free tier/quota может использоваться. "
             "Groq adapter: статус groq; статус грок; groq request shape; форма groq запроса; проверить groq ключ; статус groq guard; лимиты groq; groq модель; спроси groq: <текст> показывает безопасный отказ без сетевого запроса; groq реальный запрос: <текст> или groq one shot: <текст> делает только явный one-shot при наличии GROQ_API_KEY, Groq не включается постоянно, dry_run остается default, ключ не печатается, ответ не выполняется как команда, free/developer quota или rate limits могут использоваться. "
             "GigaChat adapter: статус gigachat; статус гигачат; статус сбер ai; проверить gigachat ключ; проверить сбер ключ; статус gigachat token; статус gigachat guard; лимиты gigachat; gigachat модель; статус gigachat request shape; форма gigachat запроса; спроси gigachat: <текст> показывает безопасный отказ без сетевого запроса; gigachat реальный запрос: <текст>, сбер реальный запрос: <текст> или gigachat one shot: <текст> делает только явный one-shot при наличии GIGACHAT_AUTH_KEY, GigaChat не включается постоянно, dry_run остается default, auth key/token не печатаются, ответ не выполняется как команда, free/paid quota может использоваться. "
+            "Ollama local provider: статус ollama; ollama модель; список ollama моделей; проверить ollama runtime; ollama реальный запрос: <текст>; только localhost, без ключей, облака, auto pull/download/install. "
             "Безопасная конфигурация AI: статус ai конфигурации; статус ai ключей; конфигурация ai провайдеров; безопасность ai ключей; проверить groq ключ; проверить ключ groq; проверить gemini ключ; проверить openai ключ. "
             "OpenAI real requests не активны по умолчанию, сеть не используется без явной one-shot команды, API-ключи не печатаются, AI-ответы не выполняются как команды. "
             "Зрение экрана и автоматизация запланированы позже. "

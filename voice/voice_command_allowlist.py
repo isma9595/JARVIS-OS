@@ -77,6 +77,17 @@ class SafeVoiceCommandAllowlist:
             "статус безопасного fallback",
             "статус ai fallback executor",
         },
+        "статус ai verification": {
+            "статус ai verification",
+            "статус ai live verification",
+            "статус ai polish",
+            "статус проверки ai",
+        },
+        "чеклист ai проверки": {
+            "чеклист ai проверки",
+            "чеклист проверки ai",
+            "план проверки ai",
+        },
         "статус ai selection policy": {
             "статус ai fallback",
             "статус ai selection policy",

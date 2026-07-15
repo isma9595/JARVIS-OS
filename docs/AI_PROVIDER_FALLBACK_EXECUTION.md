@@ -48,6 +48,7 @@ privacy boundary.
 ## Safety
 
 - Explicit fallback command required.
+- Ordinary provider commands do not retry automatically.
 - Privacy boundary runs before every provider attempt.
 - External providers require privacy approval and a present key.
 - Ollama is localhost-only and must already have runtime/model available.
@@ -57,6 +58,8 @@ privacy boundary.
 - Secrets, tokens, and key values are not printed.
 - No model pull, install, payment, quota, browsing, file reading, screen capture,
   memory export, logs, or audio context sending is added.
+- `network_called` means a provider gate was attempted; output also reports
+  per-attempt `network_scope` and `external_network_called`.
 
 ## Examples
 

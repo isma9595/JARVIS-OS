@@ -7,6 +7,18 @@ the provider call. The policy is Russian-first by default, respects explicit use
 language requests and translation tasks, does not send memory/profile/files/logs, and
 does not change `dry_run` as the default provider.
 
+## TASK-067 Live Verification Polish
+
+Manual verification commands are available through
+`ai/provider_live_verification.py` and `core/command_processor.py`:
+`статус ai verification`, `чеклист ai проверки`, `проверка ai без ключей`,
+`проверка ai privacy`, `проверка live ai readiness`, and
+`проверка ollama local`. Status/checklist/readiness commands do not call
+external network. Ollama readiness is the only runtime check and is limited to
+localhost `/api/tags`.
+
+See `docs/AI_PROVIDER_LIVE_VERIFICATION.md`.
+
 ## Purpose
 
 TASK-051 starts the AI Brain / Provider Router Foundation cycle. The goal is to define stable provider contracts and a deterministic local router before any real Groq, Gemini, OpenAI, or other external adapter is connected.

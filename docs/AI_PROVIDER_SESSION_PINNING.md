@@ -60,3 +60,11 @@ Manual session provider selection is respected as the first fallback candidate,
 but it does not bypass privacy, language, key, runtime, or model gates. If the
 manual provider is blocked or unavailable, fallback continues through the safe
 chain.
+## TASK-067 Live Verification Polish
+
+Session pinning does not bypass privacy, language policy, or explicit-only
+provider gates. Live verification status/readiness commands do not change the
+selected provider or model. Fallback may place a manually selected provider
+first, but privacy preflight still runs before every attempt.
+
+See `docs/AI_PROVIDER_LIVE_VERIFICATION.md`.

@@ -76,3 +76,12 @@ Provider selection now uses the context privacy classifier. Private/offline prom
 Selection policy remains recommendation-only. For safe multi-provider retry use
 `fallback ai запрос: <text>`. For compare/synthesis use consensus. Private or
 offline fallback execution remains `ollama -> dry_run`.
+## TASK-067 Live Verification Polish
+
+The selection policy remains read-only for status/matrix/recommendation output.
+Fallback execution is separate and explicit-only: use `план ai fallback: <text>`
+to inspect the chain and `fallback ai запрос: <text>` to execute it. Ordinary
+provider commands do not retry automatically.
+
+Live verification commands are documented in
+`docs/AI_PROVIDER_LIVE_VERIFICATION.md`.

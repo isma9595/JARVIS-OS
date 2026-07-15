@@ -1,5 +1,6 @@
 from core.command_processor import CommandProcessor
 from ai.provider_contracts import AIResponse
+from ai import OllamaRuntimeStatus
 from ideas import IdeaManager
 from memory import LocalMemoryManager
 from pathlib import Path
@@ -44,11 +45,24 @@ class FakeOllamaGate:
     def __init__(self, fail=True):
         self.fail = fail
         self.calls = []
-        self.runtime = type(
-            "Runtime",
-            (),
-            {"config": type("Config", (), {"model": "qwen2.5:1.5b"})()},
-        )()
+        self.runtime = self.FakeRuntime()
+
+    class FakeRuntime:
+        def __init__(self):
+            self.config = type("Config", (), {"model": "qwen2.5:1.5b"})()
+            self.status_calls = []
+
+        def status(self, check_models=True):
+            self.status_calls.append(check_models)
+            return OllamaRuntimeStatus(
+                ok=False,
+                base_url="http://127.0.0.1:11434",
+                model="qwen2.5:1.5b",
+                server_reachable=False,
+                model_installed=None,
+                installed_models=(),
+                safe_message="Ollama localhost server is unavailable.",
+            )
 
     def status_text(self):
         return "\n".join(
@@ -4718,3 +4732,100 @@ def test_existing_privacy_selection_consensus_commands_still_work_after_fallback
     assert processor.process("статус ai privacy")["intent"] == "ai.context_privacy.status"
     assert processor.process("статус ai fallback")["intent"] == "ai.selection_policy.status"
     assert processor.process("статус ai consensus")["intent"] == "ai.consensus.status"
+
+
+def test_ai_live_verification_status_commands_work_without_action_router():
+    class FailingActionRouter:
+        calls = 0
+
+        def route(self, command):
+            self.calls += 1
+            raise AssertionError("verification status must not route to ActionRouter")
+
+    processor = CommandProcessor(ollama_request_gate=FakeOllamaGate(fail=True))
+    processor.action_router = FailingActionRouter()
+
+    for command in (
+        "статус ai verification",
+        "статус проверки ai",
+        "статус ai polish",
+    ):
+        result = processor.process(command)
+
+        assert result["intent"] == "ai.live_verification.status"
+        assert "network: not called" in result["response"]
+        assert "dry_run default: yes" in result["response"]
+        assert processor.action_router.calls == 0
+
+
+def test_ai_live_verification_checklist_commands_work_without_action_router():
+    processor = CommandProcessor(ollama_request_gate=FakeOllamaGate(fail=True))
+
+    for command in ("чеклист ai проверки", "план проверки ai"):
+        result = processor.process(command)
+
+        assert result["intent"] == "ai.live_verification.checklist"
+        assert "no-key safe mode" in result["response"]
+        assert "network: not called" in result["response"]
+
+
+def test_ai_live_verification_no_key_privacy_and_readiness_are_safe(monkeypatch):
+    monkeypatch.setenv("GROQ_API_KEY", "fake-live-secret")
+    processor = CommandProcessor(ollama_request_gate=FakeOllamaGate(fail=True))
+
+    no_key = processor.process("проверка ai без ключей")
+    privacy = processor.process("проверка ai privacy")
+    readiness = processor.process("проверка live ai readiness")
+
+    assert no_key["intent"] == "ai.live_verification.no_key"
+    assert "groq: PRESENT" in no_key["response"]
+    assert "fake-live-secret" not in no_key["response"]
+    assert "network: not called" in no_key["response"]
+    assert privacy["intent"] == "ai.live_verification.privacy"
+    assert "[REDACTED]" in privacy["response"]
+    assert "sk-test-secret-value-1234567890abcdef" not in privacy["response"]
+    assert "no real provider called" in privacy["response"]
+    assert readiness["intent"] == "ai.live_verification.readiness"
+    assert "groq реальный запрос:" in readiness["response"]
+    assert "gigachat реальный запрос:" in readiness["response"]
+    assert "network: not called" in readiness["response"]
+    assert "fake-live-secret" not in readiness["response"]
+
+
+def test_ai_live_verification_ollama_local_handles_unavailable_safely():
+    gate = FakeOllamaGate(fail=True)
+    processor = CommandProcessor(ollama_request_gate=gate)
+
+    result = processor.process("проверка ollama local")
+
+    assert result["intent"] == "ai.live_verification.ollama_local"
+    assert gate.runtime.status_calls == [True]
+    assert "network scope: localhost-only /api/tags" in result["response"]
+    assert "external network called: False" in result["response"]
+    assert "Ollama localhost server is unavailable" in result["response"]
+    assert "no pull/download/install" in result["response"]
+
+
+def test_ai_live_verification_outputs_do_not_route_to_action_router():
+    class FailingActionRouter:
+        calls = 0
+
+        def route(self, command):
+            self.calls += 1
+            raise AssertionError("verification output must not route to ActionRouter")
+
+    processor = CommandProcessor(ollama_request_gate=FakeOllamaGate(fail=True))
+    processor.action_router = FailingActionRouter()
+
+    for command in (
+        "статус ai verification",
+        "чеклист ai проверки",
+        "проверка ai без ключей",
+        "проверка ai privacy",
+        "проверка live ai readiness",
+        "проверка ollama local",
+    ):
+        result = processor.process(command)
+
+        assert result["intent"].startswith("ai.live_verification.")
+        assert processor.action_router.calls == 0

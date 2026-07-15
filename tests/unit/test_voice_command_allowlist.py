@@ -26,6 +26,54 @@ def test_fallback_status_commands_are_allowlisted_but_plan_and_execute_are_not()
         assert decision.allowed is False
         assert decision.canonical_command is None
 
+
+def test_ai_live_verification_voice_status_and_checklist_are_allowlisted():
+    allowlist = SafeVoiceCommandAllowlist()
+
+    for command in (
+        "статус ai verification",
+        "статус ai live verification",
+        "статус ai polish",
+        "статус проверки ai",
+    ):
+        decision = allowlist.decide(command)
+
+        assert decision.allowed is True
+        assert decision.canonical_command == "статус ai verification"
+
+    for command in (
+        "чеклист ai проверки",
+        "чеклист проверки ai",
+        "план проверки ai",
+    ):
+        decision = allowlist.decide(command)
+
+        assert decision.allowed is True
+        assert decision.canonical_command == "чеклист ai проверки"
+
+
+def test_ai_live_verification_runtime_and_live_checks_are_not_allowlisted():
+    allowlist = SafeVoiceCommandAllowlist()
+
+    for command in (
+        "проверка ollama local",
+        "проверка локального ai",
+        "ai ollama readiness",
+        "ollama readiness",
+        "проверка live ai readiness",
+        "проверка внешних ai",
+        "ai live readiness",
+        "проверка ai без ключей",
+        "проверка ai privacy",
+        "fallback ai запрос: обычный вопрос",
+        "консенсус ai: обычный вопрос",
+        "groq реальный запрос: привет",
+    ):
+        decision = allowlist.decide(command)
+
+        assert decision.allowed is False
+        assert decision.canonical_command is None
+
 from voice import SafeVoiceCommandAllowlist, VoiceAllowlistDecision
 
 

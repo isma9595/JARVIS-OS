@@ -285,12 +285,34 @@ class AIProviderFallbackExecutor:
         )
 
     def result_text_ru(self, result: AIProviderFallbackResult) -> str:
+        attempted_scopes = tuple(
+            sorted(
+                {
+                    attempt.network_scope
+                    for attempt in result.attempts
+                    if attempt.status == AIProviderAttemptStatus.SUCCEEDED.value
+                    or attempt.status == AIProviderAttemptStatus.FAILED.value
+                }
+            )
+        )
+        external_network_called = any(
+            attempt.network_scope == "external"
+            and attempt.status
+            in {
+                AIProviderAttemptStatus.SUCCEEDED.value,
+                AIProviderAttemptStatus.FAILED.value,
+            }
+            for attempt in result.attempts
+        )
         lines = [
             "AI fallback execution result:",
             f"- ok: {result.ok}",
             f"- final provider: {result.final_provider or 'none'}",
             f"- final model: {result.final_model or 'none'}",
             f"- network_called: {result.network_called}",
+            "- network_called meaning: provider gate was attempted; scope is listed per attempt",
+            f"- network scopes attempted: {', '.join(attempted_scopes) if attempted_scopes else 'none'}",
+            f"- external_network_called: {external_network_called}",
             f"- dry_run_default_unchanged: {result.dry_run_default_unchanged}",
             f"- response_executed: {result.response_executed}",
             "- attempts:",

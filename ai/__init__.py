@@ -47,6 +47,11 @@ from ai.provider_fallback_executor import (
     AIProviderFallbackPlan,
     AIProviderFallbackResult,
 )
+from ai.provider_live_verification import (
+    AIProviderLiveVerification,
+    AIProviderVerificationCheck,
+    AIProviderVerificationReport,
+)
 from ai.openai_cost_guard import (
     OpenAIRequestCostGuard,
     OpenAIRequestGuardConfig,
@@ -103,6 +108,7 @@ __all__ = [
     "AIProviderFallbackExecutor",
     "AIProviderFallbackPlan",
     "AIProviderFallbackResult",
+    "AIProviderLiveVerification",
     "AIProviderInfo",
     "AIProviderKeyStatus",
     "AIProviderLanguagePolicy",
@@ -117,6 +123,8 @@ __all__ = [
     "AIProviderSelectionRequest",
     "AIProviderSessionSnapshot",
     "AIProviderSessionState",
+    "AIProviderVerificationCheck",
+    "AIProviderVerificationReport",
     "AIRequest",
     "AIResponse",
     "GeminiProvider",

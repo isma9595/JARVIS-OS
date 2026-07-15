@@ -94,3 +94,11 @@ Ollama remains the preferred local-only option for privacy/offline typed prompts
 Ollama may appear in explicit fallback chains as the local-only provider. It is
 called only through localhost, only when privacy allows it, and only if runtime
 and model are already available. No pull, install, or download is automated.
+## TASK-067 Live Verification Polish
+
+Use `проверка ollama local` for explicit local readiness. It may call only the
+configured localhost Ollama `/api/tags` endpoint through `OllamaRuntime`. It
+does not pull, download, install, use cloud services, use keys, or execute
+model responses as commands.
+
+See `docs/AI_PROVIDER_LIVE_VERIFICATION.md`.

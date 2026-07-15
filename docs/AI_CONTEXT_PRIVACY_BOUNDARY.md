@@ -108,3 +108,11 @@ The fallback executor uses this boundary before every provider attempt. Secret
 context blocks real/local providers, private context blocks external providers,
 and previews are redacted. No files, memory, logs, screen, or audio are packaged
 or sent by fallback execution.
+## TASK-067 Live Verification Polish
+
+Use `проверка ai privacy` for a canned deterministic privacy verification. It
+uses safe examples only, redacts a secret-like example, confirms external
+provider and consensus blocking for private/secret context, and calls no real
+provider.
+
+See `docs/AI_PROVIDER_LIVE_VERIFICATION.md`.

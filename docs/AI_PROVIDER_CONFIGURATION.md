@@ -8,6 +8,15 @@ response language unless the user explicitly asks for another language or a tran
 target. The policy does not add persistent settings, does not send memory/profile/files/logs,
 does not expose secrets, and does not call the network from status commands.
 
+## TASK-067 Live Verification Polish
+
+`проверка ai без ключей` and `проверка live ai readiness` report external key
+presence as `PRESENT` or `MISSING` only for OpenAI, Gemini, Groq, and GigaChat.
+Key values are never printed. These checks do not validate keys by network.
+
+See `docs/AI_PROVIDER_LIVE_VERIFICATION.md` for cleanup commands and manual
+live test commands.
+
 ## Purpose
 
 TASK-052 adds an offline-safe configuration and API key readiness layer for future providers such as Groq and Gemini. TASK-053 adds OpenAI as a disabled external provider config and adapter. Status/key checks still do not make network calls.
