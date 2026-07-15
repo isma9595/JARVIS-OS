@@ -2808,6 +2808,106 @@ def test_ai_provider_list_command_works():
     assert "classification" in result["response"]
 
 
+def test_ai_session_status_exact_manual_command_works():
+    result = CommandProcessor().process("статус ai сессии")
+
+    assert result["intent"] == "ai.session.status"
+    assert "selected provider: none" in result["response"]
+    assert "runtime only" in result["response"]
+
+
+def test_active_ai_model_exact_manual_command_works():
+    result = CommandProcessor().process("активная ai модель")
+
+    assert result["intent"] == "ai.session.status"
+    assert "selected model: none" in result["response"]
+
+
+def test_ai_model_list_exact_manual_command_works():
+    result = CommandProcessor().process("список ai моделей")
+
+    assert result["intent"] == "ai.session.models"
+    assert "groq" in result["response"]
+    assert "llama-3.1-8b-instant" in result["response"]
+    assert "выбрать ai модель <provider> <model>" in result["response"]
+
+
+def test_select_ai_provider_exact_manual_command_works(monkeypatch):
+    monkeypatch.delenv("GROQ_MODEL", raising=False)
+    processor = CommandProcessor()
+
+    result = processor.process("выбрать ai provider groq")
+
+    assert result["intent"] == "ai.session.select"
+    assert "- provider: groq" in result["response"]
+    assert "- model: llama-3.1-8b-instant" in result["response"]
+    assert "network: not called" in result["response"]
+    assert processor.ai_provider_session_state.selected_provider == "groq"
+    assert processor.ai_provider_session_state.selected_model == "llama-3.1-8b-instant"
+
+
+def test_select_ai_model_exact_manual_command_works():
+    processor = CommandProcessor()
+
+    result = processor.process("выбрать ai модель groq llama-3.1-8b-instant")
+
+    assert result["intent"] == "ai.session.select"
+    assert "- provider: groq" in result["response"]
+    assert "- model: llama-3.1-8b-instant" in result["response"]
+    assert "network: not called" in result["response"]
+    assert processor.ai_provider_session_state.selected_provider == "groq"
+    assert processor.ai_provider_session_state.selected_model == "llama-3.1-8b-instant"
+
+
+def test_selected_ai_real_request_without_selection_refuses_safely():
+    result = CommandProcessor().process("ai реальный запрос: привет")
+
+    assert result["intent"] == "ai.session.continuation.unpinned"
+    assert "no provider/model is pinned" in result["response"]
+    assert "No network call was made" in result["response"]
+
+
+def test_selected_groq_request_without_key_refuses_safely(monkeypatch):
+    monkeypatch.delenv("GROQ_API_KEY", raising=False)
+    processor = CommandProcessor()
+    processor.process("выбрать ai модель groq llama-3.1-8b-instant")
+
+    result = processor.process("ai реальный запрос: привет")
+
+    assert result["intent"] == "ai.session.continuation.groq.error"
+    assert "GROQ_API_KEY is missing" in result["response"]
+    assert "response was not executed as a command" in result["response"]
+    assert processor.ai_provider_session_state.last_success_provider is None
+
+
+def test_selected_groq_continuation_without_key_refuses_safely(monkeypatch):
+    monkeypatch.delenv("GROQ_API_KEY", raising=False)
+    monkeypatch.delenv("GROQ_MODEL", raising=False)
+    processor = CommandProcessor()
+    processor.process("выбрать ai provider groq")
+
+    result = processor.process("продолжи через ту же модель: привет")
+
+    assert result["intent"] == "ai.session.continuation.groq.error"
+    assert "GROQ_API_KEY is missing" in result["response"]
+    assert processor.ai_provider_session_state.selected_provider == "groq"
+    assert processor.ai_provider_session_state.last_success_provider is None
+
+
+def test_reset_ai_session_clears_selection_and_request_refuses_after_reset():
+    processor = CommandProcessor()
+    processor.process("выбрать ai модель groq llama-3.1-8b-instant")
+
+    reset = processor.process("сбросить ai сессию")
+    after_reset = processor.process("ai реальный запрос: после сброса")
+
+    assert reset["intent"] == "ai.session.reset"
+    assert processor.ai_provider_session_state.selected_provider is None
+    assert processor.ai_provider_session_state.selected_model is None
+    assert after_reset["intent"] == "ai.session.continuation.unpinned"
+    assert "no provider/model is pinned" in after_reset["response"]
+
+
 def test_ai_config_status_command_works():
     result = CommandProcessor().process("статус ai конфигурации")
 

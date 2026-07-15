@@ -89,6 +89,7 @@ class GigaChatRequestGate:
         self,
         request: AIRequest,
         capability: AIProviderCapability = AIProviderCapability.CHAT,
+        model_override: str | None = None,
     ) -> AIResponse:
         validation_error = request.validation_error()
         if validation_error:
@@ -97,6 +98,7 @@ class GigaChatRequestGate:
         guard_result = self.request_guard.guard_request(
             request.prompt,
             request.metadata.get("max_output_tokens") if request.metadata else None,
+            model_override=model_override,
         )
         if not guard_result.allowed:
             return self._error_response(capability, guard_result.safe_message)

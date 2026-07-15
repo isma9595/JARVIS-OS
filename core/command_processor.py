@@ -4,6 +4,7 @@ from ai import (
     AIProviderCapability,
     AIProviderConfigManager,
     AIProviderRouter,
+    AIProviderSessionState,
     AIRequest,
     GeminiRequestGate,
     GigaChatRequestGate,
@@ -105,6 +106,48 @@ class CommandProcessor:
         "язык ai",
         "ai язык",
     }
+    AI_SESSION_STATUS_COMMANDS = {
+        "статус ai сессии",
+        "статус ai session",
+        "активная ai модель",
+        "активный ai provider",
+        "текущая ai модель",
+        "ai session status",
+        "ai provider session",
+        "ai pin status",
+    }
+    AI_SESSION_MODEL_LIST_COMMANDS = {
+        "список ai моделей",
+        "доступные ai модели",
+    }
+    AI_SESSION_RESET_COMMANDS = {
+        "сбросить ai модель",
+        "сбросить ai сессию",
+        "сбросить выбранную ai модель",
+        "сбросить ai provider",
+        "ai session reset",
+        "ai provider reset",
+        "ai pin reset",
+    }
+    AI_SESSION_SELECT_PREFIXES = (
+        "выбрать ai модель ",
+        "ai session select:",
+        "ai provider select:",
+        "ai pin:",
+    )
+    AI_SESSION_PROVIDER_SELECT_PREFIXES = (
+        "выбрать ai provider ",
+        "выбрать ai провайдер ",
+    )
+    AI_CONTINUATION_PREFIXES = (
+        "ai реальный запрос:",
+        "выбранная ai модель запрос:",
+        "продолжи через ту же модель:",
+        "продолжи через выбранную модель:",
+        "ai continue:",
+        "ai continuation:",
+        "continue ai:",
+    )
     OPENAI_STATUS_COMMANDS = {
         "статус openai",
         "статус опенай",
@@ -185,6 +228,7 @@ class CommandProcessor:
         "gigachat model",
     }
     AI_PROVIDER_LIST_COMMANDS = {
+        "список ai providers",
         "список ai провайдеров",
         "список ии провайдеров",
         "ai провайдеры",
@@ -996,6 +1040,7 @@ class CommandProcessor:
         groq_request_gate=None,
         gigachat_request_gate=None,
         ai_provider_language_policy=None,
+        ai_provider_session_state=None,
     ):
         self.user_profile = user_profile or {}
         self.dialogue_manager = dialogue_manager or DialogueManager(self.user_profile)
@@ -1037,6 +1082,9 @@ class CommandProcessor:
             ai_provider_language_policy
             or getattr(self.openai_request_gate, "language_policy", None)
             or AIProviderLanguagePolicy()
+        )
+        self.ai_provider_session_state = (
+            ai_provider_session_state or AIProviderSessionState()
         )
         self.voice_input_manager = None
         if voice_output_manager is None:
@@ -1750,6 +1798,52 @@ class CommandProcessor:
                 "microphone.listen.once",
                 "listen_once_from_microphone",
             )
+
+        if command in self.AI_SESSION_STATUS_COMMANDS:
+            return self._result(
+                "ai.session.status",
+                self.ai_provider_session_state.status_text_ru(),
+            )
+
+        if command in self.AI_SESSION_MODEL_LIST_COMMANDS:
+            return self._result(
+                "ai.session.models",
+                self._ai_session_models_text(),
+            )
+
+        if command in self.AI_SESSION_RESET_COMMANDS:
+            self.ai_provider_session_state.reset_selection()
+            return self._result(
+                "ai.session.reset",
+                (
+                    "AI provider session selection reset.\n"
+                    "Selection is runtime-only; dry_run remains default; no network call was made."
+                ),
+            )
+
+        ai_session_selection = self._extract_ai_prefixed_text(
+            command_text,
+            command,
+            self.AI_SESSION_SELECT_PREFIXES,
+        )
+        if ai_session_selection is not None:
+            return self._select_ai_provider_session(ai_session_selection)
+
+        ai_provider_selection = self._extract_ai_prefixed_text(
+            command_text,
+            command,
+            self.AI_SESSION_PROVIDER_SELECT_PREFIXES,
+        )
+        if ai_provider_selection is not None:
+            return self._select_ai_provider_session(ai_provider_selection)
+
+        ai_continuation_text = self._extract_ai_prefixed_text(
+            command_text,
+            command,
+            self.AI_CONTINUATION_PREFIXES,
+        )
+        if ai_continuation_text is not None:
+            return self._generate_ai_continuation_result(ai_continuation_text)
 
         ai_chat_text = self._extract_ai_prefixed_text(
             command_text,
@@ -3030,6 +3124,7 @@ class CommandProcessor:
             "- no memory/profile/files were sent automatically\n"
             "- real API usage may consume account credits/limits"
         )
+        self._record_ai_provider_success(response)
         return self._result("ai.openai.one_shot", text)
 
     def _generate_gemini_one_shot_result(self, prompt):
@@ -3076,6 +3171,7 @@ class CommandProcessor:
             "- no memory/profile/files were sent automatically\n"
             "- free tier/quota may be used"
         )
+        self._record_ai_provider_success(response)
         return self._result("ai.gemini.one_shot", text)
 
     def _generate_groq_one_shot_result(self, prompt):
@@ -3122,6 +3218,7 @@ class CommandProcessor:
             "- no memory/profile/files were sent automatically\n"
             "- free/developer quota or rate limits may be used"
         )
+        self._record_ai_provider_success(response)
         return self._result("ai.groq.one_shot", text)
 
     def _generate_gigachat_one_shot_result(self, prompt):
@@ -3168,7 +3265,201 @@ class CommandProcessor:
             "- no memory/profile/files were sent automatically\n"
             "- free/paid quota may be used"
         )
+        self._record_ai_provider_success(response)
         return self._result("ai.gigachat.one_shot", text)
+
+    def _select_ai_provider_session(self, selection_text):
+        parsed = self._parse_ai_session_selection(selection_text)
+        if parsed is None:
+            return self._result(
+                "ai.session.select.invalid",
+                (
+                    "AI provider session selection was not changed.\n"
+                    "Use: ai session select: <provider> <model>\n"
+                    "Supported providers: dry_run, openai, gemini, groq, gigachat.\n"
+                    "No network call was made."
+                ),
+            )
+        provider, model = parsed
+        model_error = self._validate_ai_session_model(provider, model)
+        if model_error:
+            return self._result(
+                "ai.session.select.invalid_model",
+                (
+                    "AI provider session selection was not changed.\n"
+                    f"Reason: {model_error}\n"
+                    "No network call was made."
+                ),
+            )
+        self.ai_provider_session_state.select_manual(provider, model)
+        return self._result(
+            "ai.session.select",
+            (
+                "AI provider selected for this runtime session.\n"
+                f"- provider: {provider}\n"
+                f"- model: {model}\n"
+                "- mode: manual\n"
+                "- network: not called\n"
+                "- selection is not persisted\n"
+                "- dry_run remains default"
+            ),
+        )
+
+    def _ai_session_models_text(self):
+        guards = {
+            "openai": self.openai_request_gate.request_guard,
+            "gemini": self.gemini_request_gate.request_guard,
+            "groq": self.groq_request_gate.request_guard,
+            "gigachat": self.gigachat_request_gate.request_guard,
+        }
+        lines = [
+            "Available AI session models:",
+            "- provider: openai",
+            f"  - default model: {guards['openai'].safe_model_display()}",
+            "- provider: gemini",
+            f"  - default model: {guards['gemini'].safe_model_display()}",
+            "- provider: groq",
+            f"  - default model: {guards['groq'].safe_model_display()}",
+            "- provider: gigachat",
+            f"  - default model: {guards['gigachat'].safe_model_display()}",
+            "- selection command: выбрать ai модель <provider> <model>",
+            "- provider-only command uses that provider's configured/default model",
+            "- network: not called",
+            "- keys are not required or printed",
+        ]
+        return "\n".join(lines)
+
+    def _generate_ai_continuation_result(self, prompt):
+        snapshot = self.ai_provider_session_state.snapshot()
+        provider = snapshot.selected_provider
+        model = snapshot.selected_model
+        if not provider or not model:
+            return self._result(
+                "ai.session.continuation.unpinned",
+                (
+                    "AI continuation was not sent.\n"
+                    "Reason: no provider/model is pinned for this runtime session.\n"
+                    "Use an explicit provider one-shot first or select one with: ai session select: <provider> <model>.\n"
+                    "No network call was made."
+                ),
+            )
+        request = AIRequest(
+            prompt=prompt,
+            task_type=AIProviderCapability.CHAT.value,
+            language="ru",
+        )
+        response = self._generate_session_one_shot(provider, model, request)
+        if response.is_error:
+            return self._result(
+                f"ai.session.continuation.{provider}.error",
+                (
+                    "AI continuation was not sent.\n"
+                    f"- provider: {provider}\n"
+                    f"- model: {model}\n"
+                    f"Reason: {response.error_message or response.text}\n"
+                    "- dry_run remains default\n"
+                    "- response was not executed as a command"
+                ),
+            )
+        self._record_ai_provider_success(response)
+        return self._result(
+            f"ai.session.continuation.{provider}",
+            (
+                f"{provider} continuation response:\n"
+                f"{response.text}\n\n"
+                "Safety:\n"
+                "- explicit session continuation one-shot completed\n"
+                f"- provider: {response.provider_name}\n"
+                f"- model: {response.model_name}\n"
+                f"- selection mode: {self.ai_provider_session_state.selection_mode}\n"
+                "- provider was not enabled permanently\n"
+                "- dry_run remains default\n"
+                "- response was not executed as a command\n"
+                "- key value was not printed\n"
+                "- no memory/profile/files were sent automatically"
+            ),
+        )
+
+    def _generate_session_one_shot(self, provider, model, request):
+        gates = {
+            "openai": self.openai_request_gate,
+            "gemini": self.gemini_request_gate,
+            "groq": self.groq_request_gate,
+            "gigachat": self.gigachat_request_gate,
+        }
+        if provider == "dry_run":
+            return self.ai_provider_router.generate_with_provider(
+                "dry_run",
+                request,
+                capability=AIProviderCapability.CHAT,
+            )
+        gate = gates.get(provider)
+        if gate is None:
+            return self.openai_request_gate._error_response(
+                AIProviderCapability.CHAT,
+                f"Unknown AI provider: {provider}",
+            )
+        return gate.generate_one_shot(
+            request,
+            capability=AIProviderCapability.CHAT,
+            model_override=model,
+        )
+
+    def _record_ai_provider_success(self, response):
+        if response.is_error:
+            return
+        self.ai_provider_session_state.record_success(
+            response.provider_name,
+            response.model_name,
+            response.capability,
+        )
+
+    def _parse_ai_session_selection(self, selection_text):
+        text = str(selection_text or "").strip()
+        if not text:
+            return None
+        text = text.replace("provider=", "").replace("model=", "")
+        parts = text.split()
+        if len(parts) < 1:
+            return None
+        provider = parts[0].strip().lower()
+        if provider not in {"dry_run", "openai", "gemini", "groq", "gigachat"}:
+            return None
+        if len(parts) == 1:
+            model = self._default_ai_session_model(provider)
+        else:
+            model = " ".join(parts[1:]).strip()
+        if not model:
+            return None
+        return provider, model
+
+    def _default_ai_session_model(self, provider):
+        if provider == "dry_run":
+            return "dry-run"
+        guards = {
+            "openai": self.openai_request_gate.request_guard,
+            "gemini": self.gemini_request_gate.request_guard,
+            "groq": self.groq_request_gate.request_guard,
+            "gigachat": self.gigachat_request_gate.request_guard,
+        }
+        guard = guards.get(provider)
+        if guard is None:
+            return ""
+        return guard.resolve_model()
+
+    def _validate_ai_session_model(self, provider, model):
+        if provider == "dry_run":
+            return None if str(model or "").strip() else "dry_run model is empty."
+        guards = {
+            "openai": self.openai_request_gate.request_guard,
+            "gemini": self.gemini_request_gate.request_guard,
+            "groq": self.groq_request_gate.request_guard,
+            "gigachat": self.gigachat_request_gate.request_guard,
+        }
+        guard = guards.get(provider)
+        if guard is None:
+            return f"Unknown AI provider: {provider}"
+        return guard.validate_model(model)
 
     def _openai_status_text(self):
         status = self.ai_provider_config_manager.status_for("openai")
@@ -3950,6 +4241,7 @@ class CommandProcessor:
             "Рискованные действия не обходят безопасность, постоянное прослушивание не связано "
             "с реальным распознаванием. "
             "AI foundation сейчас работает только в dry-run/offline режиме: статус ai; список ai провайдеров; спроси ai: <текст>; ai кратко: <текст>; ai классифицируй: <текст>. "
+            "AI session/model pinning: статус ai сессии; список ai моделей; выбрать ai модель <provider> <model>; ai реальный запрос: <текст>; продолжи через ту же модель: <текст>; сбросить ai сессию. "
             "OpenAI adapter: статус openai; проверить openai ключ; спроси openai: <текст> пока показывает безопасный отказ без сетевого запроса. "
             "OpenAI one-shot: статус openai one shot; статус openai guard; лимиты openai; openai модель; openai реальный запрос: <текст>; только явная one-shot команда может сделать один реальный запрос, OpenAI не включается постоянно, dry_run остается default, ключ не печатается, ответ не выполняется как команда, max_output_tokens ограничен, реальный API может использовать лимит аккаунта. "
             "Gemini adapter: статус gemini; проверить gemini ключ; статус gemini guard; лимиты gemini; gemini модель; спроси gemini: <текст> показывает безопасный отказ без сетевого запроса; gemini реальный запрос: <текст> или gemini one shot: <текст> делает только явный one-shot при наличии GEMINI_API_KEY, Gemini не включается постоянно, dry_run остается default, ключ не печатается, ответ не выполняется как команда, free tier/quota может использоваться. "

@@ -48,8 +48,9 @@ class GigaChatRequestCostGuard:
         self,
         prompt: str,
         max_output_tokens: int | str | None = None,
+        model_override: str | None = None,
     ) -> GigaChatRequestGuardResult:
-        model = self.resolve_model()
+        model = str(model_override).strip() if model_override is not None else self.resolve_model()
         model_error = self.validate_model(model)
         if model_error:
             return self._blocked(model, prompt, self.config.max_output_tokens, model_error)

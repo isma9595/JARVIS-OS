@@ -21,6 +21,7 @@ from ai.provider_language_policy import (
     AIProviderLanguagePolicyConfig,
     AIProviderLanguagePolicyResult,
 )
+from ai.provider_session import AIProviderSessionSnapshot, AIProviderSessionState
 from ai.openai_cost_guard import (
     OpenAIRequestCostGuard,
     OpenAIRequestGuardConfig,
@@ -65,6 +66,8 @@ __all__ = [
     "AIProviderRouter",
     "AIProviderRuntimeState",
     "AIProviderSafetyLevel",
+    "AIProviderSessionSnapshot",
+    "AIProviderSessionState",
     "AIRequest",
     "AIResponse",
     "GeminiProvider",

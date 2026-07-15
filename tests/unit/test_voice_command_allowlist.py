@@ -110,6 +110,25 @@ def test_ai_status_and_provider_list_commands_are_allowed():
     )
 
 
+def test_ai_session_read_only_commands_are_allowlisted():
+    allowlist = SafeVoiceCommandAllowlist()
+
+    status = allowlist.decide("статус ai сессии")
+    models = allowlist.decide("список ai моделей")
+
+    assert status.allowed is True
+    assert status.canonical_command == "статус ai сессии"
+    assert models.allowed is True
+    assert models.canonical_command == "список ai моделей"
+
+
+def test_ai_session_modifying_and_request_commands_are_not_allowlisted():
+    allowlist = SafeVoiceCommandAllowlist()
+
+    assert allowlist.decide("выбрать ai provider groq").allowed is False
+    assert allowlist.decide("продолжи через ту же модель привет").allowed is False
+
+
 def test_ai_config_and_key_safety_voice_commands_are_allowed():
     allowlist = SafeVoiceCommandAllowlist()
 
