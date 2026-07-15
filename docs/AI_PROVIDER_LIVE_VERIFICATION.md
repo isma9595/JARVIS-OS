@@ -209,3 +209,8 @@ and consensus execution require confirmation.
 - No prompt/response persistence.
 - No response execution.
 - No payment/quota automation.
+# TASK-069 App Service Note
+
+Future desktop UI code should reach AI live verification status through
+`JarvisAppService`, which previews command risk through `CommandRegistry` and
+executes only by delegating to `CommandProcessor`.

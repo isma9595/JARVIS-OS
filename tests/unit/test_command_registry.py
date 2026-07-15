@@ -123,11 +123,55 @@ def test_search_finds_ai_voice_ollama_and_fallback_commands():
 
 def test_future_app_commands_are_future_and_not_app_ready():
     registry = CommandRegistry()
-    app_commands = registry.list_by_category(CommandCategory.APP)
+    app_commands = [
+        command
+        for command in registry.list_by_category(CommandCategory.APP)
+        if command.command_id.endswith("_future")
+    ]
 
     assert app_commands
     assert all(command.risk_level == CommandRiskLevel.FUTURE for command in app_commands)
     assert all(command.app_ready is False for command in app_commands)
+
+
+def test_app_service_commands_registered():
+    registry = CommandRegistry()
+
+    command_ids = {command.command_id for command in registry.list_by_category(CommandCategory.APP)}
+
+    assert "app_service.status" in command_ids
+    assert "app_service.capabilities" in command_ids
+    assert "app_service.preview" in command_ids
+    assert "app_service.commands" in command_ids
+
+
+def test_app_service_preview_command_is_not_voice_auto_allowed():
+    registry = CommandRegistry()
+    command = registry.find_by_alias("app preview: <text>")
+
+    assert command is not None
+    assert command.command_id == "app_service.preview"
+    assert command.voice_auto_allowed is False
+    assert command.app_ready is True
+    assert command.requires_network is False
+
+
+def test_app_service_status_capabilities_and_list_are_read_only_and_app_ready():
+    registry = CommandRegistry()
+
+    for alias in (
+        "статус app service",
+        "app service capabilities",
+        "app service commands",
+    ):
+        command = registry.find_by_alias(alias)
+
+        assert command is not None
+        assert command.read_only is True
+        assert command.risk_level == CommandRiskLevel.READ_ONLY
+        assert command.voice_auto_allowed is True
+        assert command.app_ready is True
+        assert command.requires_network is False
 
 
 def test_risky_commands_are_not_voice_auto_allowed():

@@ -205,3 +205,8 @@ JARVIS now runs a deterministic AI context privacy preflight before real provide
 Safe provider retry is handled by the explicit fallback executor, not by the
 router. Ordinary router/provider commands do not auto-retry. See
 `docs/AI_PROVIDER_FALLBACK_EXECUTION.md`.
+# TASK-069 App Service Note
+
+`JarvisAppService` does not call `AIProviderRouter` directly. Future UI command
+execution still goes through `CommandProcessor`, preserving router safety and
+explicit provider boundaries.

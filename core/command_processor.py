@@ -130,6 +130,29 @@ class CommandProcessor:
         "команды profile": CommandCategory.PROFILE,
         "команды system": CommandCategory.SYSTEM,
     }
+    APP_SERVICE_STATUS_COMMANDS = {
+        "статус app service",
+        "статус jarvis app service",
+        "статус сервиса приложения",
+        "статус приложения jarvis",
+        "app service status",
+    }
+    APP_SERVICE_CAPABILITIES_COMMANDS = {
+        "app service capabilities",
+        "возможности app service",
+        "возможности приложения jarvis",
+        "app service manifest",
+    }
+    APP_SERVICE_COMMANDS_COMMANDS = {
+        "app service commands",
+        "команды app service",
+    }
+    APP_SERVICE_PREVIEW_PREFIXES = (
+        "app preview:",
+        "предпросмотр команды:",
+        "preview command:",
+        "предварительная проверка команды:",
+    )
     AI_STATUS_COMMANDS = {
         "статус ai",
         "статус ии",
@@ -2713,6 +2736,10 @@ class CommandProcessor:
         return " ".join(str(command_text).strip().lower().split())
 
     def _command_registry_result(self, command):
+        app_service_result = self._app_service_result(command)
+        if app_service_result is not None:
+            return app_service_result
+
         if command in self.COMMAND_REGISTRY_STATUS_COMMANDS:
             return self._result(
                 "command_registry.status",
@@ -2752,6 +2779,47 @@ class CommandProcessor:
                 )
 
         return None
+
+    def _app_service_result(self, command):
+        if command in self.APP_SERVICE_STATUS_COMMANDS:
+            return self._result(
+                "app_service.status",
+                self._get_app_service().status_text_ru(),
+                speakable=False,
+            )
+
+        if command in self.APP_SERVICE_CAPABILITIES_COMMANDS:
+            return self._result(
+                "app_service.capabilities",
+                self._get_app_service().capabilities_text_ru(),
+                speakable=False,
+            )
+
+        if command in self.APP_SERVICE_COMMANDS_COMMANDS:
+            return self._result(
+                "app_service.commands",
+                self._get_app_service().list_commands(CommandCategory.APP.value),
+                speakable=False,
+            )
+
+        for prefix in self.APP_SERVICE_PREVIEW_PREFIXES:
+            if command.startswith(prefix):
+                preview_text = command[len(prefix) :].strip()
+                return self._result(
+                    "app_service.preview",
+                    self._get_app_service().preview_text_ru(preview_text),
+                    speakable=False,
+                )
+
+        return None
+
+    def _get_app_service(self):
+        from app import JarvisAppService
+
+        return JarvisAppService(
+            command_processor=self,
+            command_registry=self.command_registry,
+        )
 
     def _get_vosk_preflight(self):
         if self.voice_input_manager is None:

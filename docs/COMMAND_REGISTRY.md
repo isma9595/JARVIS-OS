@@ -93,3 +93,10 @@ Search is metadata-only and does not execute matching commands.
 - Secure key storage UI.
 - Installer/product mode.
 - Plugin/module expansion.
+
+## TASK-069 App Service
+
+TASK-069 adds `JarvisAppService` as the app-facing boundary for future desktop
+UI code. The service uses this registry for list/search/category/preview
+metadata and delegates execution to `CommandProcessor`. See
+`docs/JARVIS_APP_SERVICE.md`.

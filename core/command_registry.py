@@ -247,7 +247,8 @@ class CommandRegistry:
         for command in matches:
             lines.append(
                 "- "
-                f"{command.title_ru} | category={command.category.value} | "
+                f"{command.title_ru} | id={command.command_id} | "
+                f"category={command.category.value} | "
                 f"risk={command.risk_level.value} | "
                 f"voice_auto_allowed={'yes' if command.voice_auto_allowed else 'no'} | "
                 f"app_ready={'yes' if command.app_ready else 'no'}"
@@ -297,6 +298,7 @@ def _meta(
     requires_privacy_check: bool = False,
     ui_visible: bool = True,
     app_ready: bool = True,
+    introduced_in: str | None = "TASK-068",
     notes_ru: str | None = None,
 ) -> CommandMetadata:
     return CommandMetadata(
@@ -314,7 +316,7 @@ def _meta(
         requires_privacy_check=requires_privacy_check,
         ui_visible=ui_visible,
         app_ready=app_ready,
-        introduced_in="TASK-068",
+        introduced_in=introduced_in,
         notes_ru=notes_ru,
     )
 
@@ -399,6 +401,10 @@ def default_command_metadata() -> tuple[CommandMetadata, ...]:
         _meta("ollama.status", "Статус Ollama", "Локальный status без внешней сети.", CommandCategory.OLLAMA, ("статус ollama",), voice_auto_allowed=True),
         _meta("ollama.model_list", "Список Ollama моделей", "Локальный /api/tags список моделей.", CommandCategory.OLLAMA, ("список ollama моделей",), risk_level=CommandRiskLevel.LOCAL_RUNTIME),
         _meta("ollama.real_request", "Ollama реальный запрос", "Явный localhost-only запрос.", CommandCategory.OLLAMA, ("ollama реальный запрос: <text>",), risk_level=CommandRiskLevel.LOCAL_RUNTIME, read_only=False, requires_confirmation=True, requires_privacy_check=True),
+        _meta("app_service.status", "Статус App Service", "Статус app-facing service layer без сети.", CommandCategory.APP, ("статус app service", "статус jarvis app service", "статус сервиса приложения", "статус приложения jarvis", "app service status"), voice_auto_allowed=True, introduced_in="TASK-069", notes_ru="status only; no network"),
+        _meta("app_service.capabilities", "Возможности App Service", "Возможности будущего UI boundary без сети.", CommandCategory.APP, ("app service capabilities", "возможности app service", "возможности приложения jarvis", "app service manifest"), voice_auto_allowed=True, introduced_in="TASK-069", notes_ru="capabilities only; no network"),
+        _meta("app_service.preview", "Предпросмотр команды App Service", "Предпросмотр произвольной команды по metadata без выполнения.", CommandCategory.APP, ("app preview: <text>", "предпросмотр команды: <text>", "preview command: <text>", "предварительная проверка команды: <text>"), risk_level=CommandRiskLevel.SENSITIVE, requires_privacy_check=True, voice_auto_allowed=False, introduced_in="TASK-069", notes_ru="preview only; target command is not executed"),
+        _meta("app_service.commands", "Команды App Service", "Список app-facing команд через CommandRegistry.", CommandCategory.APP, ("app service commands", "команды app service"), voice_auto_allowed=True, introduced_in="TASK-069", notes_ru="list only; no network"),
         _meta("app.launch_future", "Приложение JARVIS", "Будущая desktop app команда.", CommandCategory.APP, ("приложение jarvis",), risk_level=CommandRiskLevel.FUTURE, read_only=False, app_ready=False, notes_ru="future/not implemented"),
         _meta("app.settings_future", "Настройки JARVIS", "Будущие настройки приложения.", CommandCategory.APP, ("настройки jarvis",), risk_level=CommandRiskLevel.FUTURE, read_only=False, app_ready=False, notes_ru="future/not implemented"),
         _meta("app.ai_provider_settings_future", "AI provider settings", "Будущий экран настроек provider/API keys.", CommandCategory.APP, ("ai provider settings",), risk_level=CommandRiskLevel.FUTURE, read_only=False, app_ready=False, notes_ru="future/not implemented"),

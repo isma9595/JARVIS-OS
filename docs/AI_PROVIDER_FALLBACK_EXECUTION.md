@@ -97,3 +97,8 @@ External key missing:
 
 - Provider is marked `MISSING_KEY`.
 - Key value is never printed.
+# TASK-069 App Service Note
+
+AppService preview can show fallback command risk from `CommandRegistry`, but
+fallback execution remains explicit-only and still runs only through
+`CommandProcessor`.

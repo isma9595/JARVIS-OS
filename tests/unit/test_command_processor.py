@@ -4920,3 +4920,100 @@ def test_command_registry_commands_do_not_break_existing_ai_voice_provider_statu
     assert processor.process("статус ai fallback execution")["intent"] == "ai.fallback_execution.status"
     assert processor.process("статус ai privacy")["intent"] == "ai.context_privacy.status"
     assert processor.process("статус ollama")["intent"] == "ai.ollama.status"
+
+
+def test_app_service_status_commands_work_without_action_router():
+    class FailingActionRouter:
+        calls = 0
+
+        def route(self, command):
+            self.calls += 1
+            raise AssertionError("AppService status must not call ActionRouter")
+
+    processor = CommandProcessor()
+    processor.action_router = FailingActionRouter()
+
+    for command in (
+        "статус app service",
+        "статус jarvis app service",
+        "статус сервиса приложения",
+        "статус приложения jarvis",
+    ):
+        result = processor.process(command)
+
+        assert result["intent"] == "app_service.status"
+        assert "- enabled yes" in result["response"]
+        assert "- mode app-facing service layer" in result["response"]
+        assert "- execution source CommandProcessor remains active" in result["response"]
+        assert "- network default: no" in result["response"]
+        assert "- no secrets" in result["response"]
+        assert "- no response execution" in result["response"]
+
+    assert processor.action_router.calls == 0
+
+
+def test_app_service_capabilities_commands_work():
+    processor = CommandProcessor()
+
+    for command in ("app service capabilities", "возможности приложения jarvis"):
+        result = processor.process(command)
+
+        assert result["intent"] == "app_service.capabilities"
+        assert "future UI can list commands" in result["response"]
+        assert "future AI settings screen planned" in result["response"]
+        assert "no GUI in this task" in result["response"]
+
+
+def test_app_service_commands_work():
+    result = CommandProcessor().process("app service commands")
+
+    assert result["intent"] == "app_service.commands"
+    assert "Command registry: app" in result["response"]
+    assert "app_service.status" in result["response"]
+    assert "app_service.preview" in result["response"]
+
+
+def test_app_preview_status_ai_does_not_execute_target_command():
+    class FailingActionRouter:
+        calls = 0
+
+        def route(self, command):
+            self.calls += 1
+            raise AssertionError("Preview must not execute target command")
+
+    processor = CommandProcessor()
+    processor.action_router = FailingActionRouter()
+
+    result = processor.process("app preview: статус ai")
+
+    assert result["intent"] == "app_service.preview"
+    assert "- does not execute command" in result["response"]
+    assert "- known command: yes" in result["response"]
+    assert "- command id: ai.status" in result["response"]
+    assert "AI foundation status" not in result["response"]
+    assert processor.action_router.calls == 0
+
+
+def test_app_preview_real_provider_request_shows_risk_without_execution():
+    processor = CommandProcessor()
+
+    result = processor.process("app preview: groq реальный запрос: test")
+
+    assert result["intent"] == "app_service.preview"
+    assert "- command id: ai_provider.groq.real_request" in result["response"]
+    assert "- risk: network_explicit" in result["response"]
+    assert "- requires_network: yes" in result["response"]
+    assert "- requires_privacy_check: yes" in result["response"]
+    assert "GROQ_API_KEY is missing" not in result["response"]
+
+
+def test_app_service_existing_registry_ai_voice_provider_commands_still_work():
+    processor = CommandProcessor(ollama_request_gate=FakeOllamaGate())
+
+    assert processor.process("статус command registry")["intent"] == "command_registry.status"
+    assert processor.process("реестр команд")["intent"] == "command_registry.list"
+    assert processor.process("команды приложение")["intent"] == "command_registry.category"
+    assert processor.process("статус ai verification")["intent"] == "ai.live_verification.status"
+    assert processor.process("статус ai fallback execution")["intent"] == "ai.fallback_execution.status"
+    assert processor.process("статус ai")["intent"] == "ai.status"
+    assert processor.process("статус ollama")["intent"] == "ai.ollama.status"

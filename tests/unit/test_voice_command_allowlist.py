@@ -774,3 +774,41 @@ def test_real_provider_fallback_and_consensus_commands_still_not_allowlisted():
 
         assert decision.allowed is False
         assert decision.canonical_command is None
+
+
+def test_app_service_status_capabilities_and_list_are_allowlisted():
+    allowlist = SafeVoiceCommandAllowlist()
+
+    for command, canonical in (
+        ("статус app service", "статус app service"),
+        ("статус jarvis app service", "статус app service"),
+        ("статус сервиса приложения", "статус app service"),
+        ("статус приложения jarvis", "статус app service"),
+        ("app service status", "статус app service"),
+        ("app service capabilities", "app service capabilities"),
+        ("возможности app service", "app service capabilities"),
+        ("возможности приложения jarvis", "app service capabilities"),
+        ("app service manifest", "app service capabilities"),
+        ("app service commands", "app service commands"),
+        ("команды app service", "app service commands"),
+    ):
+        decision = allowlist.decide(command)
+
+        assert decision.allowed is True
+        assert decision.canonical_command == canonical
+
+
+def test_app_service_preview_arbitrary_text_is_not_allowlisted():
+    allowlist = SafeVoiceCommandAllowlist()
+
+    for command in (
+        "app preview: статус ai",
+        "предпросмотр команды: статус ai",
+        "preview command: статус ai",
+        "предварительная проверка команды: статус ai",
+        "app preview: groq реальный запрос: test",
+    ):
+        decision = allowlist.decide(command)
+
+        assert decision.allowed is False
+        assert decision.canonical_command is None
