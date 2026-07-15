@@ -168,3 +168,10 @@ Multi-provider consensus is explicit-only. It uses the existing one-shot gates
 for Groq, GigaChat, OpenAI, and Gemini, does not override session pinning, and
 does not include `dry_run` as a real consensus provider. `dry_run` remains the
 default router provider.
+
+## TASK-063 Selection Policy Note
+
+The provider selection policy is recommendation-only. It does not call the
+network, does not change router defaults, and does not execute fallbacks.
+Manual session pinning wins, consensus remains explicit-only, and `dry_run`
+remains the default provider.

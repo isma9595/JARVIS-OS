@@ -83,3 +83,9 @@ Multiple keys:
 - Providers may disagree.
 - No hidden chain-of-thought is shown.
 - A later task may add a stronger synthesis model or a local Ollama judge.
+
+## TASK-063 Selection Policy Note
+
+Selection policy can recommend an explicit consensus command when the prompt
+asks to compare multiple AI answers. It does not call consensus automatically,
+does not call providers, and does not change the explicit-only safety gate.

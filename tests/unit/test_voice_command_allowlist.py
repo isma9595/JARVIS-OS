@@ -386,6 +386,49 @@ def test_consensus_real_commands_are_not_allowlisted():
         assert decision.allowed is False
 
 
+def test_selection_policy_status_and_matrix_commands_are_allowlisted():
+    allowlist = SafeVoiceCommandAllowlist()
+
+    for command in (
+        "статус ai fallback",
+        "статус ai selection policy",
+        "статус выбора ai",
+    ):
+        decision = allowlist.decide(command)
+
+        assert decision.allowed is True
+        assert decision.canonical_command == "статус ai selection policy"
+
+    for command in (
+        "матрица ai провайдеров",
+        "матрица ai моделей",
+        "политика выбора ai",
+    ):
+        decision = allowlist.decide(command)
+
+        assert decision.allowed is True
+        assert decision.canonical_command == "матрица ai провайдеров"
+
+
+def test_selection_policy_recommendation_commands_are_not_allowlisted():
+    allowlist = SafeVoiceCommandAllowlist()
+
+    for command in (
+        "какой ai выбрать привет",
+        "какой ai выбрать: привет",
+        "какую ai модель выбрать: привет",
+        "какой провайдер выбрать: привет",
+        "ai route привет",
+        "ai route: привет",
+        "ai выбрать модель: привет",
+        "ai selection: hello",
+    ):
+        decision = allowlist.decide(command)
+
+        assert decision.allowed is False
+        assert decision.canonical_command is None
+
+
 def test_real_ai_requests_remain_not_allowlisted():
     allowlist = SafeVoiceCommandAllowlist()
 

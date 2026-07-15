@@ -5,6 +5,7 @@ from ai import (
     AIProviderConfigManager,
     AIProviderConsensusManager,
     AIProviderRouter,
+    AIProviderSelectionPolicy,
     AIProviderSessionState,
     AIRequest,
     GeminiRequestGate,
@@ -114,6 +115,30 @@ class CommandProcessor:
         "ai consensus status",
         "статус сравнения ai",
     }
+    AI_SELECTION_POLICY_STATUS_COMMANDS = {
+        "статус ai fallback",
+        "статус ai fallback matrix",
+        "статус ai selection policy",
+        "статус выбора ai",
+        "статус выбора модели ai",
+        "статус политики ai",
+        "статус ai политики",
+    }
+    AI_SELECTION_POLICY_MATRIX_COMMANDS = {
+        "матрица ai провайдеров",
+        "матрица ai моделей",
+        "ai fallback matrix",
+        "ai provider matrix",
+        "политика выбора ai",
+    }
+    AI_SELECTION_RECOMMENDATION_PREFIXES = (
+        "какой ai выбрать:",
+        "какую ai модель выбрать:",
+        "какой провайдер выбрать:",
+        "ai route:",
+        "ai выбрать модель:",
+        "ai selection:",
+    )
     AI_SESSION_STATUS_COMMANDS = {
         "статус ai сессии",
         "статус ai session",
@@ -1059,6 +1084,7 @@ class CommandProcessor:
         ai_provider_language_policy=None,
         ai_provider_session_state=None,
         ai_provider_consensus_manager=None,
+        ai_provider_selection_policy=None,
     ):
         self.user_profile = user_profile or {}
         self.dialogue_manager = dialogue_manager or DialogueManager(self.user_profile)
@@ -1114,6 +1140,12 @@ class CommandProcessor:
                     "groq": self.groq_request_gate,
                     "gigachat": self.gigachat_request_gate,
                 },
+            )
+        )
+        self.ai_provider_selection_policy = (
+            ai_provider_selection_policy
+            or AIProviderSelectionPolicy(
+                config_manager=self.ai_provider_config_manager
             )
         )
         self.voice_input_manager = None
@@ -1841,6 +1873,18 @@ class CommandProcessor:
                 self.ai_provider_consensus_manager.status_text_ru(),
             )
 
+        if command in self.AI_SELECTION_POLICY_STATUS_COMMANDS:
+            return self._result(
+                "ai.selection_policy.status",
+                self.ai_provider_selection_policy.status_text_ru(),
+            )
+
+        if command in self.AI_SELECTION_POLICY_MATRIX_COMMANDS:
+            return self._result(
+                "ai.selection_policy.matrix",
+                self.ai_provider_selection_policy.matrix_text_ru(),
+            )
+
         if command in self.AI_SESSION_MODEL_LIST_COMMANDS:
             return self._result(
                 "ai.session.models",
@@ -1888,6 +1932,14 @@ class CommandProcessor:
         )
         if ai_consensus_text is not None:
             return self._generate_ai_consensus_result(ai_consensus_text)
+
+        ai_selection_text = self._extract_ai_prefixed_text(
+            command_text,
+            command,
+            self.AI_SELECTION_RECOMMENDATION_PREFIXES,
+        )
+        if ai_selection_text is not None:
+            return self._recommend_ai_provider_result(ai_selection_text)
 
         ai_chat_text = self._extract_ai_prefixed_text(
             command_text,
@@ -3075,6 +3127,13 @@ class CommandProcessor:
         text = self.ai_provider_consensus_manager.format_result_text(result)
         intent = "ai.consensus" if result.ok else "ai.consensus.error"
         return self._result(intent, text)
+
+    def _recommend_ai_provider_result(self, prompt):
+        text = self.ai_provider_selection_policy.recommendation_text_ru(
+            prompt,
+            session_snapshot=self.ai_provider_session_state.snapshot(),
+        )
+        return self._result("ai.selection_policy.recommendation", text)
 
     def _generate_named_ai_result(
         self,

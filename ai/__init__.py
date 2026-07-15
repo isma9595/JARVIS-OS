@@ -28,6 +28,12 @@ from ai.provider_consensus import (
     AIProviderConsensusProviderResult,
     AIProviderConsensusResult,
 )
+from ai.provider_selection_policy import (
+    AIProviderRole,
+    AIProviderSelectionPolicy,
+    AIProviderSelectionRecommendation,
+    AIProviderSelectionRequest,
+)
 from ai.openai_cost_guard import (
     OpenAIRequestCostGuard,
     OpenAIRequestGuardConfig,
@@ -76,6 +82,10 @@ __all__ = [
     "AIProviderRouter",
     "AIProviderRuntimeState",
     "AIProviderSafetyLevel",
+    "AIProviderRole",
+    "AIProviderSelectionPolicy",
+    "AIProviderSelectionRecommendation",
+    "AIProviderSelectionRequest",
     "AIProviderSessionSnapshot",
     "AIProviderSessionState",
     "AIRequest",

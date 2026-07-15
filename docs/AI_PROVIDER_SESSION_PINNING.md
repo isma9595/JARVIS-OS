@@ -34,3 +34,10 @@ Safety rules:
 Consensus mode does not overwrite manual selected provider/model state. It is an
 explicit comparison path that uses existing one-shot gates and leaves `dry_run`
 as the default provider.
+
+## TASK-063 Selection Policy Note
+
+Manual runtime provider/model selection wins over selection policy
+recommendations. The policy reports the selected provider/model for continued
+work but does not change session state, reset state, overwrite last success, or
+call the network.

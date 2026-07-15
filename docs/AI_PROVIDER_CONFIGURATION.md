@@ -127,3 +127,10 @@ Gemini in deterministic order, attempts only providers with a present required
 environment key, and uses existing one-shot gates. It does not make any external
 provider default, does not store prompts or responses, and does not include
 `dry_run` as a real consensus provider.
+
+## TASK-063 Selection Policy Note
+
+Provider selection policy checks only PRESENT/MISSING key status and never
+prints key values. It is recommendation-only, makes no network calls, does not
+enable external providers, and leaves manual session pinning and explicit
+consensus behavior unchanged.

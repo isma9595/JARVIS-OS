@@ -120,3 +120,10 @@ Groq may be attempted by explicit consensus commands only when `GROQ_API_KEY` is
 present. Consensus uses the Groq one-shot gate, does not enable Groq
 permanently, does not override session pinning, and does not include `dry_run`
 as a real consensus provider.
+
+## TASK-063 Selection Policy Note
+
+Selection policy may recommend Groq for fast/general external answers when
+`GROQ_API_KEY` is PRESENT. This is recommendation-only: no network is called,
+manual session pinning wins, and real Groq use still requires an explicit
+one-shot command.

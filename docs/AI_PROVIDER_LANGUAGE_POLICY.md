@@ -88,3 +88,9 @@ Status output is read-only and reports that network is not called.
 Consensus mode uses the existing one-shot gates, so the current language policy
 still applies to each provider request. The deterministic JARVIS synthesis is
 Russian-first by default and does not send memory, profile, files, or logs.
+
+## TASK-063 Selection Policy Note
+
+Provider selection policy may recommend GigaChat for Russian/Russia-oriented
+tasks, but it does not call any provider. Real requests still require explicit
+one-shot commands, and consensus remains explicit-only.

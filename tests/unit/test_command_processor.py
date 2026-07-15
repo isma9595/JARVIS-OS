@@ -4274,3 +4274,128 @@ def test_ai_consensus_does_not_break_existing_session_and_provider_commands():
     assert processor.process("список ai моделей")["intent"] == "ai.session.models"
     assert processor.process("статус ai language policy")["intent"] == "ai.language_policy.status"
     assert processor.process("groq one shot: hello")["intent"] == "ai.groq.one_shot.error"
+
+
+def test_ai_selection_policy_status_and_matrix_commands_work_without_network_or_action_router():
+    class FailingActionRouter:
+        calls = 0
+
+        def route(self, command):
+            self.calls += 1
+            raise AssertionError("selection policy must not route to ActionRouter")
+
+    processor = CommandProcessor()
+    processor.action_router = FailingActionRouter()
+
+    for command in (
+        "статус ai fallback",
+        "статус ai selection policy",
+        "статус выбора ai",
+    ):
+        result = processor.process(command)
+
+        assert result["intent"] == "ai.selection_policy.status"
+        assert "recommendation only" in result["response"]
+        assert "network: not called" in result["response"]
+        assert "dry_run remains default" in result["response"]
+        assert processor.action_router.calls == 0
+
+    for command in ("матрица ai провайдеров", "политика выбора ai"):
+        result = processor.process(command)
+
+        assert result["intent"] == "ai.selection_policy.matrix"
+        assert "fallback matrix" in result["response"]
+        assert "dry_run" in result["response"]
+        assert "ollama" in result["response"]
+        assert "network: not called" in result["response"]
+        assert processor.action_router.calls == 0
+
+
+def test_ai_selection_recommendation_no_keys_safe_no_network(monkeypatch):
+    for env_var in ("OPENAI_API_KEY", "GEMINI_API_KEY", "GROQ_API_KEY", "GIGACHAT_AUTH_KEY"):
+        monkeypatch.delenv(env_var, raising=False)
+
+    result = CommandProcessor().process("какой ai выбрать: быстро ответь")
+
+    assert result["intent"] == "ai.selection_policy.recommendation"
+    assert "recommended provider: dry_run" in result["response"]
+    assert "network_called: False" in result["response"]
+    assert "спроси ai: <text>" in result["response"]
+
+
+def test_ai_selection_privacy_offline_recommends_dry_run_and_ollama_planned():
+    result = CommandProcessor().process(
+        "какой ai выбрать: это приватный файл, не отправляй в интернет"
+    )
+
+    assert result["intent"] == "ai.selection_policy.recommendation"
+    assert "recommended provider: dry_run" in result["response"]
+    assert "ollama(planned)" in result["response"]
+    assert "Ollama is planned" in result["response"]
+
+
+def test_ai_selection_consensus_prompt_recommends_explicit_consensus():
+    result = CommandProcessor().process("какой ai выбрать: сравни ответы нескольких ии")
+
+    assert result["intent"] == "ai.selection_policy.recommendation"
+    assert "recommended provider: consensus" in result["response"]
+    assert "консенсус ai: <text>" in result["response"]
+    assert "network_called: False" in result["response"]
+
+
+def test_ai_selection_with_groq_key_recommends_groq(monkeypatch):
+    monkeypatch.setenv("GROQ_API_KEY", "fake-test-key")
+
+    result = CommandProcessor().process("какой ai выбрать: быстро ответь")
+
+    assert result["intent"] == "ai.selection_policy.recommendation"
+    assert "recommended provider: groq" in result["response"]
+    assert "fake-test-key" not in result["response"]
+    assert "network_called: False" in result["response"]
+
+
+def test_ai_selection_with_gigachat_key_russian_prompt_recommends_gigachat(monkeypatch):
+    monkeypatch.setenv("GIGACHAT_AUTH_KEY", "fake-test-key")
+
+    result = CommandProcessor().process("какой ai выбрать: ответь на русском про Россию")
+
+    assert result["intent"] == "ai.selection_policy.recommendation"
+    assert "recommended provider: gigachat" in result["response"]
+    assert "fake-test-key" not in result["response"]
+
+
+def test_ai_selection_manual_session_selection_wins():
+    processor = CommandProcessor()
+    processor.process("выбрать ai provider groq")
+
+    result = processor.process("какой ai выбрать: продолжи эту работу")
+
+    assert result["intent"] == "ai.selection_policy.recommendation"
+    assert "recommended provider: groq" in result["response"]
+    assert "manual runtime selection wins" in result["response"]
+
+
+def test_ai_selection_does_not_break_existing_commands():
+    processor = CommandProcessor()
+
+    assert processor.process("статус ai сессии")["intent"] == "ai.session.status"
+    assert processor.process("статус ai consensus")["intent"] == "ai.consensus.status"
+    assert processor.process("groq one shot: hello")["intent"] == "ai.groq.one_shot.error"
+
+
+def test_ai_selection_output_not_routed_to_action_router():
+    class FailingActionRouter:
+        calls = 0
+
+        def route(self, command):
+            self.calls += 1
+            raise AssertionError("selection recommendation must not route to ActionRouter")
+
+    processor = CommandProcessor()
+    processor.action_router = FailingActionRouter()
+
+    result = processor.process("какой ai выбрать: удали файл")
+
+    assert result["intent"] == "ai.selection_policy.recommendation"
+    assert "provider response execution: not applicable" in result["response"]
+    assert processor.action_router.calls == 0

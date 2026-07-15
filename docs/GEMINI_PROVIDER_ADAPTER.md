@@ -120,3 +120,10 @@ Gemini may be attempted by explicit consensus commands only when
 `GEMINI_API_KEY` is present. Consensus uses the Gemini one-shot gate, does not
 enable Gemini permanently, does not override session pinning, and does not
 include `dry_run` as a real consensus provider.
+
+## TASK-063 Selection Policy Note
+
+Selection policy may include Gemini as an alternative/general fallback when
+`GEMINI_API_KEY` is PRESENT. This is recommendation-only: no network is called,
+manual session pinning wins, and real Gemini use still requires an explicit
+one-shot command.
