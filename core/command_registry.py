@@ -15,6 +15,7 @@ class CommandCategory(Enum):
     MEMORY = "memory"
     IDEAS = "ideas"
     VOICE = "voice"
+    AUDIO = "audio"
     AI = "ai"
     AI_PROVIDER = "ai_provider"
     AI_PRIVACY = "ai_privacy"
@@ -372,6 +373,9 @@ def default_command_metadata() -> tuple[CommandMetadata, ...]:
         _meta("voice.safe_commands", "Безопасные голосовые команды", "Read-only allowlist для авто-выполнения.", CommandCategory.VOICE, ("безопасные голосовые команды",), voice_auto_allowed=True),
         _meta("voice.simulate_recognition", "Симулируй распознавание", "Текстовая симуляция распознавания.", CommandCategory.VOICE, ("симулируй распознавание: <текст>",), risk_level=CommandRiskLevel.CONFIRMATION_REQUIRED, read_only=False, requires_confirmation=True),
         _meta("voice.pending_command", "Ожидающая голосовая команда", "Показать команду, ожидающую подтверждения.", CommandCategory.VOICE, ("ожидающая голосовая команда",), voice_auto_allowed=True),
+        _meta("audio_lifecycle.status", "Audio lifecycle status", "Metadata-only audio lifecycle status for microphone and TTS.", CommandCategory.AUDIO, ("статус audio lifecycle", "статус audio", "статус аудио", "статус аудио цикла", "статус голосового lifecycle", "статус голосового цикла расширенный"), voice_auto_allowed=True, introduced_in="TASK-074", notes_ru="metadata only; no microphone; no TTS; no network"),
+        _meta("audio_lifecycle.capabilities", "Audio lifecycle capabilities", "Safe capabilities for future Desktop UI audio controls.", CommandCategory.AUDIO, ("audio lifecycle capabilities", "возможности audio lifecycle", "возможности аудио цикла", "возможности голосового цикла"), voice_auto_allowed=True, introduced_in="TASK-074", notes_ru="capabilities only; no audio action"),
+        _meta("audio_lifecycle.reset_metadata", "Audio lifecycle metadata reset", "Reset/stop audio lifecycle metadata to idle without audio calls.", CommandCategory.AUDIO, ("audio lifecycle stop", "остановить audio lifecycle", "сбросить audio lifecycle", "reset audio lifecycle"), risk_level=CommandRiskLevel.CONFIRMATION_REQUIRED, read_only=False, requires_confirmation=True, voice_auto_allowed=False, introduced_in="TASK-074", notes_ru="metadata-only reset; no microphone; no TTS; no network"),
         _meta("voice.safety_status", "Статус голосовой безопасности", "Статус голосовых safety gates.", CommandCategory.SAFETY, ("статус голосовой безопасности",), voice_auto_allowed=True),
         _meta("voice.output_status", "Статус голосового ответа", "Статус TTS/озвучки.", CommandCategory.VOICE, ("статус голосового ответа",), voice_auto_allowed=True),
         _meta("ai.status", "Статус AI", "Статус AI foundation без сети.", CommandCategory.AI, ("статус ai", "статус ии"), voice_auto_allowed=True),

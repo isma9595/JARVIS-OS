@@ -79,6 +79,7 @@ def test_status_categories_and_list_text_are_safe_and_cover_core_families():
     assert "- duplicate aliases: none" in status
     assert "ai" in listing
     assert "voice" in listing
+    assert "audio" in listing
     assert "ai_privacy" in listing
     assert "ai_fallback" in listing
     assert "app" in listing
@@ -386,3 +387,50 @@ def test_contract_commands_do_not_require_network():
 
     assert contract_commands
     assert all(command.requires_network is False for command in contract_commands)
+
+
+def test_audio_lifecycle_commands_registered():
+    registry = CommandRegistry()
+    command_ids = {command.command_id for command in registry.list_by_category(CommandCategory.AUDIO)}
+
+    assert "audio_lifecycle.status" in command_ids
+    assert "audio_lifecycle.capabilities" in command_ids
+    assert "audio_lifecycle.reset_metadata" in command_ids
+
+
+def test_audio_lifecycle_status_capabilities_are_read_only_app_ready_and_voice_allowed():
+    registry = CommandRegistry()
+
+    for alias in ("статус audio lifecycle", "статус аудио", "audio lifecycle capabilities", "возможности аудио цикла"):
+        command = registry.find_by_alias(alias)
+
+        assert command is not None
+        assert command.category == CommandCategory.AUDIO
+        assert command.read_only is True
+        assert command.risk_level == CommandRiskLevel.READ_ONLY
+        assert command.voice_auto_allowed is True
+        assert command.app_ready is True
+        assert command.requires_network is False
+
+
+def test_audio_lifecycle_reset_stop_metadata_not_voice_allowed_no_network():
+    registry = CommandRegistry()
+
+    for alias in ("audio lifecycle stop", "reset audio lifecycle", "сбросить audio lifecycle"):
+        command = registry.find_by_alias(alias)
+
+        assert command is not None
+        assert command.category == CommandCategory.AUDIO
+        assert command.read_only is False
+        assert command.risk_level == CommandRiskLevel.CONFIRMATION_REQUIRED
+        assert command.requires_confirmation is True
+        assert command.voice_auto_allowed is False
+        assert command.requires_network is False
+
+
+def test_no_audio_lifecycle_command_requires_network():
+    registry = CommandRegistry()
+    commands = registry.list_by_category(CommandCategory.AUDIO)
+
+    assert commands
+    assert all(command.requires_network is False for command in commands)

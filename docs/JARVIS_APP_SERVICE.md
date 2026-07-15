@@ -132,3 +132,6 @@ Preview commands are not voice auto-allowlisted.
 - Secure Settings & API Key Storage
 - AI Provider Settings UI
 - Windows Installer Foundation
+# Audio Lifecycle
+
+AppService exposes `audio_lifecycle_status()`, `audio_lifecycle_status_text_ru()`, and `audio_status_card()` as metadata-only contracts. These methods do not start microphone capture, play TTS, use network, save audio, or expose secrets.

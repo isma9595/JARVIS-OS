@@ -72,3 +72,6 @@ python run_desktop.py
 - Secure Settings & API Key Storage.
 - Windows Installer Foundation.
 - Visual Design System.
+# Audio Lifecycle
+
+The desktop shell can consume the AppService audio lifecycle status card for future voice status UI. TASK-074 does not add microphone buttons, TTS controls, new windows, or real audio actions.

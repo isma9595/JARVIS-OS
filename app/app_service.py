@@ -26,6 +26,7 @@ from core.command_registry import (
     CommandRegistry,
     DEFAULT_COMMAND_REGISTRY,
 )
+from voice.audio_lifecycle import AudioLifecycleController, AudioLifecycleStatus
 
 
 class AppCommandSource(Enum):
@@ -106,6 +107,7 @@ class JarvisAppService:
 
             command_processor = CommandProcessor(command_registry=self.command_registry)
         self.command_processor = command_processor
+        self.audio_lifecycle_controller = self._build_audio_lifecycle_controller()
 
     def status_snapshot(self) -> AppStatusSnapshot:
         return AppStatusSnapshot(
@@ -175,8 +177,34 @@ class JarvisAppService:
     def contract_status_text_ru(self) -> str:
         return self.contract_status().safe_text_ru()
 
+    def audio_lifecycle_status(self) -> AudioLifecycleStatus:
+        return self.audio_lifecycle_controller.status()
+
+    def audio_lifecycle_status_text_ru(self) -> str:
+        return self.audio_lifecycle_controller.status_text_ru()
+
+    def audio_status_card(self) -> AppStatusCard:
+        status = self.audio_lifecycle_status()
+        return AppStatusCard(
+            card_id="audio_lifecycle",
+            title_ru="Audio lifecycle",
+            value_ru=f"{status.state}/{status.capture_mode}/{status.output_mode}",
+            status="safe",
+            category="voice",
+            safe=True,
+            ui_visible=True,
+            details_ru=(
+                "Metadata-only lifecycle foundation is available.",
+                f"microphone active: {'yes' if status.microphone_active else 'no'}",
+                f"continuous listening allowed: {'yes' if status.continuous_listening_allowed else 'no'}",
+                f"network used: {'yes' if status.network_used else 'no'}",
+                f"audio saved: {'yes' if status.audio_saved else 'no'}",
+            ),
+        )
+
     def status_cards(self) -> tuple[AppStatusCard, ...]:
         return (
+            self.audio_status_card(),
             AppStatusCard(
                 card_id="app_service",
                 title_ru="AppService",
@@ -595,3 +623,31 @@ class JarvisAppService:
         if len(preview) > 120:
             preview = preview[:117].rstrip() + "..."
         return preview or "<empty>"
+
+    def _build_audio_lifecycle_controller(self) -> AudioLifecycleController:
+        existing_controller = getattr(
+            self.command_processor,
+            "audio_lifecycle_controller",
+            None,
+        )
+        if existing_controller is not None:
+            return existing_controller
+        return AudioLifecycleController(
+            voice_input_manager=getattr(self.command_processor, "voice_input_manager", None),
+            voice_output_manager=getattr(self.command_processor, "voice_output_manager", None),
+            microphone_listening_mode_manager=getattr(
+                self.command_processor,
+                "microphone_listening_mode_manager",
+                None,
+            ),
+            voice_dialogue_mode_manager=getattr(
+                self.command_processor,
+                "voice_dialogue_mode_manager",
+                None,
+            ),
+            pending_voice_command_checker=getattr(
+                self.command_processor,
+                "has_pending_voice_command",
+                None,
+            ),
+        )

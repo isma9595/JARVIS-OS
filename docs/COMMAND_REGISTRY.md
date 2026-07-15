@@ -120,3 +120,6 @@ TASK-073 adds read-only APP metadata for AppService contract status, manifest,
 status cards, and command cards. `AppCommandCard` objects are generated from
 registry metadata; registry behavior remains metadata-only and no network is
 called.
+# Audio Lifecycle Commands
+
+TASK-074 adds the `audio` command category. Audio lifecycle status/capabilities are read-only, app-ready, voice-auto-allowed, and require no network. Metadata reset/stop is confirmation-required and not voice-auto-allowed.

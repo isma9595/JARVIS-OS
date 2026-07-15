@@ -107,3 +107,6 @@ metadata and are voice-allowlisted only for status/manifest/cards.
 - Does not change secure key behavior.
 - Does not change command execution behavior.
 - Does not add dependencies.
+# Audio Lifecycle Card
+
+Status cards now include `audio_lifecycle`, a safe metadata-only card for microphone/TTS lifecycle state. It reports no network use and no audio saving.

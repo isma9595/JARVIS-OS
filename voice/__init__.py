@@ -21,6 +21,14 @@ from voice.audio_dependency_readiness import (
     AudioDependencyReadinessResult,
     AudioDependencyStatus,
 )
+from voice.audio_lifecycle import (
+    AudioCaptureMode,
+    AudioLifecycleController,
+    AudioLifecycleEvent,
+    AudioLifecycleState,
+    AudioLifecycleStatus,
+    AudioOutputMode,
+)
 from voice.vosk_local_backend import VoskLocalBackend
 from voice.vosk_installation_guide import VoskInstallationGuide
 from voice.microphone_listening_modes import (
@@ -84,6 +92,12 @@ __all__ = [
     "AudioDependencyReadinessChecker",
     "AudioDependencyReadinessResult",
     "AudioDependencyStatus",
+    "AudioCaptureMode",
+    "AudioLifecycleController",
+    "AudioLifecycleEvent",
+    "AudioLifecycleState",
+    "AudioLifecycleStatus",
+    "AudioOutputMode",
     "OneShotCaptureResult",
     "OneShotMicrophoneCapture",
     "OneShotVoskRecognitionBridge",

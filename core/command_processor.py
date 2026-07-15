@@ -150,6 +150,26 @@ class CommandProcessor:
         "app service commands",
         "команды app service",
     }
+    AUDIO_LIFECYCLE_STATUS_COMMANDS = {
+        "статус audio lifecycle",
+        "статус audio",
+        "статус аудио",
+        "статус аудио цикла",
+        "статус голосового lifecycle",
+        "статус голосового цикла расширенный",
+    }
+    AUDIO_LIFECYCLE_CAPABILITIES_COMMANDS = {
+        "audio lifecycle capabilities",
+        "возможности audio lifecycle",
+        "возможности аудио цикла",
+        "возможности голосового цикла",
+    }
+    AUDIO_LIFECYCLE_RESET_COMMANDS = {
+        "audio lifecycle stop",
+        "остановить audio lifecycle",
+        "сбросить audio lifecycle",
+        "reset audio lifecycle",
+    }
     APP_CONTRACTS_STATUS_COMMANDS = {
         "статус app contracts",
         "статус app service contracts",
@@ -1329,6 +1349,7 @@ class CommandProcessor:
         voice_output_manager=None,
         assistant_response_history=None,
         voice_dialogue_mode_manager=None,
+        audio_lifecycle_controller=None,
         ai_provider_router=None,
         ai_provider_config_manager=None,
         openai_request_gate=None,
@@ -1489,14 +1510,29 @@ class CommandProcessor:
 
             microphone_listening_mode_manager = MicrophoneListeningModeManager()
         self.microphone_listening_mode_manager = microphone_listening_mode_manager
+        if audio_lifecycle_controller is None:
+            from voice.audio_lifecycle import AudioLifecycleController
+
+            audio_lifecycle_controller = AudioLifecycleController(
+                voice_input_manager=self.voice_input_manager,
+                voice_output_manager=self.voice_output_manager,
+                microphone_listening_mode_manager=self.microphone_listening_mode_manager,
+                voice_dialogue_mode_manager=self.voice_dialogue_mode_manager,
+                pending_voice_command_checker=self.has_pending_voice_command,
+            )
+        self.audio_lifecycle_controller = audio_lifecycle_controller
         self.command_registry = command_registry or DEFAULT_COMMAND_REGISTRY
         self.api_key_manager = api_key_manager or ApiKeyManager()
 
     def set_voice_input_manager(self, voice_input_manager):
         self.voice_input_manager = voice_input_manager
+        if hasattr(self, "audio_lifecycle_controller"):
+            self.audio_lifecycle_controller.voice_input_manager = voice_input_manager
 
     def set_voice_output_manager(self, voice_output_manager):
         self.voice_output_manager = voice_output_manager
+        if hasattr(self, "audio_lifecycle_controller"):
+            self.audio_lifecycle_controller.voice_output_manager = voice_output_manager
 
     def process(self, command_text):
         self._current_source_command = str(command_text or "").strip()
@@ -2928,6 +2964,42 @@ class CommandProcessor:
             return self._result(
                 "app_service.commands",
                 self._get_app_service().list_commands(CommandCategory.APP.value),
+                speakable=False,
+            )
+
+        if command in self.AUDIO_LIFECYCLE_STATUS_COMMANDS:
+            return self._result(
+                "audio_lifecycle.status",
+                self.audio_lifecycle_controller.status_text_ru(),
+                speakable=False,
+            )
+
+        if command in self.AUDIO_LIFECYCLE_CAPABILITIES_COMMANDS:
+            return self._result(
+                "audio_lifecycle.capabilities",
+                self.audio_lifecycle_controller.capabilities_text_ru(),
+                speakable=False,
+            )
+
+        if command in self.AUDIO_LIFECYCLE_RESET_COMMANDS:
+            event = self.audio_lifecycle_controller.reset_to_idle()
+            return self._result(
+                "audio_lifecycle.reset_metadata_only",
+                "\n".join(
+                    [
+                        "Audio lifecycle metadata reset:",
+                        f"- event: {event.event_type}",
+                        f"- previous state: {event.previous_state}",
+                        f"- next state: {event.next_state}",
+                        f"- safe: {'yes' if event.safe else 'no'}",
+                        f"- network used: {'yes' if event.network_used else 'no'}",
+                        f"- audio saved: {'yes' if event.audio_saved else 'no'}",
+                        "- microphone called: no",
+                        "- tts called: no",
+                        "- no command executed",
+                        f"- message: {event.message_ru}",
+                    ]
+                ),
                 speakable=False,
             )
 

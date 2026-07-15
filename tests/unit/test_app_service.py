@@ -183,7 +183,25 @@ def test_contract_status_manifest_and_cards_work():
     assert manifest.command_cards_count == len(command_cards)
     assert status_cards
     assert any(card.card_id == "network_default" for card in status_cards)
+    assert any(card.card_id == "audio_lifecycle" for card in status_cards)
     assert any(card.command_id == "app_contracts.status" for card in command_cards)
+
+
+def test_audio_lifecycle_status_method_and_card_are_safe():
+    service = JarvisAppService(command_processor=FakeCommandProcessor())
+
+    status = service.audio_lifecycle_status()
+    card = service.audio_status_card()
+    text = service.audio_lifecycle_status_text_ru()
+
+    assert status.lifecycle_enabled is True
+    assert status.network_used is False
+    assert status.audio_saved is False
+    assert status.auto_listening_on_startup is False
+    assert card.card_id == "audio_lifecycle"
+    assert card.safe is True
+    assert "network used: no" in text
+    assert "audio saved: no" in text
 
 
 def test_command_cards_filter_app_ai_and_secure_keys():

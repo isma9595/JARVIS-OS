@@ -64,6 +64,20 @@ class SafeVoiceCommandAllowlist:
             "статус приложения jarvis",
             "app service status",
         },
+        "статус audio lifecycle": {
+            "статус audio lifecycle",
+            "статус audio",
+            "статус аудио",
+            "статус аудио цикла",
+            "статус голосового lifecycle",
+            "статус голосового цикла расширенный",
+        },
+        "audio lifecycle capabilities": {
+            "audio lifecycle capabilities",
+            "возможности audio lifecycle",
+            "возможности аудио цикла",
+            "возможности голосового цикла",
+        },
         "статус secure keys": {
             "статус secure keys",
             "статус key storage",

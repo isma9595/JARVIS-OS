@@ -142,6 +142,7 @@ def test_contract_manifest_includes_categories_and_command_count():
     assert manifest.command_cards_count > 0
     assert "app" in manifest.categories
     assert manifest.status_cards
+    assert any(card.card_id == "audio_lifecycle" for card in manifest.status_cards)
 
 
 def test_command_cards_are_created_from_registry_metadata():
@@ -152,3 +153,15 @@ def test_command_cards_are_created_from_registry_metadata():
 
     assert "app_contracts.status" in ids
     assert any(card.aliases for card in cards)
+
+
+def test_audio_status_card_is_safe_no_network_no_audio_saved():
+    service = JarvisAppService(command_processor=FakeCommandProcessor())
+    card = service.audio_status_card()
+
+    assert card.card_id == "audio_lifecycle"
+    assert card.category == "voice"
+    assert card.safe is True
+    text = card.safe_text_ru()
+    assert "network used: no" in text
+    assert "audio saved: no" in text
