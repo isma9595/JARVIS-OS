@@ -95,3 +95,8 @@ Ollama is available separately as a local-only provider. TASK-064 does not add O
 # AI Context Privacy Preflight
 
 Consensus uses the stricter external-consensus privacy target before attempting any provider. Private, secret, file, memory, log, screen, audio, and unknown-sensitive context blocks the whole consensus request before any provider quota or network call.
+## TASK-066 Fallback Execution Difference
+
+Fallback execution is separate from consensus. Fallback tries providers in
+order and stops at the first success. Consensus compares multiple provider
+answers and synthesizes a result. Neither mode is automatic.

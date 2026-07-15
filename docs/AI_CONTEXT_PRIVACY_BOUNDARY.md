@@ -102,3 +102,9 @@ Blocked for real providers until a future explicit context package and confirmat
 ## Limitations
 
 This is a deterministic heuristic boundary, not a legal or complete privacy classifier. A future task may add explicit context packages with user confirmation for selected files, memory, logs, screen, audio, or document content.
+## TASK-066 Fallback Execution
+
+The fallback executor uses this boundary before every provider attempt. Secret
+context blocks real/local providers, private context blocks external providers,
+and previews are redacted. No files, memory, logs, screen, or audio are packaged
+or sent by fallback execution.

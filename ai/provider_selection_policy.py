@@ -179,6 +179,7 @@ class AIProviderSelectionPolicy:
                 "- dry_run remains default",
                 "- manual session selection wins",
                 "- consensus remains explicit-only",
+                "- safe multi-provider retry requires explicit fallback command",
                 "- external providers require explicit one-shot",
                 "- Ollama implemented as local-only explicit one-shot provider",
                 "- keys are checked only as PRESENT/MISSING",
@@ -201,6 +202,7 @@ class AIProviderSelectionPolicy:
             "  code/reasoning: openai -> groq -> gemini -> gigachat -> dry_run",
             "  private/offline: ollama -> dry_run",
             "  consensus: explicit command only",
+            "  safe retry execution: explicit fallback command only",
             "",
             "Provider roles:",
         ]
@@ -222,7 +224,9 @@ class AIProviderSelectionPolicy:
         lines.extend(
             [
                 "- key env var names are shown, values are never printed",
-                "- actual fallback execution is not implemented in this task",
+                "- for safe multi-provider retry, use explicit fallback command: fallback ai запрос: <text>",
+                "- for compare/synthesis, use explicit consensus command",
+                "- for private/offline fallback execution, chain is ollama -> dry_run only",
             ]
         )
         return "\n".join(lines)
@@ -542,6 +546,8 @@ class AIProviderSelectionPolicy:
             "dry_run remains default",
             "secrets are never printed",
             "AI responses must never execute as commands",
+            "safe multi-provider retry requires explicit fallback command",
+            "use consensus only for compare/synthesis; fallback stops at first success",
         ]
 
     def _skipped_for_chain(

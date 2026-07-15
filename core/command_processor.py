@@ -6,6 +6,7 @@ from ai import (
     AIProviderCapability,
     AIProviderConfigManager,
     AIProviderConsensusManager,
+    AIProviderFallbackExecutor,
     AIProviderRouter,
     AIProviderSelectionPolicy,
     AIProviderSessionState,
@@ -141,6 +142,26 @@ class CommandProcessor:
         "ai route:",
         "ai выбрать модель:",
         "ai selection:",
+    )
+    AI_FALLBACK_EXECUTION_STATUS_COMMANDS = {
+        "статус ai fallback execution",
+        "статус ai retry",
+        "статус fallback ai",
+        "статус безопасного fallback",
+        "статус ai fallback executor",
+    }
+    AI_FALLBACK_PLAN_PREFIXES = (
+        "план ai fallback:",
+        "план fallback ai:",
+        "ai fallback plan:",
+        "показать ai fallback:",
+    )
+    AI_FALLBACK_EXECUTE_PREFIXES = (
+        "fallback ai запрос:",
+        "ai fallback запрос:",
+        "безопасный fallback ai:",
+        "controlled ai retry:",
+        "ai retry запрос:",
     )
     AI_CONTEXT_PRIVACY_STATUS_COMMANDS = {
         "статус ai privacy",
@@ -1151,6 +1172,7 @@ class CommandProcessor:
         ai_provider_session_state=None,
         ai_provider_consensus_manager=None,
         ai_provider_selection_policy=None,
+        ai_provider_fallback_executor=None,
         ai_context_privacy_policy=None,
     ):
         self.user_profile = user_profile or {}
@@ -1225,6 +1247,21 @@ class CommandProcessor:
             or AIProviderSelectionPolicy(
                 config_manager=self.ai_provider_config_manager,
                 context_privacy_policy=self.ai_context_privacy_policy,
+            )
+        )
+        self.ai_provider_fallback_executor = (
+            ai_provider_fallback_executor
+            or AIProviderFallbackExecutor(
+                config_manager=self.ai_provider_config_manager,
+                selection_policy=self.ai_provider_selection_policy,
+                context_privacy_policy=self.ai_context_privacy_policy,
+                request_gates={
+                    "openai": self.openai_request_gate,
+                    "gemini": self.gemini_request_gate,
+                    "groq": self.groq_request_gate,
+                    "gigachat": self.gigachat_request_gate,
+                    "ollama": self.ollama_request_gate,
+                },
             )
         )
         self.voice_input_manager = None
@@ -1952,6 +1989,12 @@ class CommandProcessor:
                 self.ai_provider_consensus_manager.status_text_ru(),
             )
 
+        if command in self.AI_FALLBACK_EXECUTION_STATUS_COMMANDS:
+            return self._result(
+                "ai.fallback_execution.status",
+                self.ai_provider_fallback_executor.status_text_ru(),
+            )
+
         if command in self.AI_SELECTION_POLICY_STATUS_COMMANDS:
             return self._result(
                 "ai.selection_policy.status",
@@ -2035,6 +2078,22 @@ class CommandProcessor:
         )
         if ai_consensus_text is not None:
             return self._generate_ai_consensus_result(ai_consensus_text)
+
+        ai_fallback_plan_text = self._extract_ai_prefixed_text(
+            command_text,
+            command,
+            self.AI_FALLBACK_PLAN_PREFIXES,
+        )
+        if ai_fallback_plan_text is not None:
+            return self._plan_ai_fallback_result(ai_fallback_plan_text)
+
+        ai_fallback_execute_text = self._extract_ai_prefixed_text(
+            command_text,
+            command,
+            self.AI_FALLBACK_EXECUTE_PREFIXES,
+        )
+        if ai_fallback_execute_text is not None:
+            return self._execute_ai_fallback_result(ai_fallback_execute_text)
 
         ai_selection_text = self._extract_ai_prefixed_text(
             command_text,
@@ -3279,6 +3338,28 @@ class CommandProcessor:
         result = self.ai_provider_consensus_manager.run_consensus(prompt)
         text = self.ai_provider_consensus_manager.format_result_text(result)
         intent = "ai.consensus" if result.ok else "ai.consensus.error"
+        return self._result(intent, text)
+
+    def _plan_ai_fallback_result(self, prompt):
+        text = self.ai_provider_fallback_executor.plan_text_ru(
+            prompt,
+            session_snapshot=self.ai_provider_session_state.snapshot(),
+        )
+        return self._result("ai.fallback_execution.plan", text)
+
+    def _execute_ai_fallback_result(self, prompt):
+        result = self.ai_provider_fallback_executor.execute(
+            prompt,
+            session_snapshot=self.ai_provider_session_state.snapshot(),
+        )
+        text = self.ai_provider_fallback_executor.result_text_ru(result)
+        if result.ok and result.final_provider not in {None, "dry_run"}:
+            self.ai_provider_session_state.record_success(
+                result.final_provider,
+                result.final_model or "none",
+                AIProviderCapability.CHAT.value,
+            )
+        intent = "ai.fallback_execution" if result.ok else "ai.fallback_execution.error"
         return self._result(intent, text)
 
     def _recommend_ai_provider_result(self, prompt):
@@ -4530,6 +4611,7 @@ class CommandProcessor:
     def _help_response(self):
         return (
             f"{self.dialogue_manager.get_preferred_name()}, сейчас я умею работать с профилем, "
+            "AI fallback execution: статус ai fallback execution; план ai fallback: <текст>; fallback ai запрос: <текст>; "
             "показывать статус системы, вести локальную память и идеи, выполнять безопасную "
             "маршрутизацию действий и обнаружение рискованных команд; "
             "имя ассистента можно посмотреть, изменить или сбросить; "

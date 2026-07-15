@@ -71,3 +71,8 @@ Policy recommendations do not call Ollama. Safe next steps are `список oll
 # AI Context Privacy Preflight
 
 Provider selection now uses the context privacy classifier. Private/offline prompts recommend `ollama -> dry_run`; secret-like prompts recommend redaction/manual handling; raw file, memory, screen, audio, and log context does not recommend external providers.
+## TASK-066 Fallback Execution
+
+Selection policy remains recommendation-only. For safe multi-provider retry use
+`fallback ai запрос: <text>`. For compare/synthesis use consensus. Private or
+offline fallback execution remains `ollama -> dry_run`.

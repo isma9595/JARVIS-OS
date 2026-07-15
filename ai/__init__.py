@@ -40,6 +40,13 @@ from ai.provider_selection_policy import (
     AIProviderSelectionRecommendation,
     AIProviderSelectionRequest,
 )
+from ai.provider_fallback_executor import (
+    AIProviderAttemptStatus,
+    AIProviderFallbackAttempt,
+    AIProviderFallbackExecutor,
+    AIProviderFallbackPlan,
+    AIProviderFallbackResult,
+)
 from ai.openai_cost_guard import (
     OpenAIRequestCostGuard,
     OpenAIRequestGuardConfig,
@@ -91,6 +98,11 @@ __all__ = [
     "AIProviderConsensusManager",
     "AIProviderConsensusProviderResult",
     "AIProviderConsensusResult",
+    "AIProviderAttemptStatus",
+    "AIProviderFallbackAttempt",
+    "AIProviderFallbackExecutor",
+    "AIProviderFallbackPlan",
+    "AIProviderFallbackResult",
     "AIProviderInfo",
     "AIProviderKeyStatus",
     "AIProviderLanguagePolicy",

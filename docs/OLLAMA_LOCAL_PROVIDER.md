@@ -89,3 +89,8 @@ Runtime model-list commands and real requests are not auto-executed by voice.
 # AI Context Privacy Preflight
 
 Ollama remains the preferred local-only option for privacy/offline typed prompts, but it does not receive secret-like content or raw file/memory/log/screen/audio packages in this task. Redact secrets manually and use future explicit context confirmation for raw context.
+## TASK-066 Fallback Execution
+
+Ollama may appear in explicit fallback chains as the local-only provider. It is
+called only through localhost, only when privacy allows it, and only if runtime
+and model are already available. No pull, install, or download is automated.

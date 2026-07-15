@@ -181,3 +181,8 @@ The router can list `ollama` as an implemented local-only provider. It remains d
 # AI Context Privacy Preflight
 
 JARVIS now runs a deterministic AI context privacy preflight before real provider gates. Manual provider selection does not override it: sensitive/private/secret/file/memory/log/screen/audio context is blocked for external providers, and secrets/raw context packages are also blocked for Ollama until a future explicit context package flow exists. See `docs/AI_CONTEXT_PRIVACY_BOUNDARY.md`.
+## TASK-066 Fallback Execution
+
+Safe provider retry is handled by the explicit fallback executor, not by the
+router. Ordinary router/provider commands do not auto-retry. See
+`docs/AI_PROVIDER_FALLBACK_EXECUTION.md`.

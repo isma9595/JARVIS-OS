@@ -1,3 +1,21 @@
+def test_recommendation_mentions_explicit_fallback_command_for_safe_retry():
+    text = policy().status_text_ru()
+    matrix = policy().matrix_text_ru()
+    recommendation = policy().recommendation_text_ru("ordinary short question")
+
+    assert "explicit fallback command" in text
+    assert "fallback ai запрос: <text>" in matrix
+    assert "safe multi-provider retry requires explicit fallback command" in recommendation
+
+
+def test_private_fallback_chain_remains_ollama_then_dry_run_and_consensus_separate():
+    private = policy().recommend("private offline file, no internet")
+    consensus = policy({"GROQ_API_KEY": "fake"}).recommend("compare multiple answers")
+
+    assert private.fallback_chain == ["ollama", "dry_run"]
+    assert consensus.recommended_provider == "consensus"
+    assert "dry_run" not in consensus.fallback_chain
+
 from ai import (
     AIProviderConfigManager,
     AIProviderSelectionPolicy,

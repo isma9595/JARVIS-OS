@@ -1,3 +1,31 @@
+def test_fallback_status_commands_are_allowlisted_but_plan_and_execute_are_not():
+    allowlist = SafeVoiceCommandAllowlist()
+
+    for command in (
+        "статус ai fallback execution",
+        "статус ai retry",
+        "статус fallback ai",
+        "статус безопасного fallback",
+        "статус ai fallback executor",
+    ):
+        decision = allowlist.decide(command)
+
+        assert decision.allowed is True
+        assert decision.canonical_command == "статус ai fallback execution"
+
+    for command in (
+        "план ai fallback привет",
+        "план ai fallback: привет",
+        "fallback ai запрос привет",
+        "fallback ai запрос: привет",
+        "ai retry запрос привет",
+        "ai retry запрос: привет",
+    ):
+        decision = allowlist.decide(command)
+
+        assert decision.allowed is False
+        assert decision.canonical_command is None
+
 from voice import SafeVoiceCommandAllowlist, VoiceAllowlistDecision
 
 

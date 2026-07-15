@@ -54,3 +54,9 @@ Selection is runtime-only and does not call the network. Selected Ollama request
 # AI Context Privacy Preflight
 
 Session pinning/manual provider selection does not override the context privacy boundary. A pinned external provider is still blocked for private, secret, file, memory, log, screen, audio, or unknown-sensitive context.
+## TASK-066 Fallback Execution
+
+Manual session provider selection is respected as the first fallback candidate,
+but it does not bypass privacy, language, key, runtime, or model gates. If the
+manual provider is blocked or unavailable, fallback continues through the safe
+chain.

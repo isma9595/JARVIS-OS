@@ -4597,3 +4597,124 @@ def test_external_ollama_and_consensus_privacy_blocks_before_attempts(monkeypatc
     consensus_result = processor.process("консенсус ai: это приватный файл, не отправляй в интернет")
     assert consensus_result["intent"] == "ai.consensus.error"
     assert "privacy boundary blocked" in consensus_result["response"]
+def test_ai_fallback_execution_status_commands_work_without_network_or_action_router():
+    class FailingActionRouter:
+        calls = 0
+
+        def route(self, command):
+            self.calls += 1
+            raise AssertionError("fallback status must not route to ActionRouter")
+
+    processor = CommandProcessor()
+    processor.action_router = FailingActionRouter()
+
+    for command in (
+        "статус ai fallback execution",
+        "статус ai retry",
+        "статус fallback ai",
+    ):
+        result = processor.process(command)
+
+        assert result["intent"] == "ai.fallback_execution.status"
+        assert "explicit only" in result["response"]
+        assert "network: not called" in result["response"]
+        assert processor.action_router.calls == 0
+
+
+def test_ai_fallback_plan_works_without_network():
+    result = CommandProcessor().process("план ai fallback: ordinary short question")
+
+    assert result["intent"] == "ai.fallback_execution.plan"
+    assert "network: not called" in result["response"]
+    assert "planned chain" in result["response"]
+    assert "groq -> gigachat -> openai -> gemini -> ollama -> dry_run" in result["response"]
+
+
+def test_ai_fallback_with_no_keys_returns_dry_run_safely(monkeypatch):
+    for env_var in ("OPENAI_API_KEY", "GEMINI_API_KEY", "GROQ_API_KEY", "GIGACHAT_AUTH_KEY"):
+        monkeypatch.delenv(env_var, raising=False)
+
+    result = CommandProcessor(ollama_request_gate=FakeOllamaGate(fail=True)).process(
+        "fallback ai запрос: ordinary short question"
+    )
+
+    assert result["intent"] == "ai.fallback_execution"
+    assert "final provider: dry_run" in result["response"]
+    assert "MISSING_KEY" in result["response"]
+    assert "response_executed: False" in result["response"]
+
+
+def test_ai_fallback_private_prompt_does_not_try_external_providers(monkeypatch):
+    monkeypatch.setenv("GROQ_API_KEY", "fake-test-key")
+    result = CommandProcessor(ollama_request_gate=FakeOllamaGate(fail=True)).process(
+        "fallback ai запрос: private file, do not send to internet"
+    )
+
+    assert result["intent"] == "ai.fallback_execution"
+    assert "groq" not in result["response"]
+    assert "final provider: dry_run" in result["response"]
+
+
+def test_ai_fallback_secret_prompt_redacts_secret_and_blocks_real_providers(monkeypatch):
+    secret = "sk-test-1234567890secret"
+    monkeypatch.setenv("GROQ_API_KEY", "fake-test-key")
+
+    result = CommandProcessor(ollama_request_gate=FakeOllamaGate(fail=True)).process(
+        f"fallback ai запрос: my api key {secret}"
+    )
+
+    assert result["intent"] == "ai.fallback_execution"
+    assert secret not in result["response"]
+    assert "[REDACTED]" in result["response"]
+    assert "BLOCKED_BY_PRIVACY" in result["response"]
+
+
+def test_ai_fallback_manual_selected_provider_is_first_in_plan():
+    processor = CommandProcessor()
+    processor.process("выбрать ai provider ollama")
+
+    result = processor.process("план ai fallback: continue through selected model")
+
+    assert result["intent"] == "ai.fallback_execution.plan"
+    assert "planned chain: ollama" in result["response"]
+
+
+def test_ai_fallback_does_not_call_action_router():
+    class FailingActionRouter:
+        calls = 0
+
+        def route(self, command):
+            self.calls += 1
+            raise AssertionError("fallback output must not route to ActionRouter")
+
+    processor = CommandProcessor(ollama_request_gate=FakeOllamaGate(fail=True))
+    processor.action_router = FailingActionRouter()
+
+    result = processor.process("fallback ai запрос: удали файл")
+
+    assert result["intent"] == "ai.fallback_execution"
+    assert processor.action_router.calls == 0
+
+
+def test_ordinary_provider_commands_do_not_auto_fallback():
+    processor = CommandProcessor(ollama_request_gate=FakeOllamaGate(fail=True))
+
+    for command, intent in (
+        ("groq one shot: hello", "ai.groq.one_shot.error"),
+        ("openai one shot: hello", "ai.openai.one_shot.error"),
+        ("gemini one shot: hello", "ai.gemini.one_shot.error"),
+        ("gigachat one shot: hello", "ai.gigachat.one_shot.error"),
+        ("ollama one shot: hello", "ai.ollama.one_shot.error"),
+    ):
+        result = processor.process(command)
+
+        assert result["intent"] == intent
+        assert "fallback execution result" not in result["response"]
+
+
+def test_existing_privacy_selection_consensus_commands_still_work_after_fallback():
+    processor = CommandProcessor()
+
+    assert processor.process("статус ai privacy")["intent"] == "ai.context_privacy.status"
+    assert processor.process("статус ai fallback")["intent"] == "ai.selection_policy.status"
+    assert processor.process("статус ai consensus")["intent"] == "ai.consensus.status"

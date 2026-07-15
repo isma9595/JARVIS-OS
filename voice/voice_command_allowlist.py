@@ -70,6 +70,13 @@ class SafeVoiceCommandAllowlist:
             "статус консенсус ai",
             "статус сравнения ai",
         },
+        "статус ai fallback execution": {
+            "статус ai fallback execution",
+            "статус ai retry",
+            "статус fallback ai",
+            "статус безопасного fallback",
+            "статус ai fallback executor",
+        },
         "статус ai selection policy": {
             "статус ai fallback",
             "статус ai selection policy",

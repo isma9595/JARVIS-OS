@@ -146,3 +146,8 @@ Ollama configuration is local-only:
 # AI Context Privacy Preflight
 
 Provider configuration and key presence do not override the AI context privacy boundary. External providers remain explicit one-shot only and are blocked for sensitive/private/secret/file/memory/log/screen/audio context. Secrets are never printed.
+## TASK-066 Fallback Execution
+
+Fallback execution checks key presence only as `PRESENT`/`MISSING` and never
+prints key values. External providers remain disabled by default and are used
+only through explicit one-shot gates during an explicit fallback command.
