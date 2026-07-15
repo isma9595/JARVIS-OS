@@ -18,6 +18,10 @@ def test_status_text_is_safe():
 
     assert "secure key storage foundation: yes" in text
     assert "backend: memory-test" in text
+    assert (
+        "provider real requests can use SecureProviderRuntime credential resolution when explicitly invoked"
+        in text
+    )
     assert "no keys printed" in text
     assert "no network" in text
 

@@ -1,5 +1,9 @@
 # Vertical Integration
 
+TASK-077 adds a secure provider runtime check. The report verifies status
+availability, no secrets, no network, no provider calls, and explicit-only
+provider request metadata.
+
 TASK-075 adds a read-only vertical integration checkpoint for the current
 JARVIS stack.
 

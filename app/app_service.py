@@ -32,6 +32,7 @@ from core.command_registry import (
     DEFAULT_COMMAND_REGISTRY,
 )
 from voice.audio_lifecycle import AudioLifecycleController, AudioLifecycleStatus
+from ai.secure_provider_runtime import SecureProviderRuntime
 
 
 class AppCommandSource(Enum):
@@ -87,6 +88,7 @@ class AppStatusSnapshot:
     ui_ready: bool
     installer_ready: bool
     secure_key_storage_ready: bool
+    secure_provider_runtime_ready: bool
     network_default: bool
     dry_run_default: bool
     privacy_boundary_active: bool
@@ -128,6 +130,7 @@ class JarvisAppService:
             ui_ready=False,
             installer_ready=False,
             secure_key_storage_ready=True,
+            secure_provider_runtime_ready=True,
             network_default=False,
             dry_run_default=True,
             privacy_boundary_active=True,
@@ -150,6 +153,8 @@ class JarvisAppService:
                 "- desktop ui ready: no / foundation only",
                 "- installer ready: no",
                 "- secure key storage foundation: available",
+                "- secure provider runtime: available",
+                "- provider runtime network default: no",
                 "- network default: no",
                 "- dry_run default: yes",
                 "- privacy boundary active: yes",
@@ -259,6 +264,22 @@ class JarvisAppService:
                 safe=True,
                 ui_visible=True,
                 details_ru=("Contracts expose status only; no secret values.",),
+            ),
+            AppStatusCard(
+                card_id="secure_provider_runtime",
+                title_ru="Provider runtime",
+                value_ru="secure credentials integrated",
+                status="safe",
+                category="secure_keys",
+                safe=True,
+                ui_visible=True,
+                details_ru=(
+                    "Secure store preferred.",
+                    "Environment fallback available.",
+                    "No secrets.",
+                    "No network by default.",
+                    "Explicit-only real requests.",
+                ),
             ),
             AppStatusCard(
                 card_id="provider_settings_ui",
@@ -472,6 +493,18 @@ class JarvisAppService:
 
     def conversational_capabilities_text_ru(self) -> str:
         return self.conversational_loop.capabilities_text_ru()
+
+    def provider_runtime_status(self):
+        return self._provider_runtime().all_credential_statuses()
+
+    def provider_runtime_status_text_ru(self) -> str:
+        return self._provider_runtime().status_text_ru()
+
+    def provider_runtime_credentials_text_ru(self) -> str:
+        return self._provider_runtime().status_text_ru()
+
+    def provider_runtime_provider_text_ru(self, provider: str) -> str:
+        return self._provider_runtime().provider_status_text_ru(provider)
 
     def vertical_integration_report(self):
         from app.vertical_integration import VerticalIntegrationService
@@ -755,3 +788,9 @@ class JarvisAppService:
                 None,
             ),
         )
+
+    def _provider_runtime(self):
+        runtime = getattr(self.command_processor, "secure_provider_runtime", None)
+        if runtime is not None:
+            return runtime
+        return SecureProviderRuntime()

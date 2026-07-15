@@ -1,5 +1,9 @@
 # Desktop App Shell
 
+TASK-077 adds read-only provider runtime status execution through the existing
+AppService/CommandProcessor path. No provider settings UI, raw key input, live
+validation, microphone, TTS, or network behavior is added.
+
 ## Why This Exists
 
 TASK-070 adds the first safe desktop application shell prototype for JARVIS.

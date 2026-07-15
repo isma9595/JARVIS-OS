@@ -1,5 +1,9 @@
 # Conversational Loop
 
+TASK-077 does not change conversational execution. Free-form conversation does
+not call provider runtime credential resolution, decrypt secrets, call providers,
+or execute AI responses as commands.
+
 TASK-076 adds the first safe conversational loop foundation for JARVIS. It lets
 JARVIS classify ordinary Russian-first user text without turning that text into
 automatic execution.

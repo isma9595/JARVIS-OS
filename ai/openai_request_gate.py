@@ -18,6 +18,7 @@ from ai.provider_contracts import (
 )
 from ai.provider_router import AIProviderRouter
 from ai.providers.openai_provider import OpenAIProvider
+from ai.secure_provider_runtime import SecureProviderRuntime
 
 
 @dataclass(frozen=True)
@@ -42,6 +43,7 @@ class OpenAIRequestGate:
         request_guard: OpenAIRequestCostGuard | None = None,
         language_policy: AIProviderLanguagePolicy | None = None,
         context_privacy_policy: AIContextPrivacyPolicy | None = None,
+        credential_runtime: SecureProviderRuntime | None = None,
     ):
         self.config_manager = config_manager or AIProviderConfigManager(environ=environ)
         self.router = router
@@ -51,6 +53,7 @@ class OpenAIRequestGate:
         self.request_guard = request_guard or OpenAIRequestCostGuard(environ=self.environ)
         self.language_policy = language_policy or AIProviderLanguagePolicy()
         self.context_privacy_policy = context_privacy_policy or AIContextPrivacyPolicy()
+        self.credential_runtime = credential_runtime or SecureProviderRuntime(environ=self.environ)
 
     def can_make_real_request(self) -> OpenAIRequestGateStatus:
         status = self.config_manager.status_for("openai")
@@ -63,17 +66,18 @@ class OpenAIRequestGate:
                 can_request=False,
                 reason="OpenAI provider config is missing.",
             )
-        if status.key_status != AIProviderKeyStatus.PRESENT:
+        credential_status = self.credential_runtime.credential_status("openai")
+        if not credential_status.can_attempt_real_request:
             return OpenAIRequestGateStatus(
                 provider_configured=True,
-                key_status=status.key_status,
+                key_status=AIProviderKeyStatus.MISSING,
                 default_provider_name=default_name,
                 can_request=False,
                 reason="OPENAI_API_KEY is missing.",
             )
         return OpenAIRequestGateStatus(
             provider_configured=True,
-            key_status=status.key_status,
+            key_status=AIProviderKeyStatus.PRESENT,
             default_provider_name=default_name,
             can_request=True,
             reason="Explicit one-shot command may make one request.",
@@ -113,9 +117,12 @@ class OpenAIRequestGate:
         gate_status = self.can_make_real_request()
         if not gate_status.can_request:
             return self._error_response(capability, gate_status.reason)
+        credential = self.credential_runtime.resolve_credential("openai")
+        if not credential.safe_to_use:
+            return self._error_response(capability, "OPENAI_API_KEY is missing.")
 
         config = self._temporary_enabled_openai_config(guard_result.model)
-        provider = self._build_provider(config)
+        provider = self._build_provider(config, credential)
         metadata = dict(request.metadata or {})
         metadata["max_output_tokens"] = str(guard_result.max_output_tokens)
         language_result = self.language_policy.apply(guard_result.prompt)
@@ -171,11 +178,15 @@ class OpenAIRequestGate:
             )
         return replace(config, enabled=True, default_model=model)
 
-    def _build_provider(self, config: AIProviderConfig):
+    def _build_provider(self, config: AIProviderConfig, credential=None):
+        environ = self.environ
+        if credential is not None and credential.safe_to_use and credential.env_var_name:
+            environ = dict(self.environ)
+            environ[credential.env_var_name] = credential.value or ""
         kwargs = {
             "config": config,
             "allow_network": True,
-            "environ": self.environ,
+            "environ": environ,
         }
         if self.http_client is not None:
             kwargs["http_client"] = self.http_client

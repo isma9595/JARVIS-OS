@@ -52,6 +52,12 @@ from ai.provider_live_verification import (
     AIProviderVerificationCheck,
     AIProviderVerificationReport,
 )
+from ai.secure_provider_runtime import (
+    ProviderCredentialSource,
+    ProviderRuntimeCredential,
+    ProviderRuntimeCredentialStatus,
+    SecureProviderRuntime,
+)
 from ai.openai_cost_guard import (
     OpenAIRequestCostGuard,
     OpenAIRequestGuardConfig,
@@ -125,6 +131,10 @@ __all__ = [
     "AIProviderSessionState",
     "AIProviderVerificationCheck",
     "AIProviderVerificationReport",
+    "ProviderCredentialSource",
+    "ProviderRuntimeCredential",
+    "ProviderRuntimeCredentialStatus",
+    "SecureProviderRuntime",
     "AIRequest",
     "AIResponse",
     "GeminiProvider",

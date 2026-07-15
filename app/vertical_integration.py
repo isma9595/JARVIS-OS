@@ -55,6 +55,7 @@ class VerticalIntegrationService:
         CommandCategory.APP,
         CommandCategory.AI,
         CommandCategory.AI_PROVIDER,
+        CommandCategory.PROVIDER_RUNTIME,
         CommandCategory.SECURE_KEYS,
         CommandCategory.AUDIO,
         CommandCategory.VOICE,
@@ -79,6 +80,21 @@ class VerticalIntegrationService:
         "статус диалога jarvis",
         "статус разговорного режима",
         "conversational loop status",
+        "статус provider runtime",
+        "статус ai provider runtime",
+        "статус runtime провайдеров",
+        "статус ключей provider runtime",
+        "статус runtime ключей ai",
+        "provider runtime status",
+        "provider runtime credentials",
+        "ai runtime credentials",
+        "runtime ключи ai",
+        "ключи runtime провайдеров",
+        "статус runtime groq",
+        "статус runtime openai",
+        "статус runtime gemini",
+        "статус runtime gigachat",
+        "статус runtime ollama",
         "conversational loop capabilities",
         "возможности conversational loop",
         "возможности диалога jarvis",
@@ -120,6 +136,7 @@ class VerticalIntegrationService:
             self._app_service_preview_safe(),
             self._desktop_viewmodel_safe(),
             self._secure_keys_safe(),
+            self._secure_provider_runtime_safe(),
             self._audio_lifecycle_safe(),
             self._voice_allowlist_safe(),
             self._ai_safety_safe(),
@@ -341,6 +358,46 @@ class VerticalIntegrationService:
             "Secure Key Storage",
             passed,
             (f"cards: {len(cards)}", "raw key values: no", "network: no"),
+        )
+
+    def _secure_provider_runtime_safe(self) -> VerticalIntegrationCheck:
+        text = self.app_service.provider_runtime_status_text_ru()
+        previews = (
+            self.app_service.preview_command("provider runtime status"),
+            self.app_service.preview_command("provider runtime credentials"),
+            self.app_service.preview_command("runtime groq status"),
+        )
+        real_provider_commands = [
+            command
+            for command in self.command_registry.commands
+            if command.category == CommandCategory.AI_PROVIDER
+            and command.risk_level == CommandRiskLevel.NETWORK_EXPLICIT
+        ]
+        passed = (
+            "secure provider runtime: yes" in text
+            and "no secrets" in text
+            and "no network" in text
+            and "no provider call" in text
+            and "dummy-test" not in text
+            and "sk-" not in text.lower()
+            and all(preview.known_command for preview in previews)
+            and all(not preview.requires_network for preview in previews)
+            and bool(real_provider_commands)
+            and all(command.requires_network for command in real_provider_commands)
+            and all(not command.voice_auto_allowed for command in real_provider_commands)
+        )
+        return self._check(
+            "secure_provider_runtime_safe",
+            "Secure provider runtime не раскрывает секреты и не вызывает сеть",
+            "Secure Provider Runtime",
+            passed,
+            (
+                "status available: yes",
+                "secrets included: no",
+                "network used: no",
+                "providers called: no",
+                "real provider requests remain explicit-only",
+            ),
         )
 
     def _audio_lifecycle_safe(self) -> VerticalIntegrationCheck:

@@ -1,5 +1,9 @@
 # AppService Contracts
 
+TASK-077 exposes secure provider runtime status through AppService-safe methods
+and status cards. Contract output remains metadata-only with no secrets, no
+network, and no provider calls.
+
 ## Why This Exists
 
 TASK-073 adds stable, typed, versioned contracts for future JARVIS UI surfaces.

@@ -1,5 +1,9 @@
 # JARVIS App Service
 
+TASK-077 adds provider runtime status methods and a safe status card. These
+methods report credential source metadata only: no decrypted secrets, no network,
+and no provider calls.
+
 ## Purpose
 
 TASK-069 adds a safe application service layer between a future Windows desktop

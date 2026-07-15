@@ -19,6 +19,7 @@ from ai.provider_contracts import (
 )
 from ai.provider_router import AIProviderRouter
 from ai.providers.gigachat_provider import GigaChatProvider
+from ai.secure_provider_runtime import SecureProviderRuntime
 
 
 @dataclass(frozen=True)
@@ -45,6 +46,7 @@ class GigaChatRequestGate:
         request_guard: GigaChatRequestCostGuard | None = None,
         language_policy: AIProviderLanguagePolicy | None = None,
         context_privacy_policy: AIContextPrivacyPolicy | None = None,
+        credential_runtime: SecureProviderRuntime | None = None,
     ):
         self.config_manager = config_manager or AIProviderConfigManager(environ=environ)
         self.router = router
@@ -54,11 +56,14 @@ class GigaChatRequestGate:
         self.request_guard = request_guard or GigaChatRequestCostGuard(environ=self.environ)
         self.language_policy = language_policy or AIProviderLanguagePolicy()
         self.context_privacy_policy = context_privacy_policy or AIContextPrivacyPolicy()
+        self._token_manager_injected = token_manager is not None
         self.token_manager = token_manager or GigaChatTokenManager(
             environ=self.environ,
             http_client=token_http_client,
             timeout_seconds=self.request_guard.config.timeout_seconds,
         )
+        self.token_http_client = token_http_client
+        self.credential_runtime = credential_runtime or SecureProviderRuntime(environ=self.environ)
 
     def can_make_real_request(self) -> GigaChatRequestGateStatus:
         status = self.config_manager.status_for("gigachat")
@@ -71,8 +76,8 @@ class GigaChatRequestGate:
                 can_request=False,
                 reason="GigaChat provider config is missing.",
             )
-        auth_key = self.environ.get("GIGACHAT_AUTH_KEY")
-        if auth_key is None or not str(auth_key).strip():
+        credential_status = self.credential_runtime.credential_status("gigachat")
+        if not credential_status.can_attempt_real_request:
             return GigaChatRequestGateStatus(
                 provider_configured=True,
                 key_status=AIProviderKeyStatus.MISSING,
@@ -122,9 +127,12 @@ class GigaChatRequestGate:
         gate_status = self.can_make_real_request()
         if not gate_status.can_request:
             return self._error_response(capability, gate_status.reason)
+        credential = self.credential_runtime.resolve_credential("gigachat")
+        if not credential.safe_to_use:
+            return self._error_response(capability, "GIGACHAT_AUTH_KEY is missing.")
 
         config = self._temporary_enabled_gigachat_config(guard_result.model)
-        provider = self._build_provider(config)
+        provider = self._build_provider(config, credential)
         metadata = dict(request.metadata or {})
         metadata["max_output_tokens"] = str(guard_result.max_output_tokens)
         language_result = self.language_policy.apply(guard_result.prompt)
@@ -229,12 +237,23 @@ class GigaChatRequestGate:
             api_key_env_var="GIGACHAT_AUTH_KEY",
         )
 
-    def _build_provider(self, config: AIProviderConfig):
+    def _build_provider(self, config: AIProviderConfig, credential=None):
+        environ = self.environ
+        if credential is not None and credential.safe_to_use and credential.env_var_name:
+            environ = dict(self.environ)
+            environ[credential.env_var_name] = credential.value or ""
+        token_manager = self.token_manager
+        if not self._token_manager_injected:
+            token_manager = GigaChatTokenManager(
+                environ=environ,
+                http_client=self.token_http_client,
+                timeout_seconds=self.request_guard.config.timeout_seconds,
+            )
         kwargs = {
             "config": config,
-            "token_manager": self.token_manager,
+            "token_manager": token_manager,
             "allow_network": True,
-            "environ": self.environ,
+            "environ": environ,
             "timeout_seconds": self.request_guard.config.timeout_seconds,
         }
         if self.http_client is not None:

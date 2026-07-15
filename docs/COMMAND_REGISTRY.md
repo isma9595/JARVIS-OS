@@ -1,5 +1,9 @@
 # Command Registry
 
+TASK-077 adds the `provider_runtime` category for read-only secure provider
+runtime status/list/provider-status commands. They are app-ready,
+voice-auto-allowed, require no network, and require no AI key for status.
+
 ## Purpose
 
 TASK-068 adds a command registry and capability manifest foundation for JARVIS.

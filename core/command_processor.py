@@ -18,6 +18,7 @@ from ai import (
     AIProviderLanguagePolicy,
     OllamaRequestGate,
     OpenAIRequestGate,
+    SecureProviderRuntime,
 )
 from core.action_router import SafeActionRouter
 from core.command_registry import CommandCategory, DEFAULT_COMMAND_REGISTRY
@@ -591,6 +592,32 @@ class CommandProcessor:
         "список secure keys",
         "какие ключи сохранены",
         "статус ключей ai",
+    }
+    PROVIDER_RUNTIME_STATUS_COMMANDS = {
+        "статус provider runtime",
+        "статус ai provider runtime",
+        "статус runtime провайдеров",
+        "статус ключей provider runtime",
+        "статус runtime ключей ai",
+        "provider runtime status",
+    }
+    PROVIDER_RUNTIME_LIST_COMMANDS = {
+        "provider runtime credentials",
+        "ai runtime credentials",
+        "runtime ключи ai",
+        "ключи runtime провайдеров",
+    }
+    PROVIDER_RUNTIME_PROVIDER_COMMANDS = {
+        "статус runtime groq": "groq",
+        "статус runtime openai": "openai",
+        "статус runtime gemini": "gemini",
+        "статус runtime gigachat": "gigachat",
+        "статус runtime ollama": "ollama",
+        "runtime groq status": "groq",
+        "runtime openai status": "openai",
+        "runtime gemini status": "gemini",
+        "runtime gigachat status": "gigachat",
+        "runtime ollama status": "ollama",
     }
     SECURE_KEY_HELP_COMMANDS = {
         "безопасность api ключей",
@@ -1408,6 +1435,7 @@ class CommandProcessor:
         ai_context_privacy_policy=None,
         command_registry=None,
         api_key_manager=None,
+        secure_provider_runtime=None,
     ):
         self.user_profile = user_profile or {}
         self.dialogue_manager = dialogue_manager or DialogueManager(self.user_profile)
@@ -1429,6 +1457,11 @@ class CommandProcessor:
         self.ai_context_privacy_policy = (
             ai_context_privacy_policy or AIContextPrivacyPolicy()
         )
+        self.api_key_manager = api_key_manager or ApiKeyManager()
+        self.secure_provider_runtime = (
+            secure_provider_runtime
+            or SecureProviderRuntime(api_key_manager=self.api_key_manager)
+        )
         self.ai_provider_router = ai_provider_router or AIProviderRouter(
             config_manager=self.ai_provider_config_manager
         )
@@ -1436,21 +1469,25 @@ class CommandProcessor:
             config_manager=self.ai_provider_config_manager,
             router=self.ai_provider_router,
             context_privacy_policy=self.ai_context_privacy_policy,
+            credential_runtime=self.secure_provider_runtime,
         )
         self.gemini_request_gate = gemini_request_gate or GeminiRequestGate(
             config_manager=self.ai_provider_config_manager,
             router=self.ai_provider_router,
             context_privacy_policy=self.ai_context_privacy_policy,
+            credential_runtime=self.secure_provider_runtime,
         )
         self.groq_request_gate = groq_request_gate or GroqRequestGate(
             config_manager=self.ai_provider_config_manager,
             router=self.ai_provider_router,
             context_privacy_policy=self.ai_context_privacy_policy,
+            credential_runtime=self.secure_provider_runtime,
         )
         self.gigachat_request_gate = gigachat_request_gate or GigaChatRequestGate(
             config_manager=self.ai_provider_config_manager,
             router=self.ai_provider_router,
             context_privacy_policy=self.ai_context_privacy_policy,
+            credential_runtime=self.secure_provider_runtime,
         )
         self.ollama_request_gate = ollama_request_gate or OllamaRequestGate(
             context_privacy_policy=self.ai_context_privacy_policy,
@@ -1564,7 +1601,6 @@ class CommandProcessor:
             )
         self.audio_lifecycle_controller = audio_lifecycle_controller
         self.command_registry = command_registry or DEFAULT_COMMAND_REGISTRY
-        self.api_key_manager = api_key_manager or ApiKeyManager()
 
     def set_voice_input_manager(self, voice_input_manager):
         self.voice_input_manager = voice_input_manager
@@ -2803,6 +2839,30 @@ class CommandProcessor:
             return self._result(
                 "secure_keys.list",
                 self.api_key_manager.list_text_ru(),
+                speakable=False,
+            )
+
+        if command in self.PROVIDER_RUNTIME_STATUS_COMMANDS:
+            return self._result(
+                "ai.provider_runtime.status",
+                self.secure_provider_runtime.status_text_ru(),
+                speakable=False,
+            )
+
+        if command in self.PROVIDER_RUNTIME_LIST_COMMANDS:
+            return self._result(
+                "ai.provider_runtime.credentials",
+                self.secure_provider_runtime.status_text_ru(),
+                speakable=False,
+            )
+
+        provider_runtime_provider = self.PROVIDER_RUNTIME_PROVIDER_COMMANDS.get(command)
+        if provider_runtime_provider is not None:
+            return self._result(
+                "ai.provider_runtime.provider_status",
+                self.secure_provider_runtime.provider_status_text_ru(
+                    provider_runtime_provider
+                ),
                 speakable=False,
             )
 

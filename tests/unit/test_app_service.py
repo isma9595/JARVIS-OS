@@ -217,6 +217,31 @@ def test_status_and_capabilities_mention_secure_key_storage_safely():
     assert "no secrets" in capabilities
 
 
+def test_provider_runtime_methods_are_safe():
+    service = JarvisAppService(command_processor=FakeCommandProcessor())
+    secret = "dummy-test-runtime-secret"
+
+    status_text = service.provider_runtime_status_text_ru()
+    credentials_text = service.provider_runtime_credentials_text_ru()
+
+    assert "secure provider runtime: yes" in status_text
+    assert "no secrets" in credentials_text
+    assert "no network" in credentials_text
+    assert secret not in status_text
+    assert secret not in credentials_text
+
+
+def test_provider_runtime_provider_status_works_for_supported_providers():
+    service = JarvisAppService(command_processor=FakeCommandProcessor())
+
+    for provider in ("groq", "openai", "gemini", "gigachat", "ollama"):
+        text = service.provider_runtime_provider_text_ru(provider)
+        assert f"- provider: {provider}" in text
+        assert "- no secrets" in text
+        assert "- no network" in text
+        assert "- no provider call" in text
+
+
 def test_contract_status_manifest_and_cards_work():
     service = JarvisAppService(command_processor=FakeCommandProcessor())
 
@@ -231,6 +256,7 @@ def test_contract_status_manifest_and_cards_work():
     assert status_cards
     assert any(card.card_id == "network_default" for card in status_cards)
     assert any(card.card_id == "audio_lifecycle" for card in status_cards)
+    assert any(card.card_id == "secure_provider_runtime" for card in status_cards)
     assert any(card.command_id == "app_contracts.status" for card in command_cards)
 
 

@@ -39,7 +39,7 @@ class ApiKeyManager:
                 f"- storage path: {status.storage_path or 'none'}",
                 f"- safe to store: {'yes' if status.safe_to_store else 'no'}",
                 "- providers supported: openai, gemini, groq, gigachat",
-                "- provider real requests still use current existing behavior until future integration",
+                "- provider real requests can use SecureProviderRuntime credential resolution when explicitly invoked",
                 "- no keys printed",
                 "- no network",
                 "- no response execution",

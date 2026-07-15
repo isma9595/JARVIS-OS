@@ -92,6 +92,40 @@ class SafeVoiceCommandAllowlist:
             "какие ключи сохранены",
             "статус ключей ai",
         },
+        "статус provider runtime": {
+            "статус provider runtime",
+            "статус ai provider runtime",
+            "статус runtime провайдеров",
+            "статус ключей provider runtime",
+            "статус runtime ключей ai",
+            "provider runtime status",
+        },
+        "provider runtime credentials": {
+            "provider runtime credentials",
+            "ai runtime credentials",
+            "runtime ключи ai",
+            "ключи runtime провайдеров",
+        },
+        "статус runtime groq": {
+            "статус runtime groq",
+            "runtime groq status",
+        },
+        "статус runtime openai": {
+            "статус runtime openai",
+            "runtime openai status",
+        },
+        "статус runtime gemini": {
+            "статус runtime gemini",
+            "runtime gemini status",
+        },
+        "статус runtime gigachat": {
+            "статус runtime gigachat",
+            "runtime gigachat status",
+        },
+        "статус runtime ollama": {
+            "статус runtime ollama",
+            "runtime ollama status",
+        },
         "безопасность api ключей": {
             "безопасность api ключей",
             "помощь api keys",

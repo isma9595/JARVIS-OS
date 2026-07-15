@@ -15,6 +15,7 @@ REQUIRED_CHECKS = {
     "app_service_preview_safe",
     "desktop_viewmodel_safe",
     "secure_keys_safe",
+    "secure_provider_runtime_safe",
     "audio_lifecycle_safe",
     "voice_allowlist_safe",
     "ai_safety_safe",

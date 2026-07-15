@@ -1,5 +1,9 @@
 # Secure Key Storage
 
+TASK-077 adds `SecureProviderRuntime` as the safe bridge from stored keys to
+explicit provider one-shot gates. Secure store is preferred over env fallback,
+but status/list commands still never decrypt or print stored secrets.
+
 ## Why This Exists
 
 TASK-071 adds a secure API key storage foundation for the future JARVIS desktop

@@ -23,6 +23,7 @@ class CommandCategory(Enum):
     AI_VERIFICATION = "ai_verification"
     OLLAMA = "ollama"
     SECURE_KEYS = "secure_keys"
+    PROVIDER_RUNTIME = "provider_runtime"
     SAFETY = "safety"
     INTEGRATION = "integration"
     APP = "app"
@@ -78,6 +79,7 @@ class CommandRegistry:
         CommandCategory.AI_VERIFICATION: "безопасная live verification диагностика",
         CommandCategory.OLLAMA: "локальный Ollama provider",
         CommandCategory.SECURE_KEYS: "защищенное хранение API-ключей без вывода секретов",
+        CommandCategory.PROVIDER_RUNTIME: "безопасное runtime-разрешение provider credentials без сети и секретов",
         CommandCategory.SAFETY: "безопасность выполнения и голосовые ограничения",
         CommandCategory.INTEGRATION: "вертикальная интеграция слоев JARVIS без выполнения",
         CommandCategory.APP: "будущая desktop app поверхность",
@@ -413,6 +415,59 @@ def default_command_metadata() -> tuple[CommandMetadata, ...]:
         _meta("ollama.real_request", "Ollama реальный запрос", "Явный localhost-only запрос.", CommandCategory.OLLAMA, ("ollama реальный запрос: <text>",), risk_level=CommandRiskLevel.LOCAL_RUNTIME, read_only=False, requires_confirmation=True, requires_privacy_check=True),
         _meta("secure_keys.status", "Статус secure keys", "Статус защищенного хранилища ключей без вывода секретов.", CommandCategory.SECURE_KEYS, ("статус secure keys", "статус key storage", "статус хранилища ключей", "статус api keys", "статус api ключей", "статус безопасного хранилища ключей"), voice_auto_allowed=True, introduced_in="TASK-071", notes_ru="status only; no secrets; no network"),
         _meta("secure_keys.list", "Список API ключей", "Список признаков наличия ключей без вывода значений.", CommandCategory.SECURE_KEYS, ("список api ключей", "список secure keys", "какие ключи сохранены", "статус ключей ai"), voice_auto_allowed=True, introduced_in="TASK-071", notes_ru="PRESENT/MISSING only; no secrets; no network"),
+        _meta(
+            "provider_runtime.status",
+            "Статус provider runtime",
+            "Read-only статус secure provider runtime без расшифровки секретов и без сети.",
+            CommandCategory.PROVIDER_RUNTIME,
+            (
+                "статус provider runtime",
+                "статус ai provider runtime",
+                "статус runtime провайдеров",
+                "статус ключей provider runtime",
+                "статус runtime ключей ai",
+                "provider runtime status",
+            ),
+            voice_auto_allowed=True,
+            introduced_in="TASK-077",
+            notes_ru="status only; no secrets; no network; no provider call",
+        ),
+        _meta(
+            "provider_runtime.credentials",
+            "Provider runtime credentials",
+            "Список runtime credential sources без значений ключей.",
+            CommandCategory.PROVIDER_RUNTIME,
+            (
+                "provider runtime credentials",
+                "ai runtime credentials",
+                "runtime ключи ai",
+                "ключи runtime провайдеров",
+            ),
+            voice_auto_allowed=True,
+            introduced_in="TASK-077",
+            notes_ru="source list only; no decrypt; no secrets; no network",
+        ),
+        _meta(
+            "provider_runtime.provider_status",
+            "Статус runtime provider",
+            "Provider-specific runtime credential status без ключей и без сети.",
+            CommandCategory.PROVIDER_RUNTIME,
+            (
+                "статус runtime groq",
+                "статус runtime openai",
+                "статус runtime gemini",
+                "статус runtime gigachat",
+                "статус runtime ollama",
+                "runtime groq status",
+                "runtime openai status",
+                "runtime gemini status",
+                "runtime gigachat status",
+                "runtime ollama status",
+            ),
+            voice_auto_allowed=True,
+            introduced_in="TASK-077",
+            notes_ru="provider status only; no secrets; no network; explicit-only real requests",
+        ),
         _meta("secure_keys.help", "Безопасность API ключей", "Справка по безопасному хранению API ключей.", CommandCategory.SECURE_KEYS, ("безопасность api ключей", "помощь api keys", "помощь secure keys"), voice_auto_allowed=True, introduced_in="TASK-071", notes_ru="help only; do not paste keys"),
         _meta("secure_keys.import_from_env", "Импорт API ключа из env", "Импорт ключа провайдера только из переменной окружения.", CommandCategory.SECURE_KEYS, ("импортировать openai ключ из env", "импортировать gemini ключ из env", "импортировать groq ключ из env", "импортировать gigachat ключ из env", "сохранить openai ключ из env", "сохранить gemini ключ из env", "сохранить groq ключ из env", "сохранить gigachat ключ из env"), risk_level=CommandRiskLevel.SENSITIVE, read_only=False, requires_confirmation=True, requires_network=False, requires_ai_key=False, voice_auto_allowed=False, introduced_in="TASK-071", notes_ru="no raw key argument; no network validation"),
         _meta("secure_keys.delete", "Удалить API ключ", "Явное удаление сохраненного ключа провайдера.", CommandCategory.SECURE_KEYS, ("удалить openai ключ", "удалить gemini ключ", "удалить groq ключ", "удалить gigachat ключ", "удалить openai ключ из хранилища", "удалить gemini ключ из хранилища", "удалить groq ключ из хранилища", "удалить gigachat ключ из хранилища"), risk_level=CommandRiskLevel.SENSITIVE, read_only=False, requires_confirmation=True, requires_network=False, requires_ai_key=False, voice_auto_allowed=False, introduced_in="TASK-071", notes_ru="explicit delete only; no secrets printed"),
