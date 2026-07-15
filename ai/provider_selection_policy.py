@@ -150,17 +150,18 @@ class AIProviderSelectionPolicy:
             ),
             AIProviderRole(
                 provider="ollama",
-                default_model=None,
-                role="future offline/local provider",
-                strengths=("privacy/offline", "local control"),
+                default_model=model("ollama", "qwen2.5:1.5b"),
+                role="local/offline provider",
+                strengths=("privacy/offline", "local control", "no API key", "no external network"),
                 weaknesses=(
-                    "not implemented yet",
+                    "requires local Ollama server",
+                    "requires manually installed model",
                     "depends on laptop performance/model size",
                 ),
-                safety_level="planned_local_only",
+                safety_level="local_only_explicit_one_shot",
                 requires_key=False,
                 env_var=None,
-                implemented=False,
+                implemented=True,
                 network_capable=False,
             ),
         )
@@ -176,7 +177,7 @@ class AIProviderSelectionPolicy:
                 "- manual session selection wins",
                 "- consensus remains explicit-only",
                 "- external providers require explicit one-shot",
-                "- Ollama planned, not implemented",
+                "- Ollama implemented as local-only explicit one-shot provider",
                 "- keys are checked only as PRESENT/MISSING",
                 "- secrets are never printed",
                 "- memory/profile/files/logs are not sent",
@@ -190,12 +191,12 @@ class AIProviderSelectionPolicy:
             "- mode: recommendation only",
             "- network: not called",
             "- dry_run remains default",
-            "- provider order: dry_run, groq, gigachat, openai, gemini, ollama(planned)",
+            "- provider order: dry_run, ollama, groq, gigachat, openai, gemini",
             "- fallback patterns:",
             "  general/fast: groq -> gigachat -> openai -> gemini -> dry_run",
             "  russian/russia: gigachat -> groq -> openai -> gemini -> dry_run",
             "  code/reasoning: openai -> groq -> gemini -> gigachat -> dry_run",
-            "  private/offline: dry_run now -> ollama later",
+            "  private/offline: ollama -> dry_run",
             "  consensus: explicit command only",
             "",
             "Provider roles:",
@@ -204,7 +205,7 @@ class AIProviderSelectionPolicy:
             env_var = role.env_var or "not required"
             key = self._key_presence(role)
             implemented = "yes" if role.implemented else "planned"
-            network = "yes" if role.network_capable else "no"
+            network = "local-only" if role.provider == "ollama" else ("yes" if role.network_capable else "no")
             strengths = ", ".join(role.strengths)
             weaknesses = ", ".join(role.weaknesses)
             lines.extend(
@@ -265,13 +266,20 @@ class AIProviderSelectionPolicy:
         if task_type == "private":
             return AIProviderSelectionRecommendation(
                 ok=True,
-                recommended_provider="dry_run",
-                recommended_model=role_by_provider["dry_run"].default_model,
-                reason="privacy/offline requirement detected; use dry_run now, Ollama later when implemented",
-                fallback_chain=["dry_run", "ollama(planned)"],
+                recommended_provider="ollama",
+                recommended_model=role_by_provider["ollama"].default_model,
+                reason=(
+                    "privacy/offline requirement detected; prefer Ollama for real "
+                    "local intelligence with no external network, then dry_run if unavailable"
+                ),
+                fallback_chain=["ollama", "dry_run"],
                 skipped=["external providers skipped for privacy/offline safety"],
                 warnings=self._base_warnings()
-                + ["Ollama is planned but not implemented yet"],
+                + [
+                    "Ollama recommendation does not call runtime",
+                    "check local runtime with: список ollama моделей",
+                    "run explicit local request with: ollama реальный запрос: <text>",
+                ],
             )
 
         chain = self.build_fallback_chain(task_type, key_presence)
@@ -503,7 +511,11 @@ class AIProviderSelectionPolicy:
         if provider == "dry_run":
             return ["  - спроси ai: <text>"]
         if provider == "ollama":
-            return ["  - Ollama is planned only; no command is available yet"]
+            return [
+                "  - список ollama моделей",
+                "  - ollama реальный запрос: <text>",
+                f"  - example only, not executed: ollama реальный запрос: {safe_prompt[:80]}",
+            ]
         return [
             f"  - выбрать ai provider {provider}",
             f"  - выбрать ai модель {provider} {recommendation.recommended_model or '<model>'}",

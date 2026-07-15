@@ -63,6 +63,13 @@ from ai.gigachat_cost_guard import (
 from ai.gigachat_token_manager import GigaChatTokenManager, GigaChatTokenResult
 from ai.gigachat_request_gate import GigaChatRequestGate, GigaChatRequestGateStatus
 from ai.providers.gigachat_provider import GigaChatProvider
+from ai.ollama_runtime import (
+    OllamaRuntime,
+    OllamaRuntimeConfig,
+    OllamaRuntimeStatus,
+)
+from ai.ollama_request_gate import OllamaRequestGate, OllamaRequestResult
+from ai.providers.ollama_provider import OllamaProvider
 
 __all__ = [
     "AIProvider",
@@ -116,4 +123,10 @@ __all__ = [
     "OpenAIRequestGuardConfig",
     "OpenAIRequestGuardResult",
     "OpenAIProvider",
+    "OllamaProvider",
+    "OllamaRequestGate",
+    "OllamaRequestResult",
+    "OllamaRuntime",
+    "OllamaRuntimeConfig",
+    "OllamaRuntimeStatus",
 ]

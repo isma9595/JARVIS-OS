@@ -1,6 +1,7 @@
 import json
 
 from ai import AIProviderConfigManager, OpenAIRequestGate
+from ai.provider_contracts import AIResponse
 from ai.provider_session import AIProviderSessionState
 from core.command_processor import CommandProcessor
 from voice import SafeVoiceCommandAllowlist
@@ -21,6 +22,46 @@ class FakeHTTPClient:
             }
         )
         return self.response
+
+
+class FakeOllamaGate:
+    def __init__(self, fail=True):
+        self.fail = fail
+        self.calls = []
+        self.runtime = type(
+            "Runtime",
+            (),
+            {"config": type("Config", (), {"model": "qwen2.5:1.5b"})()},
+        )()
+
+    def validate_model(self, model):
+        return None if model == "qwen2.5:1.5b" else "invalid model"
+
+    def generate_one_shot(self, request, capability, model_override=None):
+        self.calls.append(
+            {
+                "prompt": request.prompt,
+                "capability": capability.value,
+                "model_override": model_override,
+            }
+        )
+        if self.fail:
+            return AIResponse(
+                text="Ollama localhost server is unavailable.",
+                provider_name="ollama_request_gate",
+                model_name=model_override or "qwen2.5:1.5b",
+                capability=capability.value,
+                safety_level="local_only",
+                is_error=True,
+                error_message="Ollama localhost server is unavailable.",
+            )
+        return AIResponse(
+            text="local ok",
+            provider_name="ollama",
+            model_name=model_override or "qwen2.5:1.5b",
+            capability=capability.value,
+            safety_level="local_only",
+        )
 
 
 def test_session_state_stores_only_safe_metadata_and_manual_wins():
@@ -141,3 +182,53 @@ def test_provider_specific_success_auto_pins_last_success():
     assert processor.ai_provider_session_state.selected_provider == "openai"
     assert processor.ai_provider_session_state.selection_mode == "last_success"
     assert processor.ai_provider_session_state.last_success_model == "gpt-5.6"
+
+
+def test_select_provider_ollama_is_runtime_only_no_network():
+    gate = FakeOllamaGate()
+    processor = CommandProcessor(ollama_request_gate=gate)
+
+    result = processor.process("выбрать ai provider ollama")
+
+    assert result["intent"] == "ai.session.select"
+    assert "- provider: ollama" in result["response"]
+    assert "- model: qwen2.5:1.5b" in result["response"]
+    assert "network: not called" in result["response"]
+    assert gate.calls == []
+
+
+def test_select_ollama_model_is_runtime_only_no_network():
+    gate = FakeOllamaGate()
+    processor = CommandProcessor(ollama_request_gate=gate)
+
+    result = processor.process("выбрать ai модель ollama qwen2.5:1.5b")
+
+    assert result["intent"] == "ai.session.select"
+    assert processor.ai_provider_session_state.selected_provider == "ollama"
+    assert processor.ai_provider_session_state.selected_model == "qwen2.5:1.5b"
+    assert gate.calls == []
+
+
+def test_selected_generic_one_shot_routes_to_ollama_gate_success():
+    gate = FakeOllamaGate(fail=False)
+    processor = CommandProcessor(ollama_request_gate=gate)
+    processor.process("выбрать ai модель ollama qwen2.5:1.5b")
+
+    result = processor.process("ai continue: hello")
+
+    assert result["intent"] == "ai.session.continuation.ollama"
+    assert gate.calls[0]["model_override"] == "qwen2.5:1.5b"
+    assert processor.ai_provider_session_state.last_success_provider == "ollama"
+    assert processor.ai_provider_session_state.selection_mode == "manual"
+
+
+def test_selected_generic_one_shot_ollama_unavailable_refuses_safely():
+    gate = FakeOllamaGate(fail=True)
+    processor = CommandProcessor(ollama_request_gate=gate)
+    processor.process("выбрать ai provider ollama")
+
+    result = processor.process("ai continue: hello")
+
+    assert result["intent"] == "ai.session.continuation.ollama.error"
+    assert "Ollama localhost server is unavailable" in result["response"]
+    assert "response was not executed as a command" in result["response"]

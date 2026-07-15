@@ -73,6 +73,18 @@ class AIProviderConfigManager:
                 api_key_env_var="OPENAI_API_KEY",
                 notes="Set the API key in an environment variable, never in tracked files.",
             ),
+            AIProviderConfig(
+                name="ollama",
+                provider_type="ollama",
+                enabled=False,
+                default_model="qwen2.5:1.5b",
+                api_key_env_var=None,
+                safety_level="local_only",
+                notes=(
+                    "Ollama localhost-only provider. No API key, no cloud, "
+                    "no automatic install or model pull; explicit one-shot only."
+                ),
+            ),
         ]
 
     def list_configs(self):
@@ -186,6 +198,8 @@ class AIProviderConfigManager:
     def _runtime_state(config: AIProviderConfig, key_status: AIProviderKeyStatus):
         if config.provider_type == "dry_run":
             return AIProviderRuntimeState.DRY_RUN_ONLY
+        if config.provider_type == "ollama" and key_status == AIProviderKeyStatus.NOT_REQUIRED:
+            return AIProviderRuntimeState.DISABLED
         if key_status == AIProviderKeyStatus.INVALID_REFERENCE:
             return AIProviderRuntimeState.ERROR
         if not config.enabled:

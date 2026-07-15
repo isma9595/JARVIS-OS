@@ -31,6 +31,14 @@
       "default_model": "openai-default",
       "api_key_env_var": "OPENAI_API_KEY",
       "notes": "Set the API key in an environment variable, never in tracked files."
+    },
+    {
+      "name": "ollama",
+      "provider_type": "ollama",
+      "enabled": false,
+      "default_model": "qwen2.5:1.5b",
+      "api_key_env_var": null,
+      "notes": "Localhost-only Ollama provider. No API key, no cloud, no automatic install or pull. Optional overrides: OLLAMA_BASE_URL and OLLAMA_MODEL."
     }
   ]
 }

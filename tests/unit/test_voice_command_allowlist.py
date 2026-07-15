@@ -337,6 +337,36 @@ def test_gigachat_status_key_guard_token_limits_model_and_shape_are_allowlisted_
         assert allowlist.decide(command).allowed is False
 
 
+def test_ollama_voice_status_and_model_allowlisted_but_runtime_and_requests_are_not():
+    allowlist = SafeVoiceCommandAllowlist()
+
+    for command, canonical in (
+        ("статус ollama", "статус ollama"),
+        ("статус олама", "статус ollama"),
+        ("статус локального ai", "статус ollama"),
+        ("ollama модель", "ollama модель"),
+        ("олама модель", "ollama модель"),
+        ("локальная ai модель", "ollama модель"),
+    ):
+        decision = allowlist.decide(command)
+        assert decision.allowed is True
+        assert decision.canonical_command == canonical
+
+    for command in (
+        "список ollama моделей",
+        "ollama tags",
+        "ollama реальный запрос привет",
+        "ollama реальный запрос: привет",
+        "локальный ai запрос привет",
+        "локальный ai запрос: привет",
+        "выбрать ai provider ollama",
+        "ai реальный запрос привет",
+    ):
+        decision = allowlist.decide(command)
+        assert decision.allowed is False
+        assert decision.canonical_command is None
+
+
 def test_language_policy_status_commands_are_allowlisted():
     allowlist = SafeVoiceCommandAllowlist()
 

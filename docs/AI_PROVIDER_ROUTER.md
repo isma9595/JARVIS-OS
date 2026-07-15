@@ -175,3 +175,6 @@ The provider selection policy is recommendation-only. It does not call the
 network, does not change router defaults, and does not execute fallbacks.
 Manual session pinning wins, consensus remains explicit-only, and `dry_run`
 remains the default provider.
+## TASK-064 Ollama Update
+
+The router can list `ollama` as an implemented local-only provider. It remains disabled for automatic routing and `dry_run` remains the default. Ollama calls are available only through explicit local one-shot gates or manual session selection.

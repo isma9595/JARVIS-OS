@@ -63,3 +63,8 @@ Recommendation commands only recommend the next explicit command, such as
 - Cloud model availability is not validated online.
 - Providers are not called automatically.
 - Real fallback execution is intentionally left for a later task.
+## TASK-064 Ollama Update
+
+Ollama is now implemented as a local-only explicit one-shot provider. For private/offline prompts the policy recommends `ollama -> dry_run`: Ollama if the user wants real local intelligence and has a local runtime/model ready, otherwise `dry_run` as the safest no-AI/no-service fallback.
+
+Policy recommendations do not call Ollama. Safe next steps are `список ollama моделей` and `ollama реальный запрос: <text>`. No external network or API key is required.

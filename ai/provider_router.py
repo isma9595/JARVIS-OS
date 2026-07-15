@@ -16,6 +16,7 @@ from ai.providers.dry_run_provider import DryRunAIProvider
 from ai.providers.gemini_provider import GeminiProvider
 from ai.providers.gigachat_provider import GigaChatProvider
 from ai.providers.groq_provider import GroqProvider
+from ai.providers.ollama_provider import OllamaProvider
 from ai.providers.openai_provider import OpenAIProvider
 
 
@@ -167,6 +168,11 @@ class AIProviderRouter:
         gigachat_config = self.config_manager.get_config("gigachat")
         if gigachat_config is not None:
             providers.append(GigaChatProvider(config=gigachat_config))
+        ollama_config = self.config_manager.get_config("ollama")
+        if ollama_config is not None:
+            providers.append(
+                OllamaProvider(enabled=False, model=ollama_config.default_model)
+            )
         return providers
 
     @staticmethod

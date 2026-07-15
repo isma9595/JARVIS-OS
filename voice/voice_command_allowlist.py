@@ -109,6 +109,20 @@ class SafeVoiceCommandAllowlist:
             "статус сбер ai",
             "gigachat status",
         },
+        "статус ollama": {
+            "статус ollama",
+            "статус олама",
+            "статус локального ai",
+            "ollama статус",
+            "олама статус",
+            "ollama status",
+        },
+        "ollama модель": {
+            "ollama модель",
+            "олама модель",
+            "локальная ai модель",
+            "ollama model",
+        },
         "статус gigachat request shape": {
             "статус gigachat request shape",
             "gigachat request shape",

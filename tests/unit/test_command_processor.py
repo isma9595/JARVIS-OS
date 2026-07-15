@@ -1,4 +1,5 @@
 from core.command_processor import CommandProcessor
+from ai.provider_contracts import AIResponse
 from ideas import IdeaManager
 from memory import LocalMemoryManager
 from pathlib import Path
@@ -23,6 +24,74 @@ class InMemoryVoskSettingsManager:
 
     def load_settings(self):
         return dict(self._settings)
+
+    def set_model_path(self, model_path):
+        self._settings["model_path"] = model_path
+        self._settings.setdefault("language", "ru")
+        return dict(self._settings)
+
+    def clear_model_path(self):
+        self._settings["model_path"] = None
+        self._settings.setdefault("language", "ru")
+        return dict(self._settings)
+
+    def set_language(self, language):
+        self._settings["language"] = language
+        return dict(self._settings)
+
+
+class FakeOllamaGate:
+    def __init__(self, fail=True):
+        self.fail = fail
+        self.calls = []
+        self.runtime = type(
+            "Runtime",
+            (),
+            {"config": type("Config", (), {"model": "qwen2.5:1.5b"})()},
+        )()
+
+    def status_text(self):
+        return "\n".join(
+            [
+                "Ollama local provider status:",
+                "- provider: ollama",
+                "- local only: yes",
+                "- network: not called",
+                "- dry_run remains default",
+            ]
+        )
+
+    def model_text(self):
+        return "Ollama model configuration:\n- configured model: qwen2.5:1.5b\n- network: not called"
+
+    def runtime_status_text(self):
+        return "Ollama local runtime check:\n- server reachable: False\n- network: localhost-only /api/tags"
+
+    def list_models_text(self):
+        return "Ollama local model list:\n- status: Ollama localhost server is unavailable.\n- no model was pulled or downloaded"
+
+    def validate_model(self, model):
+        return None if model == "qwen2.5:1.5b" else "invalid model"
+
+    def generate_one_shot(self, request, capability, model_override=None):
+        self.calls.append((request.prompt, capability.value, model_override))
+        if self.fail:
+            return AIResponse(
+                text="Ollama localhost server is unavailable.",
+                provider_name="ollama_request_gate",
+                model_name=model_override or "qwen2.5:1.5b",
+                capability=capability.value,
+                safety_level="local_only",
+                is_error=True,
+                error_message="Ollama localhost server is unavailable.",
+            )
+        return AIResponse(
+            text="local ok",
+            provider_name="ollama",
+            model_name=model_override or "qwen2.5:1.5b",
+            capability=capability.value,
+            safety_level="local_only",
+        )
 
     def set_model_path(self, model_path):
         self._settings["model_path"] = model_path
@@ -335,6 +404,70 @@ def test_voice_output_disable_command():
 
     assert result["intent"] == "voice.output.disabled"
     assert result["response"] == "Голосовой ответ отключён."
+
+
+def test_ollama_status_and_model_commands_work_without_network():
+    gate = FakeOllamaGate()
+    processor = CommandProcessor(ollama_request_gate=gate)
+
+    status = processor.process("статус ollama")
+    model = processor.process("ollama модель")
+
+    assert status["intent"] == "ai.ollama.status"
+    assert "- provider: ollama" in status["response"]
+    assert "network: not called" in status["response"]
+    assert model["intent"] == "ai.ollama.model"
+    assert "qwen2.5:1.5b" in model["response"]
+    assert gate.calls == []
+
+
+def test_ollama_model_list_and_runtime_unavailable_are_safe():
+    processor = CommandProcessor(ollama_request_gate=FakeOllamaGate())
+
+    models = processor.process("список ollama моделей")
+    runtime = processor.process("проверить ollama runtime")
+
+    assert models["intent"] == "ai.ollama.models"
+    assert "unavailable" in models["response"]
+    assert "no model was pulled" in models["response"]
+    assert runtime["intent"] == "ai.ollama.runtime"
+    assert "server reachable: False" in runtime["response"]
+
+
+def test_ollama_real_request_unavailable_refuses_without_action_router_execution():
+    gate = FakeOllamaGate(fail=True)
+    processor = CommandProcessor(ollama_request_gate=gate)
+
+    result = processor.process("ollama реальный запрос: привет")
+
+    assert result["intent"] == "ai.ollama.one_shot.error"
+    assert "Ollama localhost server is unavailable" in result["response"]
+    assert "Response was not executed as a command" in result["response"]
+    assert gate.calls[0][0] == "привет"
+
+
+def test_ollama_session_selection_and_selected_request_are_safe():
+    gate = FakeOllamaGate(fail=True)
+    processor = CommandProcessor(ollama_request_gate=gate)
+
+    selected = processor.process("выбрать ai модель ollama qwen2.5:1.5b")
+    result = processor.process("ai реальный запрос: привет")
+
+    assert selected["intent"] == "ai.session.select"
+    assert "network: not called" in selected["response"]
+    assert result["intent"] == "ai.session.continuation.ollama.error"
+    assert "Ollama localhost server is unavailable" in result["response"]
+    assert gate.calls[0][2] == "qwen2.5:1.5b"
+
+
+def test_selection_policy_privacy_prompt_recommends_ollama_from_command_processor():
+    processor = CommandProcessor()
+
+    result = processor.process("ai selection: private offline file, no internet")
+
+    assert result["intent"] == "ai.selection_policy.recommendation"
+    assert "recommended provider: ollama" in result["response"]
+    assert "ollama реальный запрос: <text>" in result["response"]
     assert processor.voice_output_manager.mode == "OFF"
 
 
@@ -4323,15 +4456,15 @@ def test_ai_selection_recommendation_no_keys_safe_no_network(monkeypatch):
     assert "спроси ai: <text>" in result["response"]
 
 
-def test_ai_selection_privacy_offline_recommends_dry_run_and_ollama_planned():
+def test_ai_selection_privacy_offline_recommends_ollama_then_dry_run():
     result = CommandProcessor().process(
         "какой ai выбрать: это приватный файл, не отправляй в интернет"
     )
 
     assert result["intent"] == "ai.selection_policy.recommendation"
-    assert "recommended provider: dry_run" in result["response"]
-    assert "ollama(planned)" in result["response"]
-    assert "Ollama is planned" in result["response"]
+    assert "recommended provider: ollama" in result["response"]
+    assert "fallback chain: ollama -> dry_run" in result["response"]
+    assert "список ollama моделей" in result["response"]
 
 
 def test_ai_selection_consensus_prompt_recommends_explicit_consensus():

@@ -94,3 +94,6 @@ Russian-first by default and does not send memory, profile, files, or logs.
 Provider selection policy may recommend GigaChat for Russian/Russia-oriented
 tasks, but it does not call any provider. Real requests still require explicit
 one-shot commands, and consensus remains explicit-only.
+## TASK-064 Ollama Update
+
+The same provider language policy is applied to explicit Ollama one-shot prompts. It does not send memory, profile, files, or logs automatically, and model responses are not executed as commands.

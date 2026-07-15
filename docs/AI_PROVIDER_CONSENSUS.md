@@ -89,3 +89,6 @@ Multiple keys:
 Selection policy can recommend an explicit consensus command when the prompt
 asks to compare multiple AI answers. It does not call consensus automatically,
 does not call providers, and does not change the explicit-only safety gate.
+## TASK-064 Ollama Update
+
+Ollama is available separately as a local-only provider. TASK-064 does not add Ollama to the default consensus provider order. Consensus remains explicit-only, and a later task may define local plus external consensus mixing.

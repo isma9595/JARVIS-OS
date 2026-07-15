@@ -41,3 +41,13 @@ Manual runtime provider/model selection wins over selection policy
 recommendations. The policy reports the selected provider/model for continued
 work but does not change session state, reset state, overwrite last success, or
 call the network.
+## TASK-064 Ollama Update
+
+Runtime session pinning supports `ollama`:
+
+- `выбрать ai provider ollama`
+- `выбрать ai модель ollama qwen2.5:1.5b`
+- `ai реальный запрос: <text>`
+- `продолжи через ту же модель: <text>`
+
+Selection is runtime-only and does not call the network. Selected Ollama requests call localhost only and fail safely if Ollama or the model is unavailable.

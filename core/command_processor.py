@@ -12,6 +12,7 @@ from ai import (
     GigaChatRequestGate,
     GroqRequestGate,
     AIProviderLanguagePolicy,
+    OllamaRequestGate,
     OpenAIRequestGate,
 )
 from core.action_router import SafeActionRouter
@@ -269,6 +270,32 @@ class CommandProcessor:
         "gigachat модель",
         "gigachat model",
     }
+    OLLAMA_STATUS_COMMANDS = {
+        "статус ollama",
+        "статус олама",
+        "статус локального ai",
+        "ollama статус",
+        "олама статус",
+        "ollama status",
+    }
+    OLLAMA_RUNTIME_COMMANDS = {
+        "проверить ollama runtime",
+        "проверить олама runtime",
+        "проверить ollama рантайм",
+        "проверить олама рантайм",
+    }
+    OLLAMA_MODEL_LIST_COMMANDS = {
+        "список ollama моделей",
+        "список олама моделей",
+        "ollama models",
+        "ollama tags",
+    }
+    OLLAMA_MODEL_COMMANDS = {
+        "ollama модель",
+        "олама модель",
+        "локальная ai модель",
+        "ollama model",
+    }
     AI_PROVIDER_LIST_COMMANDS = {
         "список ai providers",
         "список ai провайдеров",
@@ -347,6 +374,13 @@ class CommandProcessor:
         "openai реальный запрос:",
         "реальный openai запрос:",
         "openai one shot:",
+    )
+    OLLAMA_ONE_SHOT_PREFIXES = (
+        "ollama реальный запрос:",
+        "олама реальный запрос:",
+        "локальный ai запрос:",
+        "локальная ai модель запрос:",
+        "ollama one shot:",
     )
     AI_CHAT_PREFIXES = (
         "спроси ai:",
@@ -1081,6 +1115,7 @@ class CommandProcessor:
         gemini_request_gate=None,
         groq_request_gate=None,
         gigachat_request_gate=None,
+        ollama_request_gate=None,
         ai_provider_language_policy=None,
         ai_provider_session_state=None,
         ai_provider_consensus_manager=None,
@@ -1122,6 +1157,7 @@ class CommandProcessor:
             config_manager=self.ai_provider_config_manager,
             router=self.ai_provider_router,
         )
+        self.ollama_request_gate = ollama_request_gate or OllamaRequestGate()
         self.ai_provider_language_policy = (
             ai_provider_language_policy
             or getattr(self.openai_request_gate, "language_policy", None)
@@ -1885,6 +1921,30 @@ class CommandProcessor:
                 self.ai_provider_selection_policy.matrix_text_ru(),
             )
 
+        if command in self.OLLAMA_STATUS_COMMANDS:
+            return self._result(
+                "ai.ollama.status",
+                self.ollama_request_gate.status_text(),
+            )
+
+        if command in self.OLLAMA_MODEL_COMMANDS:
+            return self._result(
+                "ai.ollama.model",
+                self.ollama_request_gate.model_text(),
+            )
+
+        if command in self.OLLAMA_RUNTIME_COMMANDS:
+            return self._result(
+                "ai.ollama.runtime",
+                self.ollama_request_gate.runtime_status_text(),
+            )
+
+        if command in self.OLLAMA_MODEL_LIST_COMMANDS:
+            return self._result(
+                "ai.ollama.models",
+                self.ollama_request_gate.list_models_text(),
+            )
+
         if command in self.AI_SESSION_MODEL_LIST_COMMANDS:
             return self._result(
                 "ai.session.models",
@@ -1977,6 +2037,14 @@ class CommandProcessor:
                 AIProviderCapability.CLASSIFICATION,
                 "ai.classification",
             )
+
+        ollama_one_shot_text = self._extract_ai_prefixed_text(
+            command_text,
+            command,
+            self.OLLAMA_ONE_SHOT_PREFIXES,
+        )
+        if ollama_one_shot_text is not None:
+            return self._generate_ollama_one_shot_result(ollama_one_shot_text)
 
         openai_one_shot_text = self._extract_ai_prefixed_text(
             command_text,
@@ -3377,6 +3445,45 @@ class CommandProcessor:
         self._record_ai_provider_success(response)
         return self._result("ai.gigachat.one_shot", text)
 
+    def _generate_ollama_one_shot_result(self, prompt):
+        request = AIRequest(
+            prompt=prompt,
+            task_type=AIProviderCapability.CHAT.value,
+            language="ru",
+        )
+        response = self.ollama_request_gate.generate_one_shot(
+            request,
+            capability=AIProviderCapability.CHAT,
+        )
+        if response.is_error:
+            text = (
+                "Ollama local request was not sent.\n"
+                f"Reason: {response.error_message or response.text}\n"
+                "Ollama must already be running locally on localhost.\n"
+                "Models must be installed manually outside JARVIS; no pull/download was started.\n"
+                "dry_run remains default.\n"
+                "No cloud/API key/files/memory/profile/logs were used.\n"
+                "Response was not executed as a command."
+            )
+            return self._result("ai.ollama.one_shot.error", text)
+
+        text = (
+            "Ollama local response:\n"
+            f"{response.text}\n\n"
+            "Safety:\n"
+            "- explicit local one-shot completed\n"
+            f"- model: {response.model_name}\n"
+            "- network scope: localhost-only\n"
+            "- cloud: not used\n"
+            "- API key: not required\n"
+            "- dry_run remains default\n"
+            "- response was not executed as a command\n"
+            "- no memory/profile/files/logs were sent automatically\n"
+            "- no model was pulled or downloaded"
+        )
+        self._record_ai_provider_success(response)
+        return self._result("ai.ollama.one_shot", text)
+
     def _select_ai_provider_session(self, selection_text):
         parsed = self._parse_ai_session_selection(selection_text)
         if parsed is None:
@@ -3385,7 +3492,7 @@ class CommandProcessor:
                 (
                     "AI provider session selection was not changed.\n"
                     "Use: ai session select: <provider> <model>\n"
-                    "Supported providers: dry_run, openai, gemini, groq, gigachat.\n"
+                    "Supported providers: dry_run, openai, gemini, groq, gigachat, ollama.\n"
                     "No network call was made."
                 ),
             )
@@ -3431,6 +3538,8 @@ class CommandProcessor:
             f"  - default model: {guards['groq'].safe_model_display()}",
             "- provider: gigachat",
             f"  - default model: {guards['gigachat'].safe_model_display()}",
+            "- provider: ollama",
+            f"  - configured/default model: {self.ollama_request_gate.runtime.config.model}",
             "- selection command: выбрать ai модель <provider> <model>",
             "- provider-only command uses that provider's configured/default model",
             "- network: not called",
@@ -3495,6 +3604,7 @@ class CommandProcessor:
             "gemini": self.gemini_request_gate,
             "groq": self.groq_request_gate,
             "gigachat": self.gigachat_request_gate,
+            "ollama": self.ollama_request_gate,
         }
         if provider == "dry_run":
             return self.ai_provider_router.generate_with_provider(
@@ -3532,7 +3642,9 @@ class CommandProcessor:
         if len(parts) < 1:
             return None
         provider = parts[0].strip().lower()
-        if provider not in {"dry_run", "openai", "gemini", "groq", "gigachat"}:
+        if provider == "олама":
+            provider = "ollama"
+        if provider not in {"dry_run", "openai", "gemini", "groq", "gigachat", "ollama"}:
             return None
         if len(parts) == 1:
             model = self._default_ai_session_model(provider)
@@ -3545,6 +3657,8 @@ class CommandProcessor:
     def _default_ai_session_model(self, provider):
         if provider == "dry_run":
             return "dry-run"
+        if provider == "ollama":
+            return self.ollama_request_gate.runtime.config.model
         guards = {
             "openai": self.openai_request_gate.request_guard,
             "gemini": self.gemini_request_gate.request_guard,
@@ -3559,6 +3673,8 @@ class CommandProcessor:
     def _validate_ai_session_model(self, provider, model):
         if provider == "dry_run":
             return None if str(model or "").strip() else "dry_run model is empty."
+        if provider == "ollama":
+            return self.ollama_request_gate.validate_model(model)
         guards = {
             "openai": self.openai_request_gate.request_guard,
             "gemini": self.gemini_request_gate.request_guard,

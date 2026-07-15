@@ -11,15 +11,16 @@ from ai import (
 )
 
 
-def test_default_configs_include_dry_run_groq_gigachat_gemini_openai():
+def test_default_configs_include_dry_run_external_and_ollama():
     configs = {config.name: config for config in AIProviderConfigManager.default_configs()}
 
-    assert set(configs) == {"dry_run", "groq", "gigachat", "gemini", "openai"}
+    assert set(configs) == {"dry_run", "groq", "gigachat", "gemini", "openai", "ollama"}
     assert configs["dry_run"].enabled is True
     assert configs["groq"].enabled is False
     assert configs["gigachat"].enabled is False
     assert configs["gemini"].enabled is False
     assert configs["openai"].enabled is False
+    assert configs["ollama"].enabled is False
     assert configs["groq"].default_model == "llama-3.1-8b-instant"
     assert configs["groq"].api_key_env_var == "GROQ_API_KEY"
     assert configs["gigachat"].default_model == "GigaChat"
@@ -27,6 +28,9 @@ def test_default_configs_include_dry_run_groq_gigachat_gemini_openai():
     assert configs["gemini"].default_model == "gemini-2.5-flash-lite"
     assert configs["gemini"].api_key_env_var == "GEMINI_API_KEY"
     assert configs["openai"].api_key_env_var == "OPENAI_API_KEY"
+    assert configs["ollama"].default_model == "qwen2.5:1.5b"
+    assert configs["ollama"].api_key_env_var is None
+    assert configs["ollama"].safety_level == "local_only"
 
 
 def test_dry_run_key_status_is_not_required():
@@ -34,6 +38,14 @@ def test_dry_run_key_status_is_not_required():
 
     assert status.key_status == AIProviderKeyStatus.NOT_REQUIRED
     assert status.runtime_state == AIProviderRuntimeState.DRY_RUN_ONLY
+
+
+def test_ollama_key_status_is_not_required_and_disabled_by_default():
+    status = AIProviderConfigManager(environ={}).status_for("ollama")
+
+    assert status.key_status == AIProviderKeyStatus.NOT_REQUIRED
+    assert status.runtime_state == AIProviderRuntimeState.DISABLED
+    assert status.default_model == "qwen2.5:1.5b"
 
 
 def test_missing_env_vars_produce_missing():
@@ -160,6 +172,7 @@ def test_example_config_does_not_contain_secrets():
         "GIGACHAT_AUTH_KEY",
         "GEMINI_API_KEY",
         "OPENAI_API_KEY",
+        None,
     ]
 
 
@@ -174,4 +187,5 @@ def test_config_layer_has_no_network_dependency():
         "gigachat",
         "gemini",
         "openai",
+        "ollama",
     ]

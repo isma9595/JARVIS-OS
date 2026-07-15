@@ -134,3 +134,12 @@ Provider selection policy checks only PRESENT/MISSING key status and never
 prints key values. It is recommendation-only, makes no network calls, does not
 enable external providers, and leaves manual session pinning and explicit
 consensus behavior unchanged.
+## TASK-064 Ollama Update
+
+Ollama configuration is local-only:
+
+- `OLLAMA_BASE_URL` optional, localhost HTTP only.
+- `OLLAMA_MODEL` optional.
+- Default model preference: `qwen2.5:1.5b`.
+- API key: not required.
+- No cloud, automatic install, or model pull.

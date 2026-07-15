@@ -26,14 +26,15 @@ def test_status_text_safe_no_network_and_no_secret_values():
     assert secret not in text
 
 
-def test_matrix_includes_all_providers_planned_ollama_and_no_secret_values():
+def test_matrix_includes_all_providers_implemented_ollama_and_no_secret_values():
     secret = "secret-value-that-must-not-print"
     text = policy({"GIGACHAT_AUTH_KEY": secret}).matrix_text_ru()
 
     for provider_name in ("dry_run", "groq", "gigachat", "openai", "gemini", "ollama"):
         assert provider_name in text
-    assert "Ollama" not in text or "ollama" in text
-    assert "planned" in text
+    assert "ollama" in text
+    assert "implemented=yes" in text
+    assert "local-only" in text
     assert "GIGACHAT_AUTH_KEY" in text
     assert "PRESENT" in text
     assert "network: not called" in text
@@ -102,14 +103,16 @@ def test_gemini_key_present_fallback_included_for_code_prompt():
     assert recommendation.network_called is False
 
 
-def test_privacy_offline_prompt_recommends_dry_run_now_and_ollama_later():
+def test_privacy_offline_prompt_recommends_ollama_then_dry_run():
     recommendation = policy({"GROQ_API_KEY": "fake-test-key"}).recommend(
         "это приватный файл, не отправляй в интернет"
     )
 
-    assert recommendation.recommended_provider == "dry_run"
-    assert "ollama(planned)" in recommendation.fallback_chain
-    assert any("Ollama" in warning for warning in recommendation.warnings)
+    assert recommendation.recommended_provider == "ollama"
+    assert recommendation.recommended_model == "qwen2.5:1.5b"
+    assert recommendation.fallback_chain == ["ollama", "dry_run"]
+    assert any("runtime" in warning for warning in recommendation.warnings)
+    assert recommendation.network_called is False
 
 
 def test_consensus_compare_prompt_recommends_explicit_consensus_no_network():
@@ -137,6 +140,16 @@ def test_manual_session_selection_wins_over_policy():
     assert "manual runtime selection wins" in recommendation.reason
 
 
+def test_ollama_role_is_implemented_no_key_and_local_only():
+    roles = {role.provider: role for role in policy().roles()}
+    ollama = roles["ollama"]
+
+    assert ollama.implemented is True
+    assert ollama.requires_key is False
+    assert ollama.network_capable is False
+    assert ollama.default_model == "qwen2.5:1.5b"
+
+
 def test_recommendation_text_includes_safe_next_command_and_does_not_execute_or_store_prompt():
     prompt = "быстро ответь"
     selector = policy({"GROQ_API_KEY": "fake-test-key"})
@@ -148,3 +161,14 @@ def test_recommendation_text_includes_safe_next_command_and_does_not_execute_or_
     assert "was not stored" in text
     assert not hasattr(selector, "prompt")
     assert not hasattr(selector, "response")
+
+
+def test_privacy_recommendation_text_mentions_ollama_commands_without_runtime_call():
+    selector = policy({"GROQ_API_KEY": "fake-test-key"})
+    text = selector.recommendation_text_ru("private offline file, no internet")
+
+    assert "recommended provider: ollama" in text
+    assert "список ollama моделей" in text
+    assert "ollama реальный запрос: <text>" in text
+    assert "network_called: False" in text
+    assert "provider response execution: not applicable" in text
