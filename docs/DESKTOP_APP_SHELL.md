@@ -8,7 +8,8 @@ command preview, command execution through AppService, registry/category
 browsing, AI provider settings, secure key storage, installer/product mode,
 and a future visual design system.
 
-This is not the final UI, installer, secure key storage, or AI settings screen.
+This is not the final UI, installer, or AI settings screen. TASK-071 adds the
+secure key storage foundation, but this shell still has no key input fields.
 
 ## Relationship To AppService
 
@@ -45,7 +46,8 @@ python run_desktop.py
 ## Current Shell Does Not Do
 
 - No installer.
-- No secure key storage.
+- No key input UI.
+- No automatic provider use of secure key storage.
 - No AI settings UI yet.
 - No file reading.
 - No screen capture.

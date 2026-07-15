@@ -29,6 +29,7 @@ from dialogue import (
 )
 from ideas import IdeaManager
 from memory import LocalMemoryManager
+from security import ApiKeyManager
 from users.user_profile import UserProfileManager
 
 
@@ -126,6 +127,8 @@ class CommandProcessor:
         "команды голос": CommandCategory.VOICE,
         "команды безопасность": CommandCategory.SAFETY,
         "команды ollama": CommandCategory.OLLAMA,
+        "команды secure keys": CommandCategory.SECURE_KEYS,
+        "команды api ключи": CommandCategory.SECURE_KEYS,
         "команды приложение": CommandCategory.APP,
         "команды profile": CommandCategory.PROFILE,
         "команды system": CommandCategory.SYSTEM,
@@ -491,6 +494,45 @@ class CommandProcessor:
         "проверить gigachat ключ": "gigachat",
         "проверить гигачат ключ": "gigachat",
         "проверить сбер ключ": "gigachat",
+    }
+    SECURE_KEY_STATUS_COMMANDS = {
+        "статус secure keys",
+        "статус key storage",
+        "статус хранилища ключей",
+        "статус api keys",
+        "статус api ключей",
+        "статус безопасного хранилища ключей",
+    }
+    SECURE_KEY_LIST_COMMANDS = {
+        "список api ключей",
+        "список secure keys",
+        "какие ключи сохранены",
+        "статус ключей ai",
+    }
+    SECURE_KEY_HELP_COMMANDS = {
+        "безопасность api ключей",
+        "помощь api keys",
+        "помощь secure keys",
+    }
+    SECURE_KEY_IMPORT_COMMANDS = {
+        "импортировать openai ключ из env": "openai",
+        "импортировать gemini ключ из env": "gemini",
+        "импортировать groq ключ из env": "groq",
+        "импортировать gigachat ключ из env": "gigachat",
+        "сохранить openai ключ из env": "openai",
+        "сохранить gemini ключ из env": "gemini",
+        "сохранить groq ключ из env": "groq",
+        "сохранить gigachat ключ из env": "gigachat",
+    }
+    SECURE_KEY_DELETE_COMMANDS = {
+        "удалить openai ключ": "openai",
+        "удалить gemini ключ": "gemini",
+        "удалить groq ключ": "groq",
+        "удалить gigachat ключ": "gigachat",
+        "удалить openai ключ из хранилища": "openai",
+        "удалить gemini ключ из хранилища": "gemini",
+        "удалить groq ключ из хранилища": "groq",
+        "удалить gigachat ключ из хранилища": "gigachat",
     }
     GROQ_CHAT_PREFIXES = (
         "спроси groq:",
@@ -1281,6 +1323,7 @@ class CommandProcessor:
         ai_provider_live_verification=None,
         ai_context_privacy_policy=None,
         command_registry=None,
+        api_key_manager=None,
     ):
         self.user_profile = user_profile or {}
         self.dialogue_manager = dialogue_manager or DialogueManager(self.user_profile)
@@ -1426,6 +1469,7 @@ class CommandProcessor:
             microphone_listening_mode_manager = MicrophoneListeningModeManager()
         self.microphone_listening_mode_manager = microphone_listening_mode_manager
         self.command_registry = command_registry or DEFAULT_COMMAND_REGISTRY
+        self.api_key_manager = api_key_manager or ApiKeyManager()
 
     def set_voice_input_manager(self, voice_input_manager):
         self.voice_input_manager = voice_input_manager
@@ -2649,6 +2693,43 @@ class CommandProcessor:
                 self.ai_provider_router.providers_text_ru(),
             )
 
+        if command in self.SECURE_KEY_STATUS_COMMANDS:
+            return self._result(
+                "secure_keys.status",
+                self.api_key_manager.status_text_ru(),
+                speakable=False,
+            )
+
+        if command in self.SECURE_KEY_LIST_COMMANDS:
+            return self._result(
+                "secure_keys.list",
+                self.api_key_manager.list_text_ru(),
+                speakable=False,
+            )
+
+        if command in self.SECURE_KEY_HELP_COMMANDS:
+            return self._result(
+                "secure_keys.help",
+                self.api_key_manager.safe_help_text_ru(),
+                speakable=False,
+            )
+
+        provider_to_import = self.SECURE_KEY_IMPORT_COMMANDS.get(command)
+        if provider_to_import is not None:
+            return self._result(
+                "secure_keys.import_from_env",
+                self.api_key_manager.import_from_env(provider_to_import),
+                speakable=False,
+            )
+
+        provider_to_delete = self.SECURE_KEY_DELETE_COMMANDS.get(command)
+        if provider_to_delete is not None:
+            return self._result(
+                "secure_keys.delete",
+                self.api_key_manager.delete_provider_key(provider_to_delete),
+                speakable=False,
+            )
+
         if command in self.AI_CONFIG_STATUS_COMMANDS:
             return self._result(
                 "ai.config.status",
@@ -2851,7 +2932,7 @@ class CommandProcessor:
                 "- app service used: yes",
                 "- command registry used: yes",
                 "- installer ready: no",
-                "- secure key storage ready: no",
+                "- secure key storage foundation: available",
                 "- provider settings UI ready: no",
                 "- network default: no",
                 "- no secrets",
@@ -2870,7 +2951,8 @@ class CommandProcessor:
                 "- can preview command risk",
                 "- can execute through AppService",
                 "- future AI provider settings planned",
-                "- future secure key storage planned",
+                "- secure key storage foundation available",
+                "- future secure key input UI planned",
                 "- future installer planned",
                 "- no final design yet",
             ]

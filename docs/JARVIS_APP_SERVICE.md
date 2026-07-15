@@ -78,8 +78,12 @@ The UI should not call `CommandProcessor` directly.
 
 ## Secure Key Storage
 
-Secure key storage is planned but not implemented in TASK-069. AppService does
-not store, print, inspect, or validate secrets.
+TASK-071 adds the secure key storage foundation. AppService status/capabilities
+may mention that the foundation is available, but AppService still does not
+read, print, validate, or route decrypted secrets. Future AI Provider Settings
+UI should use the secure storage boundary instead of command arguments.
+
+See `docs/SECURE_KEY_STORAGE.md`.
 
 ## Installer
 

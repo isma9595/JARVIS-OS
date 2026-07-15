@@ -5068,3 +5068,75 @@ def test_desktop_shell_does_not_break_existing_app_registry_ai_voice_provider_st
     assert processor.process("статус ai")["intent"] == "ai.status"
     assert processor.process("статус голосового цикла")["intent"] == "voice.cycle.status"
     assert processor.process("статус groq")["intent"] == "ai.groq.status"
+
+
+def test_secure_key_status_list_and_help_commands_work_without_action_router():
+    from security import ApiKeyManager, MemorySecureKeyBackend, SecureKeyStore
+
+    class FailingActionRouter:
+        calls = 0
+
+        def route(self, command):
+            self.calls += 1
+            raise AssertionError("secure key commands must not route to ActionRouter")
+
+    manager = ApiKeyManager(SecureKeyStore(MemorySecureKeyBackend()), environ={})
+    processor = CommandProcessor(api_key_manager=manager)
+    processor.action_router = FailingActionRouter()
+
+    for command in ("статус secure keys", "статус api ключей"):
+        result = processor.process(command)
+        assert result["intent"] == "secure_keys.status"
+        assert "secure key storage foundation: yes" in result["response"]
+        assert "backend: memory-test" in result["response"]
+        assert "no keys printed" in result["response"]
+
+    listing = processor.process("список api ключей")
+    help_text = processor.process("безопасность api ключей")
+
+    assert listing["intent"] == "secure_keys.list"
+    assert "provider: groq" in listing["response"]
+    assert "stored: MISSING" in listing["response"]
+    assert help_text["intent"] == "secure_keys.help"
+    assert "do not paste real API keys" in help_text["response"]
+    assert processor.action_router.calls == 0
+
+
+def test_secure_key_import_missing_env_refuses_safely():
+    from security import ApiKeyManager, MemorySecureKeyBackend, SecureKeyStore
+
+    manager = ApiKeyManager(SecureKeyStore(MemorySecureKeyBackend()), environ={})
+    processor = CommandProcessor(api_key_manager=manager)
+
+    result = processor.process("импортировать groq ключ из env")
+
+    assert result["intent"] == "secure_keys.import_from_env"
+    assert "stored: no" in result["response"]
+    assert "env: MISSING" in result["response"]
+    assert "no key value printed" in result["response"]
+
+
+def test_secure_key_import_from_fake_env_and_delete_do_not_print_value():
+    from security import ApiKeyManager, MemorySecureKeyBackend, SecureKeyStore
+
+    secret = "dummy-test-key-for-storage-only"
+    manager = ApiKeyManager(
+        SecureKeyStore(MemorySecureKeyBackend()),
+        environ={"GROQ_API_KEY": secret},
+    )
+    processor = CommandProcessor(api_key_manager=manager)
+
+    imported = processor.process("импортировать groq ключ из env")
+    listing = processor.process("список api ключей")
+    deleted = processor.process("удалить groq ключ")
+
+    assert imported["intent"] == "secure_keys.import_from_env"
+    assert "stored: yes" in imported["response"]
+    assert "env: PRESENT" in imported["response"]
+    assert listing["intent"] == "secure_keys.list"
+    assert "***only" in listing["response"]
+    assert deleted["intent"] == "secure_keys.delete"
+    assert "deleted: yes" in deleted["response"]
+    assert secret not in imported["response"]
+    assert secret not in listing["response"]
+    assert secret not in deleted["response"]

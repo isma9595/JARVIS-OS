@@ -135,7 +135,7 @@ class DesktopShellViewModel:
                     "- app service used: yes",
                     "- command registry used: yes",
                     "- installer ready: no",
-                    "- secure key storage ready: no",
+                    "- secure key storage foundation: available",
                     "- provider settings UI ready: no",
                     "- network default: no",
                     "- no secrets",
@@ -156,7 +156,8 @@ class DesktopShellViewModel:
                 "- can preview command risk",
                 "- can execute through AppService",
                 "- future AI provider settings planned",
-                "- future secure key storage planned",
+                "- secure key storage foundation available",
+                "- future secure key input UI planned",
                 "- future installer planned",
                 "- no final design yet",
             ]

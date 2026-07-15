@@ -25,7 +25,7 @@ def test_app_service_status_snapshot_safe():
     assert snapshot.categories_count > 0
     assert snapshot.ui_ready is False
     assert snapshot.installer_ready is False
-    assert snapshot.secure_key_storage_ready is False
+    assert snapshot.secure_key_storage_ready is True
     assert snapshot.network_default is False
     assert snapshot.dry_run_default is True
     assert snapshot.privacy_boundary_active is True
@@ -150,3 +150,21 @@ def test_no_secrets_in_text_outputs():
     assert "[REDACTED]" in preview_text
     assert "no secrets" in preview_text
     assert "no secrets" in execute_text
+
+
+def test_status_and_capabilities_mention_secure_key_storage_safely():
+    service = JarvisAppService(command_processor=FakeCommandProcessor())
+    secret = "dummy-test-key-for-storage-only"
+
+    status = service.status_text_ru()
+    capabilities = service.capabilities_text_ru()
+    snapshot = service.status_snapshot()
+
+    assert snapshot.secure_key_storage_ready is True
+    assert "secure key storage foundation: available" in status
+    assert "secure key storage foundation available" in capabilities
+    assert "future AI Provider Settings UI will use secure key storage" in capabilities
+    assert secret not in status
+    assert secret not in capabilities
+    assert "no secrets" in status
+    assert "no secrets" in capabilities

@@ -872,3 +872,45 @@ def test_desktop_shell_real_provider_fallback_consensus_remain_not_allowlisted()
 
         assert decision.allowed is False
         assert decision.canonical_command is None
+
+
+def test_secure_key_status_list_and_help_are_allowlisted():
+    allowlist = SafeVoiceCommandAllowlist()
+
+    expected = {
+        "статус secure keys": "статус secure keys",
+        "статус key storage": "статус secure keys",
+        "статус хранилища ключей": "статус secure keys",
+        "статус api keys": "статус secure keys",
+        "статус api ключей": "статус secure keys",
+        "статус безопасного хранилища ключей": "статус secure keys",
+        "список api ключей": "список api ключей",
+        "список secure keys": "список api ключей",
+        "какие ключи сохранены": "список api ключей",
+        "статус ключей ai": "список api ключей",
+        "безопасность api ключей": "безопасность api ключей",
+        "помощь api keys": "безопасность api ключей",
+        "помощь secure keys": "безопасность api ключей",
+    }
+
+    for command, canonical in expected.items():
+        decision = allowlist.decide(command)
+
+        assert decision.allowed is True
+        assert decision.canonical_command == canonical
+
+
+def test_secure_key_import_delete_and_provider_requests_not_allowlisted():
+    allowlist = SafeVoiceCommandAllowlist()
+
+    for command in (
+        "импортировать groq ключ из env",
+        "сохранить groq ключ из env",
+        "удалить groq ключ",
+        "удалить groq ключ из хранилища",
+        "groq реальный запрос: hello",
+    ):
+        decision = allowlist.decide(command)
+
+        assert decision.allowed is False
+        assert decision.canonical_command is None

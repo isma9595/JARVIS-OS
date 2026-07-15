@@ -202,3 +202,17 @@ def test_no_secrets_in_view_model_outputs():
 
     assert secret not in preview
     assert secret not in execute
+
+
+def test_status_and_capabilities_mention_secure_key_storage_safely():
+    view_model = DesktopShellViewModel(JarvisAppService())
+    secret = "dummy-test-key-for-storage-only"
+
+    status = view_model.safe_status_text_ru()
+    capabilities = view_model.ui_capabilities_text_ru()
+
+    assert "secure key storage foundation: available" in status
+    assert "secure key storage foundation available" in capabilities
+    assert "future secure key input UI planned" in capabilities
+    assert secret not in status
+    assert secret not in capabilities

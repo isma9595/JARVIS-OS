@@ -43,6 +43,25 @@ class SafeVoiceCommandAllowlist:
             "статус приложения jarvis",
             "app service status",
         },
+        "статус secure keys": {
+            "статус secure keys",
+            "статус key storage",
+            "статус хранилища ключей",
+            "статус api keys",
+            "статус api ключей",
+            "статус безопасного хранилища ключей",
+        },
+        "список api ключей": {
+            "список api ключей",
+            "список secure keys",
+            "какие ключи сохранены",
+            "статус ключей ai",
+        },
+        "безопасность api ключей": {
+            "безопасность api ключей",
+            "помощь api keys",
+            "помощь secure keys",
+        },
         "app service capabilities": {
             "app service capabilities",
             "возможности app service",
@@ -278,7 +297,6 @@ class SafeVoiceCommandAllowlist:
         "статус ai ключей": {
             "статус ai ключей",
             "статус ии ключей",
-            "статус api ключей",
             "ai config status",
         },
         "безопасность ai ключей": {

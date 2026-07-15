@@ -285,3 +285,63 @@ def test_no_gui_launch_command_is_voice_auto_allowed():
         aliases = " ".join(command.aliases).lower()
         if "run_desktop.py" in aliases or "launch" in command.command_id:
             assert command.voice_auto_allowed is False
+
+
+def test_secure_key_commands_registered():
+    registry = CommandRegistry()
+    command_ids = {
+        command.command_id
+        for command in registry.list_by_category(CommandCategory.SECURE_KEYS)
+    }
+
+    assert "secure_keys.status" in command_ids
+    assert "secure_keys.list" in command_ids
+    assert "secure_keys.help" in command_ids
+    assert "secure_keys.import_from_env" in command_ids
+    assert "secure_keys.delete" in command_ids
+
+
+def test_secure_key_read_only_commands_are_app_ready_and_voice_allowed():
+    registry = CommandRegistry()
+
+    for alias in (
+        "статус secure keys",
+        "статус api ключей",
+        "список api ключей",
+        "безопасность api ключей",
+    ):
+        command = registry.find_by_alias(alias)
+
+        assert command is not None
+        assert command.category == CommandCategory.SECURE_KEYS
+        assert command.read_only is True
+        assert command.risk_level == CommandRiskLevel.READ_ONLY
+        assert command.voice_auto_allowed is True
+        assert command.app_ready is True
+        assert command.requires_network is False
+
+
+def test_secure_key_import_and_delete_are_sensitive_not_voice_allowed_no_network():
+    registry = CommandRegistry()
+
+    for alias in ("импортировать groq ключ из env", "удалить groq ключ"):
+        command = registry.find_by_alias(alias)
+
+        assert command is not None
+        assert command.category == CommandCategory.SECURE_KEYS
+        assert command.risk_level == CommandRiskLevel.SENSITIVE
+        assert command.read_only is False
+        assert command.voice_auto_allowed is False
+        assert command.requires_confirmation is True
+        assert command.requires_network is False
+        assert command.requires_ai_key is False
+        assert command.app_ready is True
+
+
+def test_no_raw_key_command_exists():
+    registry = CommandRegistry()
+    raw_markers = ("<key>", "<api_key>", "<secret>", "ключ: <text>", "api key: <text>")
+
+    for command in registry.commands:
+        alias_text = " ".join(command.aliases).lower()
+        assert all(marker not in alias_text for marker in raw_markers)

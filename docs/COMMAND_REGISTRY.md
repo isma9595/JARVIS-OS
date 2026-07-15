@@ -106,3 +106,10 @@ metadata and delegates execution to `CommandProcessor`. See
 TASK-070 registers read-only desktop shell status/capability commands in the
 APP category. No GUI launch command is executable or voice auto-allowlisted.
 The desktop shell uses registry metadata through `JarvisAppService`.
+
+## TASK-071 Secure Keys
+
+TASK-071 adds the `secure_keys` category. Status/list/help commands are
+read-only, app-ready, and voice auto-allowed. Import-from-env and delete
+commands are `SENSITIVE`, require confirmation, are not voice auto-allowed, and
+do not require network or real provider validation.
