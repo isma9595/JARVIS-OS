@@ -51,6 +51,7 @@ from core.policy_boundary import (
 from core.execution_coordinator import ExecutionCoordinator
 from core.execution_journal import ExecutionOperation, safe_journal_text
 from language.language_manager import ApplicationLanguageManager
+from platform_adapters.local_filesystem import WindowsLocalFileSystemAdapter
 from voice.audio_lifecycle import AudioLifecycleController, AudioLifecycleStatus
 from voice.russian_voice_normalizer import normalize_russian_voice_text
 from ai.secure_provider_runtime import SecureProviderRuntime
@@ -190,6 +191,7 @@ class JarvisAppService:
         command_registry=None,
         one_shot_voice_recognition=None,
         language_manager=None,
+        local_filesystem=None,
     ):
         self.command_registry = command_registry or DEFAULT_COMMAND_REGISTRY
         if command_processor is None:
@@ -221,7 +223,10 @@ class JarvisAppService:
         self._operation_results: dict[str, AppCommandResult] = {}
         self.policy_boundary = PolicyDecisionBoundary()
         self.execution_coordinator = ExecutionCoordinator()
-        self.document_review_workflow = LocalTextDocumentReviewWorkflow()
+        self._local_filesystem = local_filesystem or WindowsLocalFileSystemAdapter()
+        self.document_review_workflow = LocalTextDocumentReviewWorkflow(
+            filesystem=self._local_filesystem,
+        )
         self.document_review_runner = self._build_document_review_runner()
 
     def status_snapshot(self) -> AppStatusSnapshot:

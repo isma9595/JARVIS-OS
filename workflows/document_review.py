@@ -11,9 +11,13 @@ from dataclasses import dataclass
 from enum import Enum
 from hashlib import sha256
 import os
-from pathlib import Path
 import re
-import tempfile
+
+from platform_adapters.contracts import (
+    LocalFileSystemError,
+    LocalFileSystemPort,
+    SafePathInfo,
+)
 
 
 MAX_DOCUMENT_BYTES = 1024 * 1024
@@ -106,8 +110,8 @@ class DocumentReviewSaveResult:
 @dataclass
 class DocumentReviewRunState:
     source_path: str
-    source: Path | None = None
-    output: Path | None = None
+    source: SafePathInfo | None = None
+    output: SafePathInfo | None = None
     raw: bytes | None = None
     text: str | None = None
     encoding: str | None = None
@@ -121,10 +125,10 @@ class DocumentReviewRunState:
     def safe_metadata(self) -> dict[str, object]:
         metadata: dict[str, object] = {"workflow_id": WORKFLOW_ID}
         if self.source is not None:
-            metadata["source_filename"] = self.source.name
+            metadata["source_filename"] = self.source.filename
             metadata["source_size_bytes"] = self.size
         if self.output is not None:
-            metadata["proposed_output_filename"] = self.output.name
+            metadata["proposed_output_filename"] = self.output.filename
         if self.proposal is not None:
             metadata.update(self.proposal.safe_metadata())
         if self.save_result is not None:
@@ -150,18 +154,19 @@ class DocumentReviewWorkflowError(ValueError):
 class LocalTextDocumentReviewWorkflow:
     """Validate, review, propose, and save one local UTF-8 .txt revision."""
 
-    def __init__(self, max_bytes: int = MAX_DOCUMENT_BYTES):
+    def __init__(self, filesystem: LocalFileSystemPort, max_bytes: int = MAX_DOCUMENT_BYTES):
+        self.filesystem = filesystem
         self.max_bytes = int(max_bytes)
 
     def review(self, source_path: str) -> DocumentReviewProposal:
         source = self._validate_source(source_path)
-        size = source.stat().st_size
+        size = int(source.size_bytes or 0)
         if size > self.max_bytes:
             raise DocumentReviewWorkflowError(
                 DocumentReviewErrorCode.FILE_TOO_LARGE,
                 f"Файл больше допустимого лимита {self.max_bytes} байт.",
             )
-        raw = source.read_bytes()
+        raw = self.filesystem.read_bounded_bytes(source.resolved_path, self.max_bytes)
         if b"\x00" in raw:
             raise DocumentReviewWorkflowError(
                 DocumentReviewErrorCode.BINARY_FILE,
@@ -177,7 +182,7 @@ class LocalTextDocumentReviewWorkflow:
 
         output = self.propose_output_path(source)
         self._validate_distinct_paths(source, output)
-        if output.exists():
+        if output.exists:
             raise DocumentReviewWorkflowError(
                 DocumentReviewErrorCode.OUTPUT_ALREADY_EXISTS,
                 "Предлагаемый выходной файл уже существует. Перезапись запрещена.",
@@ -186,12 +191,12 @@ class LocalTextDocumentReviewWorkflow:
         issues, revised, newline = analyze_and_revise_text(text)
         return DocumentReviewProposal(
             workflow_id=WORKFLOW_ID,
-            source_path=str(source),
-            source_filename=source.name,
+            source_path=source.resolved_path,
+            source_filename=source.filename,
             source_hash=_hash_bytes(raw),
             source_size_bytes=size,
-            output_path=str(output),
-            proposed_output_filename=output.name,
+            output_path=output.resolved_path,
+            proposed_output_filename=output.filename,
             issue_count=len(issues),
             issues=issues,
             revised_content=revised,
@@ -202,7 +207,7 @@ class LocalTextDocumentReviewWorkflow:
 
     def validate_source_step(self, state: DocumentReviewRunState) -> None:
         source = self._validate_source(state.source_path)
-        size = source.stat().st_size
+        size = int(source.size_bytes or 0)
         if size > self.max_bytes:
             raise DocumentReviewWorkflowError(
                 DocumentReviewErrorCode.FILE_TOO_LARGE,
@@ -210,7 +215,7 @@ class LocalTextDocumentReviewWorkflow:
             )
         output = self.propose_output_path(source)
         self._validate_distinct_paths(source, output)
-        if output.exists():
+        if output.exists:
             raise DocumentReviewWorkflowError(
                 DocumentReviewErrorCode.OUTPUT_ALREADY_EXISTS,
                 "РџСЂРµРґР»Р°РіР°РµРјС‹Р№ РІС‹С…РѕРґРЅРѕР№ С„Р°Р№Р» СѓР¶Рµ СЃСѓС‰РµСЃС‚РІСѓРµС‚. РџРµСЂРµР·Р°РїРёСЃСЊ Р·Р°РїСЂРµС‰РµРЅР°.",
@@ -223,7 +228,7 @@ class LocalTextDocumentReviewWorkflow:
         if state.source is None:
             self.validate_source_step(state)
         assert state.source is not None
-        raw = state.source.read_bytes()
+        raw = self.filesystem.read_bounded_bytes(state.source.resolved_path, self.max_bytes)
         if b"\x00" in raw:
             raise DocumentReviewWorkflowError(
                 DocumentReviewErrorCode.BINARY_FILE,
@@ -261,12 +266,12 @@ class LocalTextDocumentReviewWorkflow:
         assert state.newline is not None
         state.proposal = DocumentReviewProposal(
             workflow_id=WORKFLOW_ID,
-            source_path=str(state.source),
-            source_filename=state.source.name,
+            source_path=state.source.resolved_path,
+            source_filename=state.source.filename,
             source_hash=_hash_bytes(state.raw),
             source_size_bytes=state.size,
-            output_path=str(state.output),
-            proposed_output_filename=state.output.name,
+            output_path=state.output.resolved_path,
+            proposed_output_filename=state.output.filename,
             issue_count=len(state.issues),
             issues=state.issues,
             revised_content=state.revised_content,
@@ -276,21 +281,20 @@ class LocalTextDocumentReviewWorkflow:
         )
 
     def save_confirmed(self, proposal: DocumentReviewProposal) -> DocumentReviewSaveResult:
-        source = Path(proposal.source_path)
-        output = Path(proposal.output_path)
-        self._validate_source(str(source))
+        source = self._validate_source(proposal.source_path)
+        output = self.filesystem.inspect_path(proposal.output_path)
         self._validate_distinct_paths(source, output)
-        if output.parent.resolve() != source.parent.resolve():
+        if output.parent_path != source.parent_path:
             raise DocumentReviewWorkflowError(
                 DocumentReviewErrorCode.SAME_SOURCE_AND_OUTPUT,
                 "Выходной файл должен находиться рядом с исходным файлом.",
             )
-        if output.exists():
+        if output.exists:
             raise DocumentReviewWorkflowError(
                 DocumentReviewErrorCode.OUTPUT_ALREADY_EXISTS,
                 "Выходной файл уже существует. Перезапись запрещена.",
             )
-        current_raw = source.read_bytes()
+        current_raw = self.filesystem.read_bounded_bytes(source.resolved_path, self.max_bytes)
         if _hash_bytes(current_raw) != proposal.source_hash:
             raise DocumentReviewWorkflowError(
                 DocumentReviewErrorCode.SOURCE_CHANGED,
@@ -298,35 +302,27 @@ class LocalTextDocumentReviewWorkflow:
             )
 
         encoded = self._encode_output(proposal.revised_content, proposal.output_encoding)
-        temp_name = None
         try:
-            with tempfile.NamedTemporaryFile(
-                mode="wb",
-                dir=str(output.parent),
-                prefix=f".{output.stem}.",
-                suffix=".tmp",
-                delete=False,
-            ) as handle:
-                temp_name = handle.name
-                handle.write(encoded)
-                handle.flush()
-                os.fsync(handle.fileno())
-            os.rename(temp_name, output)
-            temp_name = None
-        finally:
-            if temp_name and os.path.exists(temp_name):
-                try:
-                    os.unlink(temp_name)
-                except OSError:
-                    pass
+            write_result = self.filesystem.atomic_write_new_file(
+                target_path=output.resolved_path,
+                data=encoded,
+                source_path=source.resolved_path,
+            )
+        except LocalFileSystemError as exc:
+            raise DocumentReviewWorkflowError(
+                _document_error_from_filesystem(exc),
+                _document_message_from_filesystem(exc),
+            ) from exc
 
-        output_raw = output.read_bytes()
+        output_raw = self.filesystem.read_bounded_bytes(output.resolved_path, len(encoded))
         if output_raw != encoded:
             raise DocumentReviewWorkflowError(
                 DocumentReviewErrorCode.OUTPUT_VERIFY_FAILED,
                 "Сохраненная копия не прошла проверку содержимого.",
             )
-        source_hash_unchanged = _hash_bytes(source.read_bytes()) == proposal.source_hash
+        source_hash_unchanged = _hash_bytes(
+            self.filesystem.read_bounded_bytes(source.resolved_path, self.max_bytes)
+        ) == proposal.source_hash
         if not source_hash_unchanged:
             raise DocumentReviewWorkflowError(
                 DocumentReviewErrorCode.SOURCE_CHANGED,
@@ -334,13 +330,13 @@ class LocalTextDocumentReviewWorkflow:
             )
         return DocumentReviewSaveResult(
             workflow_id=proposal.workflow_id,
-            source_path=str(source),
-            output_path=str(output),
+            source_path=source.resolved_path,
+            output_path=output.resolved_path,
             saved=True,
-            verified=True,
+            verified=write_result.verified,
             source_hash_unchanged=True,
-            output_hash=_hash_bytes(output_raw),
-            bytes_written=len(output_raw),
+            output_hash=write_result.output_hash,
+            bytes_written=write_result.bytes_written,
         )
 
     def write_output_step(self, state: DocumentReviewRunState) -> None:
@@ -363,38 +359,47 @@ class LocalTextDocumentReviewWorkflow:
                 "РСЃС…РѕРґРЅС‹Р№ С„Р°Р№Р» РёР·РјРµРЅРёР»СЃСЏ РїСЂРё workflow.",
             )
 
-    def propose_output_path(self, source: Path) -> Path:
-        return source.with_name(f"{source.stem}.jarvis-reviewed.txt")
+    def propose_output_path(self, source: SafePathInfo) -> SafePathInfo:
+        output_path = self.filesystem.sibling_path(
+            source.resolved_path,
+            f"{source.stem}.jarvis-reviewed.txt",
+        )
+        return self.filesystem.inspect_path(output_path)
 
-    def _validate_source(self, source_path: str) -> Path:
-        raw = str(source_path or "").strip().strip('"')
-        if raw.startswith("\\\\"):
+    def _validate_source(self, source_path: str) -> SafePathInfo:
+        try:
+            source = self.filesystem.inspect_path(source_path)
+        except LocalFileSystemError as exc:
+            raise DocumentReviewWorkflowError(
+                _document_error_from_filesystem(exc),
+                _document_message_from_filesystem(exc),
+            ) from exc
+        if source.is_absolute and not source.is_local:
             raise DocumentReviewWorkflowError(
                 DocumentReviewErrorCode.UNC_PATH_NOT_SUPPORTED,
                 "UNC или сетевые пути не поддерживаются.",
             )
-        source = Path(raw)
-        if not source.is_absolute():
+        if not source.is_absolute:
             raise DocumentReviewWorkflowError(
                 DocumentReviewErrorCode.MISSING_FILE,
                 "Нужен абсолютный локальный путь к .txt файлу.",
             )
-        if source.is_symlink():
+        if source.is_symlink:
             raise DocumentReviewWorkflowError(
                 DocumentReviewErrorCode.SYMLINK_NOT_SUPPORTED,
                 "Символические ссылки не поддерживаются.",
             )
-        if not source.exists():
+        if not source.exists:
             raise DocumentReviewWorkflowError(
                 DocumentReviewErrorCode.MISSING_FILE,
                 "Файл не найден.",
             )
-        if source.is_dir():
+        if source.is_directory:
             raise DocumentReviewWorkflowError(
                 DocumentReviewErrorCode.DIRECTORY_NOT_SUPPORTED,
                 "Каталоги не поддерживаются. Нужен обычный .txt файл.",
             )
-        if not source.is_file():
+        if not source.is_file:
             raise DocumentReviewWorkflowError(
                 DocumentReviewErrorCode.MISSING_FILE,
                 "Нужен обычный локальный файл.",
@@ -406,9 +411,8 @@ class LocalTextDocumentReviewWorkflow:
             )
         return source
 
-    @staticmethod
-    def _validate_distinct_paths(source: Path, output: Path) -> None:
-        if source.resolve() == output.resolve():
+    def _validate_distinct_paths(self, source: SafePathInfo, output: SafePathInfo) -> None:
+        if self.filesystem.same_path(source.resolved_path, output.resolved_path):
             raise DocumentReviewWorkflowError(
                 DocumentReviewErrorCode.SAME_SOURCE_AND_OUTPUT,
                 "Исходный и выходной пути не должны совпадать.",
@@ -425,6 +429,34 @@ class LocalTextDocumentReviewWorkflow:
         if encoding == "utf-8-sig":
             return text.encode("utf-8-sig")
         return text.encode("utf-8")
+
+
+def _document_error_from_filesystem(exc: LocalFileSystemError) -> DocumentReviewErrorCode:
+    return {
+        "network_path_denied": DocumentReviewErrorCode.UNC_PATH_NOT_SUPPORTED,
+        "path_not_absolute": DocumentReviewErrorCode.MISSING_FILE,
+        "file_not_found": DocumentReviewErrorCode.MISSING_FILE,
+        "not_a_file": DocumentReviewErrorCode.MISSING_FILE,
+        "symlink_denied": DocumentReviewErrorCode.SYMLINK_NOT_SUPPORTED,
+        "file_too_large": DocumentReviewErrorCode.FILE_TOO_LARGE,
+        "target_exists": DocumentReviewErrorCode.OUTPUT_ALREADY_EXISTS,
+        "source_target_conflict": DocumentReviewErrorCode.SAME_SOURCE_AND_OUTPUT,
+        "verification_failed": DocumentReviewErrorCode.OUTPUT_VERIFY_FAILED,
+    }.get(exc.code, DocumentReviewErrorCode.OUTPUT_VERIFY_FAILED)
+
+
+def _document_message_from_filesystem(exc: LocalFileSystemError) -> str:
+    return {
+        "network_path_denied": "UNC РёР»Рё СЃРµС‚РµРІС‹Рµ РїСѓС‚Рё РЅРµ РїРѕРґРґРµСЂР¶РёРІР°СЋС‚СЃСЏ.",
+        "path_not_absolute": "РќСѓР¶РµРЅ Р°Р±СЃРѕР»СЋС‚РЅС‹Р№ Р»РѕРєР°Р»СЊРЅС‹Р№ РїСѓС‚СЊ Рє .txt С„Р°Р№Р»Сѓ.",
+        "file_not_found": "Р¤Р°Р№Р» РЅРµ РЅР°Р№РґРµРЅ.",
+        "not_a_file": "РќСѓР¶РµРЅ РѕР±С‹С‡РЅС‹Р№ Р»РѕРєР°Р»СЊРЅС‹Р№ С„Р°Р№Р».",
+        "symlink_denied": "РЎРёРјРІРѕР»РёС‡РµСЃРєРёРµ СЃСЃС‹Р»РєРё РЅРµ РїРѕРґРґРµСЂР¶РёРІР°СЋС‚СЃСЏ.",
+        "file_too_large": "Р¤Р°Р№Р» Р±РѕР»СЊС€Рµ РґРѕРїСѓСЃС‚РёРјРѕРіРѕ Р»РёРјРёС‚Р°.",
+        "target_exists": "Р’С‹С…РѕРґРЅРѕР№ С„Р°Р№Р» СѓР¶Рµ СЃСѓС‰РµСЃС‚РІСѓРµС‚. РџРµСЂРµР·Р°РїРёСЃСЊ Р·Р°РїСЂРµС‰РµРЅР°.",
+        "source_target_conflict": "РСЃС…РѕРґРЅС‹Р№ Рё РІС‹С…РѕРґРЅРѕР№ РїСѓС‚Рё РЅРµ РґРѕР»Р¶РЅС‹ СЃРѕРІРїР°РґР°С‚СЊ.",
+        "verification_failed": "РЎРѕС…СЂР°РЅРµРЅРЅР°СЏ РєРѕРїРёСЏ РЅРµ РїСЂРѕС€Р»Р° РїСЂРѕРІРµСЂРєСѓ СЃРѕРґРµСЂР¶РёРјРѕРіРѕ.",
+    }.get(exc.code, "Р¤Р°Р№Р»РѕРІР°СЏ РѕРїРµСЂР°С†РёСЏ Р±РµР·РѕРїР°СЃРЅРѕ Р·Р°РІРµСЂС€РёР»Р°СЃСЊ РѕС€РёР±РєРѕР№.")
 
 
 def analyze_and_revise_text(text: str) -> tuple[tuple[DocumentReviewIssue, ...], str, str]:
