@@ -230,6 +230,7 @@ def test_assistant_smoke_appservice_safe_path(monkeypatch):
         local_filesystem=filesystem,
     )
 
+    startup_profile = service.get_startup_profile()
     language = service.get_language_preference()
     status = service.execute_contract(STATUS_SYSTEM, AppCommandSource.TEST)
     clarification = service.execute_contract(SHOW_STATUS, AppCommandSource.TEST)
@@ -240,6 +241,12 @@ def test_assistant_smoke_appservice_safe_path(monkeypatch):
     assert language.language_code == "ru-RU"
     assert language.default_language == "ru-RU"
     assert language.persisted is False
+    deferred_components = {
+        component.component_id: component for component in startup_profile.deferred_components
+    }
+    assert startup_profile.startup_completed is True
+    assert deferred_components["secure_provider_runtime"].state == "deferred"
+    assert deferred_components["one_shot_voice_recognition"].state == "deferred"
     assert status.ok is True
     assert status.command_id == "system.status"
     assert status.executed is True

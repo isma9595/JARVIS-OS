@@ -10,6 +10,7 @@ from enum import Enum
 import re
 from threading import Lock
 
+from app.startup_profiler import StartupProfiler, StartupProfileSnapshot
 from app.app_contracts import (
     APP_CONTRACT_SCHEMA_NAME,
     APP_CONTRACT_VERSION,
@@ -24,6 +25,7 @@ from app.app_contracts import (
     AppVoiceRequestResult,
     safe_contract_text,
 )
+from core.lazy_component import LazyComponent
 from app.intent_resolver import (
     ClarificationState,
     HybridIntentResolver,
@@ -193,51 +195,80 @@ class JarvisAppService:
         one_shot_voice_recognition=None,
         language_manager=None,
         local_filesystem=None,
+        startup_clock=None,
+        provider_runtime_factory=None,
+        one_shot_voice_recognition_factory=None,
     ):
-        self.command_registry = command_registry or DEFAULT_COMMAND_REGISTRY
-        if command_processor is None:
-            from core.command_processor import CommandProcessor
+        self._startup_profiler = StartupProfiler(clock=startup_clock)
+        self._startup_eager_components = (
+            "command_registry",
+            "intent_resolver",
+            "language_manager",
+            "policy_boundary",
+            "execution_coordinator",
+            "execution_journal",
+            "audio_lifecycle_metadata",
+            "document_review_workflow",
+        )
+        with self._startup_profiler.phase("command_registry", "Command registry"):
+            self.command_registry = command_registry or DEFAULT_COMMAND_REGISTRY
+        with self._startup_profiler.phase("command_processor", "Command processor"):
+            if command_processor is None:
+                from core.command_processor import CommandProcessor
 
-            command_processor = CommandProcessor(command_registry=self.command_registry)
-        self.command_processor = command_processor
-        self.one_shot_voice_recognition = (
-            one_shot_voice_recognition
-            or getattr(command_processor, "one_shot_vosk_real_recognition", None)
-        )
-        self.language_manager = (
-            language_manager
-            or (
-                ApplicationLanguageManager.from_profile_manager(
-                    getattr(command_processor, "user_profile_manager")
+                command_processor = CommandProcessor(command_registry=self.command_registry)
+            self.command_processor = command_processor
+        with self._startup_profiler.phase("lazy_optional_components", "Lazy optional components"):
+            self._provider_runtime_component = LazyComponent(
+                "secure_provider_runtime",
+                provider_runtime_factory or self._default_provider_runtime_factory,
+                failure_error_code="provider_runtime_initialization_failed",
+            )
+            self._one_shot_voice_component = LazyComponent(
+                "one_shot_voice_recognition",
+                one_shot_voice_recognition_factory
+                or self._default_one_shot_voice_recognition_factory,
+                failure_error_code="voice_recognition_initialization_failed",
+            )
+            self.one_shot_voice_recognition = one_shot_voice_recognition
+        with self._startup_profiler.phase("language_manager", "Language manager"):
+            self.language_manager = (
+                language_manager
+                or (
+                    ApplicationLanguageManager.from_profile_manager(
+                        getattr(command_processor, "user_profile_manager")
+                    )
+                    if getattr(command_processor, "user_profile_manager", None) is not None
+                    else None
                 )
-                if getattr(command_processor, "user_profile_manager", None) is not None
-                else None
+                or ApplicationLanguageManager.from_profile(
+                    getattr(command_processor, "user_profile", None)
+                )
             )
-            or ApplicationLanguageManager.from_profile(
-                getattr(command_processor, "user_profile", None)
-            )
-        )
-        if hasattr(self.command_processor, "language_manager"):
-            self.command_processor.language_manager = self.language_manager
+            if hasattr(self.command_processor, "language_manager"):
+                self.command_processor.language_manager = self.language_manager
         self._one_shot_voice_lock = Lock()
-        self.audio_lifecycle_controller = self._build_audio_lifecycle_controller()
-        self.conversational_loop = SafeConversationalLoop(
-            app_service=self,
-            command_registry=self.command_registry,
-        )
-        self.intent_resolver = HybridIntentResolver(self.command_registry)
+        with self._startup_profiler.phase("app_safety_boundaries", "App safety boundaries"):
+            self.audio_lifecycle_controller = self._build_audio_lifecycle_controller()
+            self.conversational_loop = SafeConversationalLoop(
+                app_service=self,
+                command_registry=self.command_registry,
+            )
+            self.intent_resolver = HybridIntentResolver(self.command_registry)
+            self.policy_boundary = PolicyDecisionBoundary()
+            self.execution_coordinator = ExecutionCoordinator()
         self._pending_clarification: ClarificationState | None = None
         self._pending_clarification_operation_id: str | None = None
         self._pending_confirmation: PendingAppConfirmation | None = None
         self._pending_document_review: PendingDocumentReviewConfirmation | None = None
         self._operation_results: dict[str, AppCommandResult] = {}
-        self.policy_boundary = PolicyDecisionBoundary()
-        self.execution_coordinator = ExecutionCoordinator()
-        self._local_filesystem = local_filesystem or WindowsLocalFileSystemAdapter()
-        self.document_review_workflow = LocalTextDocumentReviewWorkflow(
-            filesystem=self._local_filesystem,
-        )
-        self.document_review_runner = self._build_document_review_runner()
+        with self._startup_profiler.phase("document_workflow", "Document workflow"):
+            self._local_filesystem = local_filesystem or WindowsLocalFileSystemAdapter()
+            self.document_review_workflow = LocalTextDocumentReviewWorkflow(
+                filesystem=self._local_filesystem,
+            )
+            self.document_review_runner = self._build_document_review_runner()
+        self._startup_profiler.complete()
 
     def status_snapshot(self) -> AppStatusSnapshot:
         return AppStatusSnapshot(
@@ -257,6 +288,39 @@ class JarvisAppService:
             consensus_explicit_only=True,
             voice_safety_active=True,
         )
+
+    def get_startup_profile(self) -> StartupProfileSnapshot:
+        return self._startup_profiler.snapshot(
+            eager_components=self._startup_eager_components,
+            deferred_components=self._lazy_component_snapshots(),
+            message="startup completed; optional components initialize on first explicit use",
+        )
+
+    def startup_profile_text_ru(self) -> str:
+        profile = self.get_startup_profile()
+        lines = [
+            "Startup profile:",
+            f"- startup completed: {'yes' if profile.startup_completed else 'no'}",
+            f"- total duration ms: {profile.total_duration_ms:.3f}",
+            "- external telemetry: no",
+            "- persisted: no",
+            "- no secrets",
+            "Phases:",
+        ]
+        for phase in profile.phases:
+            lines.append(
+                f"- {phase.phase_id}: {phase.duration_ms:.3f} ms | "
+                f"succeeded: {'yes' if phase.succeeded else 'no'} | "
+                f"error: {phase.error_code or 'none'}"
+            )
+        lines.append("Optional components:")
+        for component in profile.deferred_components:
+            lines.append(
+                f"- {component.component_id}: {component.state} | "
+                f"initialization_count: {component.initialization_count} | "
+                f"error: {component.error_code or 'none'}"
+            )
+        return "\n".join(lines)
 
     def language_settings(self) -> dict[str, str]:
         return self.language_manager.status_dict()
@@ -992,6 +1056,9 @@ class JarvisAppService:
         if not isinstance(source, AppCommandSource):
             source = AppCommandSource.UNKNOWN
         input_text = str(text or "").strip()
+        startup_profile_result = self._handle_startup_profile_command(input_text, source)
+        if startup_profile_result is not None:
+            return startup_profile_result
         language_result = self._handle_language_preference_command(input_text, source)
         if language_result is not None:
             return language_result
@@ -1109,6 +1176,9 @@ class JarvisAppService:
         if not isinstance(source, AppCommandSource):
             source = AppCommandSource.UNKNOWN
         input_text = str(text or "").strip()
+        startup_profile_result = self._handle_startup_profile_command(input_text, source)
+        if startup_profile_result is not None:
+            return startup_profile_result
         language_result = self._handle_language_preference_command(input_text, source)
         if language_result is not None:
             return language_result
@@ -2519,6 +2589,34 @@ class JarvisAppService:
         if recognizer is not None and hasattr(recognizer, "preferred_language_code"):
             recognizer.preferred_language_code = self.language_manager.runtime_locale()
 
+    def _handle_startup_profile_command(
+        self,
+        input_text: str,
+        source: AppCommandSource,
+    ) -> AppCommandResult | None:
+        normalized = self.command_registry.normalize_alias(input_text)
+        if normalized not in {
+            "статус запуска",
+            "профиль запуска",
+            "startup status",
+            "startup profile",
+        }:
+            return None
+        return AppCommandResult(
+            ok=True,
+            input_text=input_text,
+            output_text=self.startup_profile_text_ru(),
+            source=source,
+            registry_match_id="app.startup_profile",
+            category="app",
+            risk_level="read_only",
+            executed=False,
+            requires_confirmation=False,
+            network_may_be_used=False,
+            response_executed_as_command=False,
+            error=None,
+        )
+
     @staticmethod
     def _summary_for_metadata(metadata: CommandMetadata) -> str:
         flags = []
@@ -2579,26 +2677,59 @@ class JarvisAppService:
         )
 
     def _provider_runtime(self):
-        runtime = getattr(self.command_processor, "secure_provider_runtime", None)
-        if runtime is not None:
-            return runtime
-        return SecureProviderRuntime()
+        return self._provider_runtime_component.get()
 
     def _get_one_shot_voice_recognition(self):
         if self.one_shot_voice_recognition is not None:
             return self.one_shot_voice_recognition
+        self.one_shot_voice_recognition = self._one_shot_voice_component.get()
+        return self.one_shot_voice_recognition
+
+    def _default_provider_runtime_factory(self):
+        runtime = getattr(self.command_processor, "secure_provider_runtime", None)
+        if runtime is not None:
+            if isinstance(runtime, LazyComponent):
+                return runtime.get()
+            return runtime
+        return SecureProviderRuntime()
+
+    def _default_one_shot_voice_recognition_factory(self):
+        recognizer = getattr(self.command_processor, "one_shot_vosk_real_recognition", None)
+        if recognizer is not None:
+            if isinstance(recognizer, LazyComponent):
+                return recognizer.get()
+            return recognizer
         recognizer_factory = getattr(
             self.command_processor,
             "_get_one_shot_vosk_real_recognition",
             None,
         )
         if callable(recognizer_factory):
-            self.one_shot_voice_recognition = recognizer_factory()
-            return self.one_shot_voice_recognition
+            return recognizer_factory()
         from voice.one_shot_vosk_real_recognition import OneShotVoskRealRecognition
 
-        self.one_shot_voice_recognition = OneShotVoskRealRecognition()
-        return self.one_shot_voice_recognition
+        return OneShotVoskRealRecognition()
+
+    def _lazy_component_snapshots(self):
+        snapshots = [
+            self._provider_runtime_component.snapshot(),
+            self._one_shot_voice_component.snapshot(),
+        ]
+        for name in (
+            "secure_provider_runtime",
+            "ai_provider_router",
+            "openai_request_gate",
+            "gemini_request_gate",
+            "groq_request_gate",
+            "gigachat_request_gate",
+            "ollama_request_gate",
+            "voice_output_manager",
+            "one_shot_vosk_real_recognition",
+        ):
+            component = getattr(self.command_processor, name, None)
+            if isinstance(component, LazyComponent):
+                snapshots.append(component.snapshot())
+        return tuple(snapshots)
 
     def _cleanup_one_shot_voice_recognition(self):
         recognizer = self.one_shot_voice_recognition

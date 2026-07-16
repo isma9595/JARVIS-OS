@@ -27,6 +27,7 @@ from core.policy_boundary import (
     PolicyDecisionType,
     policy_request_from_metadata,
 )
+from core.lazy_component import LazyComponent
 from language.language_manager import ApplicationLanguageManager
 from dialogue import (
     AssistantResponseHistory,
@@ -1467,44 +1468,75 @@ class CommandProcessor:
         self.ai_context_privacy_policy = (
             ai_context_privacy_policy or AIContextPrivacyPolicy()
         )
-        self.api_key_manager = api_key_manager or ApiKeyManager()
+        self.api_key_manager = api_key_manager or LazyComponent(
+            "api_key_manager",
+            lambda: ApiKeyManager(),
+            failure_error_code="api_key_manager_initialization_failed",
+        )
         self.secure_provider_runtime = (
             secure_provider_runtime
-            or SecureProviderRuntime(api_key_manager=self.api_key_manager)
+            or LazyComponent(
+                "secure_provider_runtime",
+                lambda: SecureProviderRuntime(
+                    api_key_manager=self._lazy_instance(self.api_key_manager)
+                ),
+                failure_error_code="provider_runtime_initialization_failed",
+            )
         )
-        self.ai_provider_router = ai_provider_router or AIProviderRouter(
-            config_manager=self.ai_provider_config_manager
+        self.ai_provider_router = ai_provider_router or LazyComponent(
+            "ai_provider_router",
+            lambda: AIProviderRouter(config_manager=self.ai_provider_config_manager),
+            failure_error_code="provider_router_initialization_failed",
         )
-        self.openai_request_gate = openai_request_gate or OpenAIRequestGate(
-            config_manager=self.ai_provider_config_manager,
-            router=self.ai_provider_router,
-            context_privacy_policy=self.ai_context_privacy_policy,
-            credential_runtime=self.secure_provider_runtime,
+        self.openai_request_gate = openai_request_gate or LazyComponent(
+            "openai_request_gate",
+            lambda: OpenAIRequestGate(
+                config_manager=self.ai_provider_config_manager,
+                router=self._lazy_instance(self.ai_provider_router),
+                context_privacy_policy=self.ai_context_privacy_policy,
+                credential_runtime=self._lazy_instance(self.secure_provider_runtime),
+            ),
+            failure_error_code="openai_gate_initialization_failed",
         )
-        self.gemini_request_gate = gemini_request_gate or GeminiRequestGate(
-            config_manager=self.ai_provider_config_manager,
-            router=self.ai_provider_router,
-            context_privacy_policy=self.ai_context_privacy_policy,
-            credential_runtime=self.secure_provider_runtime,
+        self.gemini_request_gate = gemini_request_gate or LazyComponent(
+            "gemini_request_gate",
+            lambda: GeminiRequestGate(
+                config_manager=self.ai_provider_config_manager,
+                router=self._lazy_instance(self.ai_provider_router),
+                context_privacy_policy=self.ai_context_privacy_policy,
+                credential_runtime=self._lazy_instance(self.secure_provider_runtime),
+            ),
+            failure_error_code="gemini_gate_initialization_failed",
         )
-        self.groq_request_gate = groq_request_gate or GroqRequestGate(
-            config_manager=self.ai_provider_config_manager,
-            router=self.ai_provider_router,
-            context_privacy_policy=self.ai_context_privacy_policy,
-            credential_runtime=self.secure_provider_runtime,
+        self.groq_request_gate = groq_request_gate or LazyComponent(
+            "groq_request_gate",
+            lambda: GroqRequestGate(
+                config_manager=self.ai_provider_config_manager,
+                router=self._lazy_instance(self.ai_provider_router),
+                context_privacy_policy=self.ai_context_privacy_policy,
+                credential_runtime=self._lazy_instance(self.secure_provider_runtime),
+            ),
+            failure_error_code="groq_gate_initialization_failed",
         )
-        self.gigachat_request_gate = gigachat_request_gate or GigaChatRequestGate(
-            config_manager=self.ai_provider_config_manager,
-            router=self.ai_provider_router,
-            context_privacy_policy=self.ai_context_privacy_policy,
-            credential_runtime=self.secure_provider_runtime,
+        self.gigachat_request_gate = gigachat_request_gate or LazyComponent(
+            "gigachat_request_gate",
+            lambda: GigaChatRequestGate(
+                config_manager=self.ai_provider_config_manager,
+                router=self._lazy_instance(self.ai_provider_router),
+                context_privacy_policy=self.ai_context_privacy_policy,
+                credential_runtime=self._lazy_instance(self.secure_provider_runtime),
+            ),
+            failure_error_code="gigachat_gate_initialization_failed",
         )
-        self.ollama_request_gate = ollama_request_gate or OllamaRequestGate(
-            context_privacy_policy=self.ai_context_privacy_policy,
+        self.ollama_request_gate = ollama_request_gate or LazyComponent(
+            "ollama_request_gate",
+            lambda: OllamaRequestGate(
+                context_privacy_policy=self.ai_context_privacy_policy,
+            ),
+            failure_error_code="ollama_gate_initialization_failed",
         )
         self.ai_provider_language_policy = (
             ai_provider_language_policy
-            or getattr(self.openai_request_gate, "language_policy", None)
             or AIProviderLanguagePolicy()
         )
         self.ai_provider_session_state = (
@@ -1512,15 +1544,19 @@ class CommandProcessor:
         )
         self.ai_provider_consensus_manager = (
             ai_provider_consensus_manager
-            or AIProviderConsensusManager(
-                config_manager=self.ai_provider_config_manager,
-                request_gates={
-                    "openai": self.openai_request_gate,
-                    "gemini": self.gemini_request_gate,
-                    "groq": self.groq_request_gate,
-                    "gigachat": self.gigachat_request_gate,
-                },
-                context_privacy_policy=self.ai_context_privacy_policy,
+            or LazyComponent(
+                "ai_provider_consensus_manager",
+                lambda: AIProviderConsensusManager(
+                    config_manager=self.ai_provider_config_manager,
+                    request_gates={
+                        "openai": self.openai_request_gate,
+                        "gemini": self.gemini_request_gate,
+                        "groq": self.groq_request_gate,
+                        "gigachat": self.gigachat_request_gate,
+                    },
+                    context_privacy_policy=self.ai_context_privacy_policy,
+                ),
+                failure_error_code="provider_consensus_initialization_failed",
             )
         )
         self.ai_provider_selection_policy = (
@@ -1532,25 +1568,33 @@ class CommandProcessor:
         )
         self.ai_provider_fallback_executor = (
             ai_provider_fallback_executor
-            or AIProviderFallbackExecutor(
-                config_manager=self.ai_provider_config_manager,
-                selection_policy=self.ai_provider_selection_policy,
-                context_privacy_policy=self.ai_context_privacy_policy,
-                request_gates={
-                    "openai": self.openai_request_gate,
-                    "gemini": self.gemini_request_gate,
-                    "groq": self.groq_request_gate,
-                    "gigachat": self.gigachat_request_gate,
-                    "ollama": self.ollama_request_gate,
-                },
+            or LazyComponent(
+                "ai_provider_fallback_executor",
+                lambda: AIProviderFallbackExecutor(
+                    config_manager=self.ai_provider_config_manager,
+                    selection_policy=self.ai_provider_selection_policy,
+                    context_privacy_policy=self.ai_context_privacy_policy,
+                    request_gates={
+                        "openai": self.openai_request_gate,
+                        "gemini": self.gemini_request_gate,
+                        "groq": self.groq_request_gate,
+                        "gigachat": self.gigachat_request_gate,
+                        "ollama": self.ollama_request_gate,
+                    },
+                ),
+                failure_error_code="provider_fallback_initialization_failed",
             )
         )
         self.ai_provider_live_verification = (
             ai_provider_live_verification
-            or AIProviderLiveVerification(
-                config_manager=self.ai_provider_config_manager,
-                context_privacy_policy=self.ai_context_privacy_policy,
-                ollama_runtime=self.ollama_request_gate.runtime,
+            or LazyComponent(
+                "ai_provider_live_verification",
+                lambda: AIProviderLiveVerification(
+                    config_manager=self.ai_provider_config_manager,
+                    context_privacy_policy=self.ai_context_privacy_policy,
+                    ollama_runtime=self._lazy_instance(self.ollama_request_gate).runtime,
+                ),
+                failure_error_code="provider_live_verification_initialization_failed",
             )
         )
         self.voice_input_manager = None
@@ -1618,6 +1662,12 @@ class CommandProcessor:
         self.voice_input_manager = voice_input_manager
         if hasattr(self, "audio_lifecycle_controller"):
             self.audio_lifecycle_controller.voice_input_manager = voice_input_manager
+
+    @staticmethod
+    def _lazy_instance(component):
+        if isinstance(component, LazyComponent):
+            return component.get()
+        return component
 
     def set_voice_output_manager(self, voice_output_manager):
         self.voice_output_manager = voice_output_manager
