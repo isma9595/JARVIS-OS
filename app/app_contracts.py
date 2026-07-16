@@ -209,6 +209,11 @@ class AppExecutionContract(_ContractMixin):
     clarification_question: str | None = None
     clarification_options: tuple[AppClarificationOption, ...] = ()
     policy_decision: dict[str, object] | None = None
+    operation_id: str | None = None
+    operation_status: str | None = None
+    idempotency_key: str | None = None
+    duplicate_suppressed: bool = False
+    cancellable: bool = False
 
     def safe_text_ru(self) -> str:
         lines = [
@@ -221,6 +226,10 @@ class AppExecutionContract(_ContractMixin):
             f"- executed: {'yes' if self.executed else 'no'}",
             f"- requires confirmation: {'yes' if self.requires_confirmation else 'no'}",
             f"- requires clarification: {'yes' if self.requires_clarification else 'no'}",
+            f"- operation id: {self.operation_id or 'none'}",
+            f"- operation status: {self.operation_status or 'none'}",
+            f"- duplicate suppressed: {'yes' if self.duplicate_suppressed else 'no'}",
+            f"- cancellable: {'yes' if self.cancellable else 'no'}",
             f"- network may be used: {'yes' if self.network_may_be_used else 'no'}",
             "- response executed as command: no",
             "- secrets included: no",
@@ -263,6 +272,11 @@ class AppVoiceRequestResult(_ContractMixin):
     normalized_text: str | None = None
     normalization_applied: bool = False
     normalization_rules: tuple[str, ...] = ()
+    operation_id: str | None = None
+    operation_status: str | None = None
+    idempotency_key: str | None = None
+    duplicate_suppressed: bool = False
+    cancellable: bool = False
 
     def safe_text_ru(self) -> str:
         lines = [
@@ -278,6 +292,9 @@ class AppVoiceRequestResult(_ContractMixin):
             f"- text processing succeeded: {'yes' if self.text_processing_succeeded else 'no'}",
             f"- result type: {self.result_type}",
             f"- category: {self.category or 'unknown'}",
+            f"- operation id: {self.operation_id or 'none'}",
+            f"- operation status: {self.operation_status or 'none'}",
+            f"- duplicate suppressed: {'yes' if self.duplicate_suppressed else 'no'}",
             f"- requires confirmation: {'yes' if self.requires_confirmation else 'no'}",
             f"- error code: {self.error_code or 'none'}",
             f"- message: {safe_contract_text(self.user_message)}",

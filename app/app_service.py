@@ -46,6 +46,8 @@ from core.policy_boundary import (
     PolicyDecisionType,
     policy_request_from_metadata,
 )
+from core.execution_coordinator import ExecutionCoordinator
+from core.execution_journal import ExecutionOperation, safe_journal_text
 from language.language_manager import ApplicationLanguageManager
 from voice.audio_lifecycle import AudioLifecycleController, AudioLifecycleStatus
 from voice.russian_voice_normalizer import normalize_russian_voice_text
@@ -98,6 +100,21 @@ class AppCommandResult:
     clarification_question: str | None = None
     clarification_options: tuple[AppClarificationOption, ...] = ()
     policy_decision: object | None = None
+    operation_id: str | None = None
+    operation_status: str | None = None
+    idempotency_key: str | None = None
+    duplicate_suppressed: bool = False
+    cancellable: bool = False
+
+
+@dataclass(frozen=True)
+class PendingAppConfirmation:
+    operation_id: str
+    idempotency_key: str
+    request_fingerprint: str
+    command_text: str
+    source: str
+    resolution: object | None = None
 
 
 @dataclass(frozen=True)
@@ -160,7 +177,11 @@ class JarvisAppService:
         )
         self.intent_resolver = HybridIntentResolver(self.command_registry)
         self._pending_clarification: ClarificationState | None = None
+        self._pending_clarification_operation_id: str | None = None
+        self._pending_confirmation: PendingAppConfirmation | None = None
+        self._operation_results: dict[str, AppCommandResult] = {}
         self.policy_boundary = PolicyDecisionBoundary()
+        self.execution_coordinator = ExecutionCoordinator()
 
     def status_snapshot(self) -> AppStatusSnapshot:
         return AppStatusSnapshot(
@@ -454,8 +475,9 @@ class JarvisAppService:
         self,
         text: str,
         source: AppCommandSource = AppCommandSource.DESKTOP_UI,
+        idempotency_key: str | None = None,
     ) -> AppExecutionContract:
-        result = self.execute_command(text, source)
+        result = self.execute_command(text, source, idempotency_key=idempotency_key)
         return AppExecutionContract(
             ok=result.ok,
             input_text=safe_contract_text(result.input_text),
@@ -483,6 +505,11 @@ class JarvisAppService:
                 if hasattr(result.policy_decision, "to_dict")
                 else result.policy_decision
             ),
+            operation_id=result.operation_id,
+            operation_status=result.operation_status,
+            idempotency_key=result.idempotency_key,
+            duplicate_suppressed=result.duplicate_suppressed,
+            cancellable=result.cancellable,
         )
 
     def process_one_shot_voice_request(
@@ -588,6 +615,11 @@ class JarvisAppService:
                 raw_audio_included=False,
                 provider_objects_included=False,
                 microphone_objects_included=False,
+                operation_id=text_result.operation_id,
+                operation_status=text_result.operation_status,
+                idempotency_key=text_result.idempotency_key,
+                duplicate_suppressed=text_result.duplicate_suppressed,
+                cancellable=text_result.cancellable,
             )
         except Exception as exc:
             return self._voice_error_result(
@@ -803,6 +835,113 @@ class JarvisAppService:
         self,
         text: str,
         source: AppCommandSource = AppCommandSource.DESKTOP_UI,
+        idempotency_key: str | None = None,
+    ) -> AppCommandResult:
+        if not isinstance(source, AppCommandSource):
+            source = AppCommandSource.UNKNOWN
+        input_text = str(text or "").strip()
+        resolution = self.intent_resolver.resolve(
+            original_text=input_text,
+            processing_text=input_text,
+            source=source.value,
+        )
+
+        pending_result = self._consume_pending_control_response(input_text, source, resolution)
+        if pending_result is not None:
+            return pending_result
+
+        command_text = resolution.command_text or input_text
+        metadata = self._match_registry_command(command_text)
+        action_id = None if metadata is not None else self._action_id_for_text(command_text)
+        fingerprint = self.execution_coordinator.create_request_fingerprint(
+            source=source.value,
+            text=command_text,
+            command_id=metadata.command_id if metadata is not None else None,
+            action_id=action_id,
+        )
+        registration = self.execution_coordinator.register(
+            source=source.value,
+            idempotency_key=idempotency_key,
+            request_fingerprint=fingerprint,
+            command_id=metadata.command_id if metadata is not None else None,
+            action_id=action_id,
+            metadata={
+                "input_preview": safe_journal_text(input_text),
+                "intent_kind": getattr(resolution.intent_kind, "value", None),
+            },
+        )
+        operation = registration.operation
+        if registration.duplicate:
+            existing = self._operation_results.get(operation.operation_id)
+            if existing is not None:
+                return self._with_operation(existing, operation, duplicate_suppressed=True)
+            return self._operation_metadata_result(
+                input_text=input_text,
+                source=source,
+                operation=operation,
+                output_text="Повторный запрос подавлен: операция уже зарегистрирована.",
+                category="duplicate_suppressed",
+                risk_level="safe_metadata_only",
+            )
+        if registration.conflict:
+            result = self._operation_metadata_result(
+                input_text=input_text,
+                source=source,
+                operation=operation,
+                output_text="Запрос отклонён: конфликт idempotency key. Команда не запускалась.",
+                category="policy_denied",
+                risk_level="safe_metadata_only",
+                error="idempotency_conflict",
+            )
+            self._remember_operation_result(result)
+            return result
+
+        result = self._execute_command_uncoordinated(input_text, source)
+        if result.requires_clarification:
+            self._pending_clarification_operation_id = operation.operation_id
+            operation = self.execution_coordinator.mark_awaiting_clarification(
+                operation.operation_id
+            )
+        elif result.category == "policy_denied":
+            policy_dict = (
+                result.policy_decision.to_dict()
+                if hasattr(result.policy_decision, "to_dict")
+                else None
+            )
+            operation = self.execution_coordinator.mark_denied(
+                operation.operation_id,
+                policy_decision=policy_dict,
+            )
+        elif result.requires_confirmation and not result.executed:
+            self._pending_confirmation = PendingAppConfirmation(
+                operation_id=operation.operation_id,
+                idempotency_key=operation.idempotency_key,
+                request_fingerprint=operation.request_fingerprint,
+                command_text=command_text,
+                source=source.value,
+                resolution=resolution,
+            )
+            operation = self.execution_coordinator.mark_awaiting_confirmation(
+                operation.operation_id
+            )
+        elif result.executed:
+            operation = self.execution_coordinator.mark_succeeded(
+                operation.operation_id,
+                summary=result.output_text,
+            )
+        else:
+            operation = self.execution_coordinator.mark_succeeded(
+                operation.operation_id,
+                summary=result.output_text or result.category,
+            )
+        result = self._with_operation(result, operation)
+        self._remember_operation_result(result)
+        return result
+
+    def _execute_command_uncoordinated(
+        self,
+        text: str,
+        source: AppCommandSource = AppCommandSource.DESKTOP_UI,
     ) -> AppCommandResult:
         if not isinstance(source, AppCommandSource):
             source = AppCommandSource.UNKNOWN
@@ -920,6 +1059,7 @@ class JarvisAppService:
         input_text: str,
         source: AppCommandSource,
         resolution=None,
+        confirmation_present: bool = False,
     ) -> AppCommandResult:
         preview = self.preview_command(input_text)
         metadata = self._match_registry_command(input_text)
@@ -929,7 +1069,7 @@ class JarvisAppService:
                 text=input_text,
                 metadata=metadata,
                 intent_kind=getattr(getattr(resolution, "intent_kind", None), "value", None),
-                confirmation_present=False,
+                confirmation_present=confirmation_present,
                 clarification_resolved=True,
             )
         )
@@ -971,7 +1111,7 @@ class JarvisAppService:
                 intent_resolution=resolution,
                 policy_decision=policy_decision,
             )
-        if preview.known_command and preview.requires_confirmation:
+        if preview.known_command and preview.requires_confirmation and not confirmation_present:
             return AppCommandResult(
                 ok=True,
                 input_text=input_text,
@@ -992,7 +1132,22 @@ class JarvisAppService:
                 policy_decision=policy_decision,
             )
         try:
+            previous_confirmation = getattr(
+                self.command_processor,
+                "_policy_confirmation_for_command",
+                None,
+            )
+            if confirmation_present and hasattr(
+                self.command_processor,
+                "_policy_confirmation_for_command",
+            ):
+                self.command_processor._policy_confirmation_for_command = input_text
             processor_result = self.command_processor.process(input_text)
+            if confirmation_present and hasattr(
+                self.command_processor,
+                "_policy_confirmation_for_command",
+            ):
+                self.command_processor._policy_confirmation_for_command = previous_confirmation
             output_text = str(processor_result.get("response", processor_result))
             return AppCommandResult(
                 ok=True,
@@ -1011,6 +1166,11 @@ class JarvisAppService:
                 policy_decision=policy_decision,
             )
         except Exception as exc:
+            if confirmation_present and hasattr(
+                self.command_processor,
+                "_policy_confirmation_for_command",
+            ):
+                self.command_processor._policy_confirmation_for_command = previous_confirmation
             return AppCommandResult(
                 ok=False,
                 input_text=input_text,
@@ -1028,6 +1188,230 @@ class JarvisAppService:
                 policy_decision=policy_decision,
             )
 
+    def _consume_pending_control_response(
+        self,
+        input_text: str,
+        source: AppCommandSource,
+        resolution,
+    ) -> AppCommandResult | None:
+        if self._pending_clarification is not None:
+            operation_id = self._pending_clarification_operation_id
+            if (
+                resolution.intent_kind == IntentKind.CANCELLATION_RESPONSE
+                and operation_id is not None
+            ):
+                self._pending_clarification = None
+                self._pending_clarification_operation_id = None
+                operation = self.execution_coordinator.cancel(
+                    operation_id,
+                    reason="clarification_cancelled",
+                )
+                result = self._operation_metadata_result(
+                    input_text=input_text,
+                    source=source,
+                    operation=operation,
+                    output_text="Уточнение отменено. Команда не запускалась.",
+                    category="clarification",
+                    risk_level="read_only",
+                )
+                self._remember_operation_result(result)
+                return result
+            if operation_id is not None:
+                return self._continue_clarification_operation(
+                    input_text,
+                    source,
+                    operation_id,
+                )
+
+        pending = self._pending_confirmation
+        if pending is None:
+            return None
+        if resolution.intent_kind == IntentKind.CANCELLATION_RESPONSE:
+            self._pending_confirmation = None
+            operation = self.execution_coordinator.cancel(
+                pending.operation_id,
+                reason="confirmation_cancelled",
+            )
+            result = self._operation_metadata_result(
+                input_text=input_text,
+                source=source,
+                operation=operation,
+                output_text="Подтверждение отменено. Команда не запускалась.",
+                category="confirmation",
+                risk_level="confirmation_required",
+            )
+            self._remember_operation_result(result)
+            return result
+        if resolution.intent_kind != IntentKind.CONFIRMATION_RESPONSE:
+            self._pending_confirmation = None
+            return None
+
+        self._pending_confirmation = None
+        operation = self.execution_coordinator.journal.get(pending.operation_id)
+        if operation is None or operation.request_fingerprint != pending.request_fingerprint:
+            return self._operation_metadata_result(
+                input_text=input_text,
+                source=source,
+                operation=operation,
+                output_text="Подтверждение устарело. Команда не запускалась.",
+                category="confirmation",
+                risk_level="confirmation_required",
+                error="stale_confirmation",
+            )
+        self.execution_coordinator.mark_running(pending.operation_id)
+        result = self._execute_resolved_command(
+            pending.command_text,
+            source,
+            pending.resolution,
+            confirmation_present=True,
+        )
+        if result.executed:
+            operation = self.execution_coordinator.mark_succeeded(
+                pending.operation_id,
+                summary=result.output_text,
+            )
+        elif result.policy_decision is not None:
+            policy_dict = (
+                result.policy_decision.to_dict()
+                if hasattr(result.policy_decision, "to_dict")
+                else None
+            )
+            operation = self.execution_coordinator.mark_denied(
+                pending.operation_id,
+                policy_decision=policy_dict,
+                error_code="confirmation_policy_denied",
+            )
+        else:
+            operation = self.execution_coordinator.mark_failed(
+                pending.operation_id,
+                error_code=result.error or "confirmation_not_executed",
+            )
+        result = self._with_operation(result, operation)
+        self._remember_operation_result(result)
+        return result
+
+    def _continue_clarification_operation(
+        self,
+        input_text: str,
+        source: AppCommandSource,
+        operation_id: str,
+    ) -> AppCommandResult | None:
+        result = self._consume_pending_clarification(input_text, source)
+        if result is None:
+            return None
+        operation = self.execution_coordinator.journal.get(operation_id)
+        if result.executed:
+            operation = self.execution_coordinator.mark_succeeded(
+                operation_id,
+                summary=result.output_text,
+            )
+        elif result.requires_confirmation:
+            self._pending_confirmation = PendingAppConfirmation(
+                operation_id=operation_id,
+                idempotency_key=operation.idempotency_key if operation else "",
+                request_fingerprint=operation.request_fingerprint if operation else "",
+                command_text=result.input_text,
+                source=source.value,
+                resolution=result.intent_resolution,
+            )
+            operation = self.execution_coordinator.mark_awaiting_confirmation(operation_id)
+        elif result.category == "policy_denied":
+            operation = self.execution_coordinator.mark_denied(operation_id)
+        elif result.category == "clarification":
+            operation = self.execution_coordinator.cancel(
+                operation_id,
+                reason="clarification_cancelled",
+            )
+        else:
+            operation = self.execution_coordinator.mark_succeeded(
+                operation_id,
+                summary=result.output_text or result.category,
+            )
+        result = self._with_operation(result, operation)
+        self._remember_operation_result(result)
+        return result
+
+    def _operation_metadata_result(
+        self,
+        *,
+        input_text: str,
+        source: AppCommandSource,
+        operation: ExecutionOperation | None,
+        output_text: str,
+        category: str,
+        risk_level: str,
+        error: str | None = None,
+    ) -> AppCommandResult:
+        result = AppCommandResult(
+            ok=error is None,
+            input_text=input_text,
+            output_text=output_text,
+            source=source,
+            registry_match_id=operation.command_id if operation is not None else None,
+            category=category,
+            risk_level=risk_level,
+            executed=False,
+            requires_confirmation=False,
+            network_may_be_used=False,
+            response_executed_as_command=False,
+            error=error,
+        )
+        return self._with_operation(result, operation)
+
+    def _with_operation(
+        self,
+        result: AppCommandResult,
+        operation: ExecutionOperation | None,
+        *,
+        duplicate_suppressed: bool | None = None,
+    ) -> AppCommandResult:
+        if operation is None:
+            return result
+        return AppCommandResult(
+            ok=result.ok,
+            input_text=result.input_text,
+            output_text=result.output_text,
+            source=result.source,
+            registry_match_id=result.registry_match_id,
+            category=result.category,
+            risk_level=result.risk_level,
+            executed=result.executed,
+            requires_confirmation=result.requires_confirmation,
+            network_may_be_used=result.network_may_be_used,
+            response_executed_as_command=result.response_executed_as_command,
+            error=result.error,
+            intent_resolution=result.intent_resolution,
+            requires_clarification=result.requires_clarification,
+            clarification_question=result.clarification_question,
+            clarification_options=result.clarification_options,
+            policy_decision=result.policy_decision,
+            operation_id=operation.operation_id,
+            operation_status=operation.status.value,
+            idempotency_key=operation.idempotency_key,
+            duplicate_suppressed=(
+                operation.duplicate_suppressed
+                if duplicate_suppressed is None
+                else duplicate_suppressed
+            ),
+            cancellable=operation.cancellable,
+        )
+
+    def _remember_operation_result(self, result: AppCommandResult) -> None:
+        if result.operation_id:
+            self._operation_results[result.operation_id] = result
+
+    def recent_execution_operations(self, limit: int | None = 20) -> tuple[dict[str, object], ...]:
+        return self.execution_coordinator.journal.recent_dicts(limit)
+
+    @staticmethod
+    def _action_id_for_text(text: str) -> str | None:
+        normalized = str(text or "").strip().lower()
+        if "system32" in normalized:
+            return "system.delete_protected_path"
+        if normalized.startswith(("удали файл ", "удалить файл ", "СѓРґР°Р»Рё С„Р°Р№Р» ")):
+            return "file.delete"
+        return None
+
     def _consume_pending_clarification(
         self,
         input_text: str,
@@ -1043,6 +1427,7 @@ class JarvisAppService:
         )
         if resolution.intent_kind == IntentKind.CANCELLATION_RESPONSE:
             self._pending_clarification = None
+            self._pending_clarification_operation_id = None
             return AppCommandResult(
                 ok=True,
                 input_text=input_text,
@@ -1065,8 +1450,10 @@ class JarvisAppService:
                 break
         if selected is None:
             self._pending_clarification = None
+            self._pending_clarification_operation_id = None
             return None
         self._pending_clarification = None
+        self._pending_clarification_operation_id = None
         selected_resolution = self.intent_resolver.resolve(
             original_text=state.original_text,
             processing_text=selected.command_text,
