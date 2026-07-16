@@ -22,6 +22,11 @@ from ai import (
 )
 from core.action_router import SafeActionRouter
 from core.command_registry import CommandCategory, DEFAULT_COMMAND_REGISTRY
+from core.policy_boundary import (
+    PolicyDecisionBoundary,
+    PolicyDecisionType,
+    policy_request_from_metadata,
+)
 from dialogue import (
     AssistantResponseHistory,
     DialogueManager,
@@ -1601,6 +1606,8 @@ class CommandProcessor:
             )
         self.audio_lifecycle_controller = audio_lifecycle_controller
         self.command_registry = command_registry or DEFAULT_COMMAND_REGISTRY
+        self.policy_boundary = PolicyDecisionBoundary()
+        self._policy_confirmation_for_command = None
 
     def set_voice_input_manager(self, voice_input_manager):
         self.voice_input_manager = voice_input_manager
@@ -2979,6 +2986,11 @@ class CommandProcessor:
         if command in self.IDEA_COUNT_COMMANDS:
             return self._count_ideas()
 
+        policy_decision = self._policy_decision_for_command(command_text, command)
+        policy_block = self._policy_block_result(policy_decision)
+        if policy_block is not None:
+            return policy_block
+
         route = self.action_router.route(command)
         if route["category"] != "idea":
             return self._route_result(route)
@@ -2994,6 +3006,73 @@ class CommandProcessor:
             return ""
 
         return " ".join(str(command_text).strip().lower().split())
+
+    def _policy_decision_for_command(
+        self,
+        command_text,
+        normalized_command,
+        intent_kind="local_command",
+        metadata=None,
+        confirmation_present=None,
+    ):
+        metadata = metadata or self._policy_metadata_for_command(normalized_command)
+        if confirmation_present is None:
+            confirmation_present = (
+                self._policy_confirmation_for_command is not None
+                and self._normalize(self._policy_confirmation_for_command) == normalized_command
+            )
+        return self.policy_boundary.evaluate(
+            policy_request_from_metadata(
+                source="command_processor",
+                text=command_text,
+                metadata=metadata,
+                intent_kind=intent_kind,
+                confirmation_present=confirmation_present,
+                clarification_resolved=True,
+            )
+        )
+
+    def _policy_metadata_for_command(self, normalized_command):
+        exact = self.command_registry.find_by_alias(normalized_command)
+        if exact is not None:
+            return exact
+        normalized = self.command_registry.normalize_alias(normalized_command)
+        for command in self.command_registry.commands:
+            for alias in command.aliases:
+                normalized_alias = self.command_registry.normalize_alias(alias)
+                if "<text>" not in normalized_alias:
+                    continue
+                prefix = normalized_alias.split("<text>", 1)[0].strip()
+                if prefix and normalized.startswith(prefix):
+                    return command
+        return None
+
+    def _policy_block_result(self, decision):
+        if decision.decision == PolicyDecisionType.DENY:
+            return {
+                "intent": "action.forbidden",
+                "response": decision.user_message,
+                "should_exit": False,
+                "category": "forbidden",
+                "risk_level": "high",
+                "allowed": False,
+                "requires_confirmation": False,
+                "reason": ", ".join(decision.reason_codes),
+                "policy_decision": decision.to_dict(),
+            }
+        if decision.decision == PolicyDecisionType.REQUIRE_CONFIRMATION:
+            return {
+                "intent": "policy.confirmation_required",
+                "response": decision.user_message,
+                "should_exit": False,
+                "category": "confirmation_required",
+                "risk_level": "confirmation_required",
+                "allowed": True,
+                "requires_confirmation": True,
+                "reason": ", ".join(decision.reason_codes),
+                "policy_decision": decision.to_dict(),
+            }
+        return None
 
     def _command_registry_result(self, command):
         app_service_result = self._app_service_result(command)
@@ -3645,9 +3724,11 @@ class CommandProcessor:
                 False,
             )
             self._suppress_conversational_fallback = True
+            self._policy_confirmation_for_command = pending_command
             try:
                 result = self.process(pending_command)
             finally:
+                self._policy_confirmation_for_command = None
                 self._suppress_conversational_fallback = previous_suppression
             canonical_command = result.get("canonical_voice_command") or pending_command
             status = self._confirmed_voice_command_history_status(result)
@@ -4020,6 +4101,15 @@ class CommandProcessor:
         )
 
     def _generate_ai_consensus_result(self, prompt):
+        decision = self._policy_decision_for_command(
+            self._current_source_command,
+            self._normalize(self._current_source_command),
+            intent_kind="provider_request",
+            confirmation_present=True,
+        )
+        block = self._policy_block_result(decision)
+        if block is not None:
+            return block
         result = self.ai_provider_consensus_manager.run_consensus(prompt)
         text = self.ai_provider_consensus_manager.format_result_text(result)
         intent = "ai.consensus" if result.ok else "ai.consensus.error"
@@ -4033,6 +4123,15 @@ class CommandProcessor:
         return self._result("ai.fallback_execution.plan", text)
 
     def _execute_ai_fallback_result(self, prompt):
+        decision = self._policy_decision_for_command(
+            self._current_source_command,
+            self._normalize(self._current_source_command),
+            intent_kind="provider_request",
+            confirmation_present=True,
+        )
+        block = self._policy_block_result(decision)
+        if block is not None:
+            return block
         result = self.ai_provider_fallback_executor.execute(
             prompt,
             session_snapshot=self.ai_provider_session_state.snapshot(),
@@ -4115,6 +4214,15 @@ class CommandProcessor:
         return self._result(result_intent, text)
 
     def _generate_openai_one_shot_result(self, prompt):
+        decision = self._policy_decision_for_command(
+            self._current_source_command,
+            self._normalize(self._current_source_command),
+            intent_kind="provider_request",
+            confirmation_present=True,
+        )
+        block = self._policy_block_result(decision)
+        if block is not None:
+            return block
         request = AIRequest(
             prompt=prompt,
             task_type=AIProviderCapability.CHAT.value,
@@ -4162,6 +4270,15 @@ class CommandProcessor:
         return self._result("ai.openai.one_shot", text)
 
     def _generate_gemini_one_shot_result(self, prompt):
+        decision = self._policy_decision_for_command(
+            self._current_source_command,
+            self._normalize(self._current_source_command),
+            intent_kind="provider_request",
+            confirmation_present=True,
+        )
+        block = self._policy_block_result(decision)
+        if block is not None:
+            return block
         request = AIRequest(
             prompt=prompt,
             task_type=AIProviderCapability.CHAT.value,
@@ -4209,6 +4326,15 @@ class CommandProcessor:
         return self._result("ai.gemini.one_shot", text)
 
     def _generate_groq_one_shot_result(self, prompt):
+        decision = self._policy_decision_for_command(
+            self._current_source_command,
+            self._normalize(self._current_source_command),
+            intent_kind="provider_request",
+            confirmation_present=True,
+        )
+        block = self._policy_block_result(decision)
+        if block is not None:
+            return block
         request = AIRequest(
             prompt=prompt,
             task_type=AIProviderCapability.CHAT.value,
@@ -4256,6 +4382,15 @@ class CommandProcessor:
         return self._result("ai.groq.one_shot", text)
 
     def _generate_gigachat_one_shot_result(self, prompt):
+        decision = self._policy_decision_for_command(
+            self._current_source_command,
+            self._normalize(self._current_source_command),
+            intent_kind="provider_request",
+            confirmation_present=True,
+        )
+        block = self._policy_block_result(decision)
+        if block is not None:
+            return block
         request = AIRequest(
             prompt=prompt,
             task_type=AIProviderCapability.CHAT.value,
@@ -4303,6 +4438,15 @@ class CommandProcessor:
         return self._result("ai.gigachat.one_shot", text)
 
     def _generate_ollama_one_shot_result(self, prompt):
+        decision = self._policy_decision_for_command(
+            self._current_source_command,
+            self._normalize(self._current_source_command),
+            intent_kind="provider_request",
+            confirmation_present=True,
+        )
+        block = self._policy_block_result(decision)
+        if block is not None:
+            return block
         request = AIRequest(
             prompt=prompt,
             task_type=AIProviderCapability.CHAT.value,
@@ -4405,6 +4549,15 @@ class CommandProcessor:
         return "\n".join(lines)
 
     def _generate_ai_continuation_result(self, prompt):
+        decision = self._policy_decision_for_command(
+            self._current_source_command,
+            self._normalize(self._current_source_command),
+            intent_kind="provider_request",
+            confirmation_present=True,
+        )
+        block = self._policy_block_result(decision)
+        if block is not None:
+            return block
         snapshot = self.ai_provider_session_state.snapshot()
         provider = snapshot.selected_provider
         model = snapshot.selected_model

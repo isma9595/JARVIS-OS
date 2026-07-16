@@ -41,6 +41,11 @@ from core.command_registry import (
     CommandRegistry,
     DEFAULT_COMMAND_REGISTRY,
 )
+from core.policy_boundary import (
+    PolicyDecisionBoundary,
+    PolicyDecisionType,
+    policy_request_from_metadata,
+)
 from language.language_manager import ApplicationLanguageManager
 from voice.audio_lifecycle import AudioLifecycleController, AudioLifecycleStatus
 from voice.russian_voice_normalizer import normalize_russian_voice_text
@@ -92,6 +97,7 @@ class AppCommandResult:
     requires_clarification: bool = False
     clarification_question: str | None = None
     clarification_options: tuple[AppClarificationOption, ...] = ()
+    policy_decision: object | None = None
 
 
 @dataclass(frozen=True)
@@ -154,6 +160,7 @@ class JarvisAppService:
         )
         self.intent_resolver = HybridIntentResolver(self.command_registry)
         self._pending_clarification: ClarificationState | None = None
+        self.policy_boundary = PolicyDecisionBoundary()
 
     def status_snapshot(self) -> AppStatusSnapshot:
         return AppStatusSnapshot(
@@ -471,6 +478,11 @@ class JarvisAppService:
             requires_clarification=result.requires_clarification,
             clarification_question=result.clarification_question,
             clarification_options=result.clarification_options,
+            policy_decision=(
+                result.policy_decision.to_dict()
+                if hasattr(result.policy_decision, "to_dict")
+                else result.policy_decision
+            ),
         )
 
     def process_one_shot_voice_request(
@@ -910,6 +922,55 @@ class JarvisAppService:
         resolution=None,
     ) -> AppCommandResult:
         preview = self.preview_command(input_text)
+        metadata = self._match_registry_command(input_text)
+        policy_decision = self.policy_boundary.evaluate(
+            policy_request_from_metadata(
+                source=source.value,
+                text=input_text,
+                metadata=metadata,
+                intent_kind=getattr(getattr(resolution, "intent_kind", None), "value", None),
+                confirmation_present=False,
+                clarification_resolved=True,
+            )
+        )
+        if policy_decision.decision == PolicyDecisionType.DENY:
+            return AppCommandResult(
+                ok=True,
+                input_text=input_text,
+                output_text=policy_decision.user_message,
+                source=source,
+                registry_match_id=preview.registry_match_id,
+                category="policy_denied",
+                risk_level=preview.risk_level or "destructive_blocked",
+                executed=False,
+                requires_confirmation=True,
+                network_may_be_used=False,
+                response_executed_as_command=False,
+                error=None,
+                intent_resolution=resolution,
+                policy_decision=policy_decision,
+            )
+        if policy_decision.decision == PolicyDecisionType.REQUIRE_CONFIRMATION:
+            return AppCommandResult(
+                ok=True,
+                input_text=input_text,
+                output_text=(
+                    (preview.safe_summary_ru if preview.known_command else "Risky action.")
+                    + "\n"
+                    + policy_decision.user_message
+                ),
+                source=source,
+                registry_match_id=preview.registry_match_id,
+                category=preview.category,
+                risk_level=preview.risk_level,
+                executed=False,
+                requires_confirmation=True,
+                network_may_be_used=preview.requires_network,
+                response_executed_as_command=False,
+                error=None,
+                intent_resolution=resolution,
+                policy_decision=policy_decision,
+            )
         if preview.known_command and preview.requires_confirmation:
             return AppCommandResult(
                 ok=True,
@@ -928,6 +989,7 @@ class JarvisAppService:
                 response_executed_as_command=False,
                 error=None,
                 intent_resolution=resolution,
+                policy_decision=policy_decision,
             )
         try:
             processor_result = self.command_processor.process(input_text)
@@ -946,6 +1008,7 @@ class JarvisAppService:
                 response_executed_as_command=False,
                 error=None,
                 intent_resolution=resolution,
+                policy_decision=policy_decision,
             )
         except Exception as exc:
             return AppCommandResult(
@@ -962,6 +1025,7 @@ class JarvisAppService:
                 response_executed_as_command=False,
                 error=str(exc),
                 intent_resolution=resolution,
+                policy_decision=policy_decision,
             )
 
     def _consume_pending_clarification(

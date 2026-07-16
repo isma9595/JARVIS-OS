@@ -208,6 +208,7 @@ class AppExecutionContract(_ContractMixin):
     requires_clarification: bool = False
     clarification_question: str | None = None
     clarification_options: tuple[AppClarificationOption, ...] = ()
+    policy_decision: dict[str, object] | None = None
 
     def safe_text_ru(self) -> str:
         lines = [
@@ -224,6 +225,8 @@ class AppExecutionContract(_ContractMixin):
             "- response executed as command: no",
             "- secrets included: no",
         ]
+        if self.policy_decision:
+            lines.append(f"- policy decision: {self.policy_decision.get('decision', 'unknown')}")
         if self.clarification_question:
             lines.append("Требуется уточнение:")
             lines.append(safe_contract_text(self.clarification_question))
