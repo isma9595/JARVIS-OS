@@ -2,10 +2,13 @@ import importlib
 import json
 import os
 import socket
+from pathlib import Path
 
 from app import AppCommandSource, JarvisAppService
 from core.command_processor import CommandProcessor
+from language.language_manager import ApplicationLanguageManager
 from platform_adapters.contracts import SafePathInfo
+from users.user_profile import UserProfileManager
 
 
 STATUS_SYSTEM = "\u0441\u0442\u0430\u0442\u0443\u0441 \u0441\u0438\u0441\u0442\u0435\u043c\u044b"
@@ -200,7 +203,12 @@ def test_assistant_smoke_appservice_safe_path(monkeypatch):
     credential_runtime = CountingCredentialRuntime()
     credential_manager = CountingApiKeyManager()
     filesystem = NoFileSystemPort()
+    profile_manager = UserProfileManager(
+        Path("workspace") / "assistant_smoke_task086_profile.json"
+    )
+    language_manager = ApplicationLanguageManager.from_profile_manager(profile_manager)
     processor = TrackingCommandProcessor(
+        user_profile_manager=profile_manager,
         ai_provider_router=provider_router,
         openai_request_gate=provider_gates[0],
         gemini_request_gate=provider_gates[1],
@@ -218,15 +226,20 @@ def test_assistant_smoke_appservice_safe_path(monkeypatch):
     service = JarvisAppService(
         command_processor=processor,
         one_shot_voice_recognition=NoRealVoiceRecognition(),
+        language_manager=language_manager,
         local_filesystem=filesystem,
     )
 
+    language = service.get_language_preference()
     status = service.execute_contract(STATUS_SYSTEM, AppCommandSource.TEST)
     clarification = service.execute_contract(SHOW_STATUS, AppCommandSource.TEST)
     clarified = service.execute_contract(SYSTEMS, AppCommandSource.TEST)
     risky_vague = service.execute_contract(DELETE_THIS, AppCommandSource.TEST)
     delete_question = service.execute_contract(DELETE_QUESTION, AppCommandSource.TEST)
 
+    assert language.language_code == "ru-RU"
+    assert language.default_language == "ru-RU"
+    assert language.persisted is False
     assert status.ok is True
     assert status.command_id == "system.status"
     assert status.executed is True

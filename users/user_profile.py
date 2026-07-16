@@ -1,4 +1,5 @@
 import json
+import os
 import re
 from datetime import datetime
 from pathlib import Path
@@ -53,8 +54,11 @@ class UserProfileManager:
             profile_to_save["created_at"] = profile_to_save["updated_at"]
 
         self.profile_path.parent.mkdir(parents=True, exist_ok=True)
-        with self.profile_path.open("w", encoding="utf-8") as profile_file:
+        temp_path = self.profile_path.with_name(self.profile_path.name + ".tmp")
+        with temp_path.open("w", encoding="utf-8") as profile_file:
             json.dump(profile_to_save, profile_file, ensure_ascii=False, indent=2)
+            profile_file.write("\n")
+        os.replace(temp_path, self.profile_path)
 
         return profile_to_save
 
@@ -96,6 +100,17 @@ class UserProfileManager:
 
     def get_language(self, profile=None):
         return self._get_value(profile, "language", "ru")
+
+    def get_language_preference(self, profile=None):
+        return self._get_value(profile, "language", None)
+
+    def set_language_preference(self, language_code):
+        language = str(language_code or "").strip()
+        if not language:
+            raise ValueError("Language preference must not be empty.")
+        profile = self.load_profile() if self.profile_exists() else {}
+        profile["language"] = language
+        return self.save_profile(profile)
 
     def get_communication_style(self, profile=None):
         return self._get_value(

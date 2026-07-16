@@ -18,6 +18,7 @@ from app.app_contracts import (
     AppContractManifest,
     AppContractStatus,
     AppExecutionContract,
+    AppLanguagePreferenceContract,
     AppPreviewContract,
     AppStatusCard,
     AppVoiceRequestResult,
@@ -50,7 +51,7 @@ from core.policy_boundary import (
 )
 from core.execution_coordinator import ExecutionCoordinator
 from core.execution_journal import ExecutionOperation, safe_journal_text
-from language.language_manager import ApplicationLanguageManager
+from language.language_manager import ApplicationLanguageManager, SupportedLanguage
 from platform_adapters.local_filesystem import WindowsLocalFileSystemAdapter
 from voice.audio_lifecycle import AudioLifecycleController, AudioLifecycleStatus
 from voice.russian_voice_normalizer import normalize_russian_voice_text
@@ -205,10 +206,19 @@ class JarvisAppService:
         )
         self.language_manager = (
             language_manager
+            or (
+                ApplicationLanguageManager.from_profile_manager(
+                    getattr(command_processor, "user_profile_manager")
+                )
+                if getattr(command_processor, "user_profile_manager", None) is not None
+                else None
+            )
             or ApplicationLanguageManager.from_profile(
                 getattr(command_processor, "user_profile", None)
             )
         )
+        if hasattr(self.command_processor, "language_manager"):
+            self.command_processor.language_manager = self.language_manager
         self._one_shot_voice_lock = Lock()
         self.audio_lifecycle_controller = self._build_audio_lifecycle_controller()
         self.conversational_loop = SafeConversationalLoop(
@@ -250,6 +260,41 @@ class JarvisAppService:
 
     def language_settings(self) -> dict[str, str]:
         return self.language_manager.status_dict()
+
+    def get_language_preference(self) -> AppLanguagePreferenceContract:
+        snapshot = self.language_manager.get_preference()
+        return AppLanguagePreferenceContract(
+            language_code=snapshot.language_code,
+            language_name=snapshot.display_name,
+            previous_language_code=None,
+            changed=False,
+            persisted=snapshot.persisted,
+            default_language="ru-RU",
+            source=snapshot.source,
+            is_default=snapshot.is_default,
+            message=snapshot.safe_message,
+            supported_languages=tuple(language.value for language in SupportedLanguage),
+        )
+
+    def set_language_preference(self, language_code) -> AppLanguagePreferenceContract:
+        change = self.language_manager.set_preference(language_code)
+        self._propagate_language_preference()
+        snapshot = self.language_manager.get_preference()
+        return AppLanguagePreferenceContract(
+            language_code=change.language_code,
+            language_name=change.language_name,
+            previous_language_code=change.previous_language_code,
+            changed=change.changed,
+            persisted=change.persisted,
+            default_language=change.default_language,
+            source=snapshot.source,
+            is_default=snapshot.is_default,
+            message=change.safe_message,
+            supported_languages=tuple(language.value for language in SupportedLanguage),
+        )
+
+    def reset_language_preference(self) -> AppLanguagePreferenceContract:
+        return self.set_language_preference("ru-RU")
 
     def status_text_ru(self) -> str:
         snapshot = self.status_snapshot()
@@ -592,7 +637,13 @@ class JarvisAppService:
         try:
             self.audio_lifecycle_controller.start_one_shot_metadata_only()
             recognizer = self._get_one_shot_voice_recognition()
-            recognition_result = recognizer.run_once(explicit_one_shot_requested=True)
+            try:
+                recognition_result = recognizer.run_once(
+                    explicit_one_shot_requested=True,
+                    language_code=self.language_manager.runtime_locale(),
+                )
+            except TypeError:
+                recognition_result = recognizer.run_once(explicit_one_shot_requested=True)
             recognized_text = str(
                 self._get_value(recognition_result, "recognized_text", "") or ""
             ).strip()
@@ -941,6 +992,9 @@ class JarvisAppService:
         if not isinstance(source, AppCommandSource):
             source = AppCommandSource.UNKNOWN
         input_text = str(text or "").strip()
+        language_result = self._handle_language_preference_command(input_text, source)
+        if language_result is not None:
+            return language_result
         resolution = self.intent_resolver.resolve(
             original_text=input_text,
             processing_text=input_text,
@@ -1055,6 +1109,9 @@ class JarvisAppService:
         if not isinstance(source, AppCommandSource):
             source = AppCommandSource.UNKNOWN
         input_text = str(text or "").strip()
+        language_result = self._handle_language_preference_command(input_text, source)
+        if language_result is not None:
+            return language_result
         clarification_result = self._consume_pending_clarification(input_text, source)
         if clarification_result is not None:
             return clarification_result
@@ -1170,6 +1227,9 @@ class JarvisAppService:
         resolution=None,
         confirmation_present: bool = False,
     ) -> AppCommandResult:
+        language_result = self._handle_language_preference_command(input_text, source)
+        if language_result is not None:
+            return language_result
         preview = self.preview_command(input_text)
         metadata = self._match_registry_command(input_text)
         policy_decision = self.policy_boundary.evaluate(
@@ -2284,6 +2344,180 @@ class JarvisAppService:
             if normalized in {command_category.value, command_category.name.lower()}:
                 return command_category
         return None
+
+    def _handle_language_preference_command(
+        self,
+        input_text: str,
+        source: AppCommandSource,
+    ) -> AppCommandResult | None:
+        normalized = self.command_registry.normalize_alias(input_text)
+        status_commands = {
+            "какой язык",
+            "текущий язык",
+            "покажи язык",
+            "current language",
+            "show language",
+        }
+        reset_commands = {"сбросить язык", "reset language"}
+        vague_commands = {"поменяй язык", "другой язык", "translate everything"}
+        set_prefixes = (
+            "язык ",
+            "установить ",
+            "установить язык ",
+            "установить русский язык",
+            "установить английский язык",
+            "переключить язык на ",
+            "language ",
+            "set language to ",
+        )
+
+        if normalized in status_commands:
+            contract = self.get_language_preference()
+            return self._language_result(input_text, source, contract.message, changed=False)
+
+        if normalized in reset_commands:
+            contract = self.reset_language_preference()
+            return self._language_result(input_text, source, contract.message, changed=contract.changed)
+
+        if normalized in vague_commands:
+            options = (
+                AppClarificationOption(
+                    option_id="language_ru",
+                    label_ru="Русский / Russian",
+                    command_text="язык русский",
+                    command_id="profile.language.set",
+                ),
+                AppClarificationOption(
+                    option_id="language_en",
+                    label_ru="Английский / English",
+                    command_text="язык английский",
+                    command_id="profile.language.set",
+                ),
+            )
+            self._pending_clarification = ClarificationState(
+                question_ru=self._language_text(
+                    "Выберите язык: русский или английский.",
+                    "Choose a language: Russian or English.",
+                ),
+                options=options,
+                original_text=input_text,
+                source=source.value,
+            )
+            return AppCommandResult(
+                ok=True,
+                input_text=input_text,
+                output_text=self._language_clarification_text(
+                    self._pending_clarification.question_ru,
+                    options,
+                ),
+                source=source,
+                registry_match_id="profile.language.clarify",
+                category="clarification",
+                risk_level="read_only",
+                executed=False,
+                requires_confirmation=False,
+                network_may_be_used=False,
+                response_executed_as_command=False,
+                error=None,
+                requires_clarification=True,
+                clarification_question=self._pending_clarification.question_ru,
+                clarification_options=options,
+            )
+
+        language_text = self._extract_language_setting_text(normalized, set_prefixes)
+        if language_text is None:
+            return None
+        contract = self.set_language_preference(language_text)
+        return self._language_result(
+            input_text,
+            source,
+            contract.message,
+            changed=contract.changed,
+            ok=True,
+        )
+
+    def _language_result(
+        self,
+        input_text: str,
+        source: AppCommandSource,
+        output_text: str,
+        *,
+        changed: bool,
+        ok: bool = True,
+    ) -> AppCommandResult:
+        return AppCommandResult(
+            ok=ok,
+            input_text=input_text,
+            output_text=output_text,
+            source=source,
+            registry_match_id="profile.language.set" if changed else "profile.language.status",
+            category="profile",
+            risk_level="read_only",
+            executed=False,
+            requires_confirmation=False,
+            network_may_be_used=False,
+            response_executed_as_command=False,
+            error=None,
+        )
+
+    @staticmethod
+    def _extract_language_setting_text(normalized: str, prefixes: tuple[str, ...]) -> str | None:
+        exact = {
+            "язык русский": "русский",
+            "установить русский язык": "русский",
+            "переключить язык на русский": "русский",
+            "язык английский": "английский",
+            "установить английский язык": "английский",
+            "переключить язык на английский": "английский",
+            "language russian": "russian",
+            "set language to russian": "russian",
+            "language english": "english",
+            "set language to english": "english",
+        }
+        if normalized in exact:
+            return exact[normalized]
+        for prefix in prefixes:
+            if normalized.startswith(prefix):
+                value = normalized[len(prefix) :].strip()
+                if value:
+                    return value
+        return None
+
+    def _language_text(self, ru_text: str, en_text: str) -> str:
+        return (
+            en_text
+            if self.language_manager.get_preference().language_code == "en-US"
+            else ru_text
+        )
+
+    def _language_clarification_text(
+        self,
+        question: str | None,
+        options: tuple[AppClarificationOption, ...],
+    ) -> str:
+        if self.language_manager.get_preference().language_code == "en-US":
+            lines = [
+                "Clarification required:",
+                question or "Choose an option.",
+                "",
+                "Options:",
+            ]
+        else:
+            lines = [
+                "Требуется уточнение:",
+                question or "Уточните вариант.",
+                "",
+                "Варианты:",
+            ]
+        lines.extend(f"- {option.label_ru}" for option in options)
+        return "\n".join(lines)
+
+    def _propagate_language_preference(self) -> None:
+        if hasattr(self.command_processor, "language_manager"):
+            self.command_processor.language_manager = self.language_manager
+        recognizer = self.one_shot_voice_recognition
+        if recognizer is not None and hasattr(recognizer, "preferred_language_code"):
+            recognizer.preferred_language_code = self.language_manager.runtime_locale()
 
     @staticmethod
     def _summary_for_metadata(metadata: CommandMetadata) -> str:

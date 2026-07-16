@@ -27,6 +27,7 @@ from core.policy_boundary import (
     PolicyDecisionType,
     policy_request_from_metadata,
 )
+from language.language_manager import ApplicationLanguageManager
 from dialogue import (
     AssistantResponseHistory,
     DialogueManager,
@@ -1441,8 +1442,12 @@ class CommandProcessor:
         command_registry=None,
         api_key_manager=None,
         secure_provider_runtime=None,
+        language_manager=None,
     ):
         self.user_profile = user_profile or {}
+        self.language_manager = language_manager or ApplicationLanguageManager.from_profile(
+            self.user_profile
+        )
         self.dialogue_manager = dialogue_manager or DialogueManager(self.user_profile)
         self.user_profile_manager = user_profile_manager
         self.idea_manager = idea_manager or IdeaManager()
@@ -4086,11 +4091,17 @@ class CommandProcessor:
                 return original[len(prefix) :].strip()
         return None
 
+    def _provider_request_language(self):
+        manager = getattr(self, "language_manager", None)
+        if manager is not None and hasattr(manager, "provider_language"):
+            return manager.provider_language()
+        return "ru"
+
     def _generate_ai_result(self, prompt, capability, intent, max_chars=None):
         request = AIRequest(
             prompt=prompt,
             task_type=capability.value,
-            language="ru",
+            language=self._provider_request_language(),
             max_chars=max_chars,
         )
         response = self.ai_provider_router.generate(request, capability=capability)
@@ -4170,7 +4181,7 @@ class CommandProcessor:
         request = AIRequest(
             prompt=prompt,
             task_type=capability.value,
-            language="ru",
+            language=self._provider_request_language(),
             max_chars=max_chars,
         )
         response = self.ai_provider_router.generate_with_provider(
@@ -4226,7 +4237,7 @@ class CommandProcessor:
         request = AIRequest(
             prompt=prompt,
             task_type=AIProviderCapability.CHAT.value,
-            language="ru",
+            language=self._provider_request_language(),
         )
         response = self.openai_request_gate.generate_one_shot(
             request,
@@ -4282,7 +4293,7 @@ class CommandProcessor:
         request = AIRequest(
             prompt=prompt,
             task_type=AIProviderCapability.CHAT.value,
-            language="ru",
+            language=self._provider_request_language(),
         )
         response = self.gemini_request_gate.generate_one_shot(
             request,
@@ -4338,7 +4349,7 @@ class CommandProcessor:
         request = AIRequest(
             prompt=prompt,
             task_type=AIProviderCapability.CHAT.value,
-            language="ru",
+            language=self._provider_request_language(),
         )
         response = self.groq_request_gate.generate_one_shot(
             request,
@@ -4394,7 +4405,7 @@ class CommandProcessor:
         request = AIRequest(
             prompt=prompt,
             task_type=AIProviderCapability.CHAT.value,
-            language="ru",
+            language=self._provider_request_language(),
         )
         response = self.gigachat_request_gate.generate_one_shot(
             request,
@@ -4450,7 +4461,7 @@ class CommandProcessor:
         request = AIRequest(
             prompt=prompt,
             task_type=AIProviderCapability.CHAT.value,
-            language="ru",
+            language=self._provider_request_language(),
         )
         response = self.ollama_request_gate.generate_one_shot(
             request,
@@ -4574,7 +4585,7 @@ class CommandProcessor:
         request = AIRequest(
             prompt=prompt,
             task_type=AIProviderCapability.CHAT.value,
-            language="ru",
+            language=self._provider_request_language(),
         )
         response = self._generate_session_one_shot(provider, model, request)
         if response.is_error:

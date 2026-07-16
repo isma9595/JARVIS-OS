@@ -30,7 +30,7 @@ def test_application_language_keeps_future_non_russian_extension_point():
     settings = manager.current_settings()
 
     assert settings.runtime_locale == "en-US"
-    assert settings.command_language == "en-US"
-    assert settings.ui_language == "en-US"
-    assert settings.assistant_response_language == "en-US"
-    assert settings.speech_recognition_language == "ru"
+    assert settings.command_language == "en"
+    assert settings.ui_language == "en"
+    assert settings.assistant_response_language == "en"
+    assert settings.speech_recognition_language == "en-US"

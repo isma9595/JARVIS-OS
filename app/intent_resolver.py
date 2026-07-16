@@ -538,6 +538,10 @@ def option_matches_text(option: AppClarificationOption, text: str, registry: Com
         labels.update({"микрофон", "микрофона", "статус микрофона"})
     if option.option_id == "app_service":
         labels.update({"appservice", "app service", "сервис приложения"})
+    if option.option_id == "language_ru":
+        labels.update({"русский", "русский язык", "russian", "ru", "ru-ru"})
+    if option.option_id == "language_en":
+        labels.update({"английский", "английский язык", "english", "en", "en-us"})
     return any(normalized == registry.normalize_alias(label) for label in labels)
 
 

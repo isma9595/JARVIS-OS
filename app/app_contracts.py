@@ -107,6 +107,35 @@ class AppContractStatus(_ContractMixin):
 
 
 @dataclass(frozen=True)
+class AppLanguagePreferenceContract(_ContractMixin):
+    language_code: str
+    language_name: str
+    previous_language_code: str | None
+    changed: bool
+    persisted: bool
+    default_language: str
+    source: str
+    is_default: bool
+    message: str
+    supported_languages: tuple[str, ...]
+
+    def safe_text_ru(self) -> str:
+        return "\n".join(
+            [
+                "Language preference:",
+                f"- language code: {safe_contract_text(self.language_code)}",
+                f"- language name: {safe_contract_text(self.language_name)}",
+                f"- default language: {safe_contract_text(self.default_language)}",
+                f"- persisted: {'yes' if self.persisted else 'no'}",
+                f"- source: {safe_contract_text(self.source)}",
+                f"- supported: {', '.join(self.supported_languages)}",
+                f"- message: {safe_contract_text(self.message)}",
+                "- secrets included: no",
+            ]
+        )
+
+
+@dataclass(frozen=True)
 class AppStatusCard(_ContractMixin):
     card_id: str
     title_ru: str

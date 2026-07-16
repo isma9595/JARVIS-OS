@@ -51,6 +51,7 @@ class OneShotVoskRealRecognitionResult:
         default_factory=lambda: list(DEFAULT_REAL_RECOGNITION_SAFETY_NOTES)
     )
     next_steps: list[str] = field(default_factory=list)
+    runtime_language: str = "ru-RU"
 
     def to_dict(self):
         return {
@@ -63,6 +64,7 @@ class OneShotVoskRealRecognitionResult:
             "warnings": list(self.warnings),
             "safety_notes": list(self.safety_notes),
             "next_steps": list(self.next_steps),
+            "runtime_language": self.runtime_language,
         }
 
 
@@ -85,6 +87,7 @@ class OneShotVoskRealRecognition:
         self.capture_provider = capture_provider
         self.vosk_runtime_factory = vosk_runtime_factory or self._load_vosk_runtime
         self.dependency_checker = dependency_checker
+        self._current_runtime_language = "ru-RU"
         if (
             self.dependency_checker is None
             and capture_provider is None
@@ -97,7 +100,8 @@ class OneShotVoskRealRecognition:
             self.dependency_checker = AudioDependencyReadinessChecker()
         self.capture_seconds = capture_seconds
 
-    def run_once(self, explicit_one_shot_requested=False):
+    def run_once(self, explicit_one_shot_requested=False, language_code=None):
+        self._current_runtime_language = self._normalize_runtime_language(language_code)
         blocked_safety_notes = list(DEFAULT_BLOCKED_SAFETY_NOTES)
         recognition_safety_notes = list(DEFAULT_REAL_RECOGNITION_SAFETY_NOTES)
 
@@ -212,6 +216,7 @@ class OneShotVoskRealRecognition:
             warnings=gate_warnings,
             safety_notes=recognition_safety_notes,
             next_steps=["Выполнение распознанного текста будет подключено отдельной задачей."],
+            runtime_language=self._current_runtime_language,
         )
 
     @staticmethod
@@ -338,6 +343,7 @@ class OneShotVoskRealRecognition:
             warnings=list(warnings or []),
             safety_notes=list(safety_notes or DEFAULT_BLOCKED_SAFETY_NOTES),
             next_steps=list(next_steps or []),
+            runtime_language=self._current_runtime_language,
         )
 
     def _dependency_blocked_result(self, safety_notes):
@@ -380,6 +386,11 @@ class OneShotVoskRealRecognition:
         if isinstance(capture_result, dict):
             return capture_result.get("duration_seconds", self.capture_seconds)
         return self.capture_seconds
+
+    @staticmethod
+    def _normalize_runtime_language(language_code):
+        normalized = str(language_code or "").strip().lower()
+        return "en-US" if normalized in {"en", "en-us"} else "ru-RU"
 
     @staticmethod
     def _get_value(source, key, default=None):
