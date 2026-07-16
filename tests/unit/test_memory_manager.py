@@ -24,10 +24,15 @@ def test_creation():
         assert isinstance(manager, LocalMemoryManager)
 
 
-def test_memory_file_created():
+def test_memory_file_not_created_until_write():
     with TemporaryDirectory() as tmp_dir:
         storage_path = Path(tmp_dir) / "memory.json"
         manager = LocalMemoryManager(storage_path)
+
+        assert manager.memory_file_exists() is False
+        assert storage_path.exists() is False
+
+        manager.add_memory("локальный факт")
 
         assert manager.memory_file_exists() is True
         assert storage_path.exists()
@@ -200,7 +205,7 @@ def test_search_memories_with_empty_query():
 
 def run_tests():
     test_creation()
-    test_memory_file_created()
+    test_memory_file_not_created_until_write()
     test_list_memories_empty()
     test_count_memories_empty()
     test_add_memory()

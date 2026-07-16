@@ -7,6 +7,7 @@ from pathlib import Path
 from app import AppCommandSource, JarvisAppService
 from core.command_processor import CommandProcessor
 from language.language_manager import ApplicationLanguageManager
+from memory import LocalMemoryManager
 from platform_adapters.contracts import SafePathInfo
 from users.user_profile import UserProfileManager
 
@@ -203,6 +204,10 @@ def test_assistant_smoke_appservice_safe_path(monkeypatch):
     credential_runtime = CountingCredentialRuntime()
     credential_manager = CountingApiKeyManager()
     filesystem = NoFileSystemPort()
+    memory_path = Path("workspace") / "assistant_smoke_task088_memory.json"
+    if memory_path.exists():
+        memory_path.unlink()
+    memory_manager = LocalMemoryManager(memory_path)
     profile_manager = UserProfileManager(
         Path("workspace") / "assistant_smoke_task086_profile.json"
     )
@@ -222,16 +227,31 @@ def test_assistant_smoke_appservice_safe_path(monkeypatch):
         api_key_manager=credential_manager,
         secure_provider_runtime=credential_runtime,
         one_shot_vosk_real_recognition=NoRealVoiceRecognition(),
+        memory_manager=memory_manager,
     )
     service = JarvisAppService(
         command_processor=processor,
         one_shot_voice_recognition=NoRealVoiceRecognition(),
         language_manager=language_manager,
         local_filesystem=filesystem,
+        memory_manager=memory_manager,
     )
 
     startup_profile = service.get_startup_profile()
+    assert memory_path.exists() is False
     language = service.get_language_preference()
+    smoke_remember = service.execute_contract(
+        "\u0437\u0430\u043f\u043e\u043c\u043d\u0438: smoke task088 = isolated",
+        AppCommandSource.TEST,
+    )
+    smoke_recall = service.execute_contract(
+        "\u0447\u0442\u043e \u0442\u044b \u043f\u043e\u043c\u043d\u0438\u0448\u044c \u043e smoke task088",
+        AppCommandSource.TEST,
+    )
+    smoke_forget = service.execute_contract(
+        "\u0437\u0430\u0431\u0443\u0434\u044c smoke task088",
+        AppCommandSource.TEST,
+    )
     status = service.execute_contract(STATUS_SYSTEM, AppCommandSource.TEST)
     clarification = service.execute_contract(SHOW_STATUS, AppCommandSource.TEST)
     clarified = service.execute_contract(SYSTEMS, AppCommandSource.TEST)
@@ -248,6 +268,10 @@ def test_assistant_smoke_appservice_safe_path(monkeypatch):
     assert deferred_components["secure_provider_runtime"].state == "deferred"
     assert deferred_components["one_shot_voice_recognition"].state == "deferred"
     assert status.ok is True
+    assert smoke_remember.ok is True
+    assert "isolated" in smoke_recall.output_text
+    assert smoke_forget.ok is True
+    assert memory_manager.list_user_facts().entries == ()
     assert status.command_id == "system.status"
     assert status.executed is True
     assert status.network_may_be_used is False
@@ -285,7 +309,19 @@ def test_assistant_smoke_appservice_safe_path(monkeypatch):
     assert filesystem.write_count == 0
     assert socket.socket is not original_socket
 
-    results = [status, clarification, clarified, risky_vague, delete_question]
+    if memory_path.exists():
+        memory_path.unlink()
+
+    results = [
+        smoke_remember,
+        smoke_recall,
+        smoke_forget,
+        status,
+        clarification,
+        clarified,
+        risky_vague,
+        delete_question,
+    ]
     for result in results:
         payload = result.to_dict()
         rendered = result.safe_text_ru()

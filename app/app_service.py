@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from enum import Enum
 import re
 from threading import Lock
+from uuid import uuid4
 
 from app.startup_profiler import StartupProfiler, StartupProfileSnapshot
 from app.app_contracts import (
@@ -54,6 +55,7 @@ from core.policy_boundary import (
 from core.execution_coordinator import ExecutionCoordinator
 from core.execution_journal import ExecutionOperation, safe_journal_text
 from language.language_manager import ApplicationLanguageManager, SupportedLanguage
+from memory import LocalMemoryManager, MemoryOperationResult, SessionConversationContext
 from platform_adapters.local_filesystem import WindowsLocalFileSystemAdapter
 from voice.audio_lifecycle import AudioLifecycleController, AudioLifecycleStatus
 from voice.russian_voice_normalizer import normalize_russian_voice_text
@@ -159,6 +161,13 @@ class PendingDocumentReviewConfirmation:
 
 
 @dataclass(frozen=True)
+class PendingMemoryForgetAllConfirmation:
+    operation_id: str
+    active: bool = True
+    completed: bool = False
+
+
+@dataclass(frozen=True)
 class AppStatusSnapshot:
     app_service_enabled: bool
     execution_source: str
@@ -195,6 +204,8 @@ class JarvisAppService:
         one_shot_voice_recognition=None,
         language_manager=None,
         local_filesystem=None,
+        memory_manager=None,
+        conversation_context=None,
         startup_clock=None,
         provider_runtime_factory=None,
         one_shot_voice_recognition_factory=None,
@@ -208,6 +219,7 @@ class JarvisAppService:
             "execution_coordinator",
             "execution_journal",
             "audio_lifecycle_metadata",
+            "memory_context",
             "document_review_workflow",
         )
         with self._startup_profiler.phase("command_registry", "Command registry"):
@@ -247,6 +259,13 @@ class JarvisAppService:
             )
             if hasattr(self.command_processor, "language_manager"):
                 self.command_processor.language_manager = self.language_manager
+        with self._startup_profiler.phase("memory_context", "Memory conversation context"):
+            self.memory_manager = (
+                memory_manager
+                or getattr(self.command_processor, "memory_manager", None)
+                or LocalMemoryManager()
+            )
+            self.conversation_context = conversation_context or SessionConversationContext()
         self._one_shot_voice_lock = Lock()
         with self._startup_profiler.phase("app_safety_boundaries", "App safety boundaries"):
             self.audio_lifecycle_controller = self._build_audio_lifecycle_controller()
@@ -261,6 +280,7 @@ class JarvisAppService:
         self._pending_clarification_operation_id: str | None = None
         self._pending_confirmation: PendingAppConfirmation | None = None
         self._pending_document_review: PendingDocumentReviewConfirmation | None = None
+        self._pending_memory_forget_all: PendingMemoryForgetAllConfirmation | None = None
         self._operation_results: dict[str, AppCommandResult] = {}
         with self._startup_profiler.phase("document_workflow", "Document workflow"):
             self._local_filesystem = local_filesystem or WindowsLocalFileSystemAdapter()
@@ -1062,6 +1082,12 @@ class JarvisAppService:
         language_result = self._handle_language_preference_command(input_text, source)
         if language_result is not None:
             return language_result
+        memory_control = self._consume_pending_memory_forget_all(input_text, source)
+        if memory_control is not None:
+            return memory_control
+        memory_result = self._handle_memory_command(input_text, source)
+        if memory_result is not None:
+            return memory_result
         resolution = self.intent_resolver.resolve(
             original_text=input_text,
             processing_text=input_text,
@@ -1182,6 +1208,12 @@ class JarvisAppService:
         language_result = self._handle_language_preference_command(input_text, source)
         if language_result is not None:
             return language_result
+        memory_control = self._consume_pending_memory_forget_all(input_text, source)
+        if memory_control is not None:
+            return memory_control
+        memory_result = self._handle_memory_command(input_text, source)
+        if memory_result is not None:
+            return memory_result
         clarification_result = self._consume_pending_clarification(input_text, source)
         if clarification_result is not None:
             return clarification_result
@@ -2414,6 +2446,472 @@ class JarvisAppService:
             if normalized in {command_category.value, command_category.name.lower()}:
                 return command_category
         return None
+
+    def remember_user_fact(self, key, value) -> MemoryOperationResult:
+        return self.memory_manager.remember_user_fact(
+            key,
+            value,
+            language_code=self.language_manager.runtime_locale(),
+        )
+
+    def recall_user_fact(self, key) -> MemoryOperationResult:
+        return self.memory_manager.recall_user_fact(key)
+
+    def list_user_memories(self) -> MemoryOperationResult:
+        return self.memory_manager.list_user_facts()
+
+    def forget_user_fact(self, key) -> MemoryOperationResult:
+        return self.memory_manager.forget_user_fact(key)
+
+    def request_forget_all_memories(self) -> MemoryOperationResult:
+        operation_id = "memory-forget-all-" + uuid4().hex
+        self._pending_memory_forget_all = PendingMemoryForgetAllConfirmation(
+            operation_id=operation_id,
+        )
+        return MemoryOperationResult(
+            ok=True,
+            action="forget_all.request",
+            memory_id=None,
+            key=None,
+            value=None,
+            changed=False,
+            persisted=False,
+            found=False,
+            safe_message=self._language_text(
+                "Удалить все явные пользовательские воспоминания? Ответьте: да или отмена.",
+                "Delete all explicit user memories? Reply: yes or cancel.",
+            ),
+            awaiting_confirmation=True,
+            operation_id=operation_id,
+        )
+
+    def confirm_forget_all_memories(self) -> MemoryOperationResult:
+        pending = self._pending_memory_forget_all
+        if pending is None:
+            return MemoryOperationResult(
+                ok=True,
+                action="forget_all.confirm",
+                memory_id=None,
+                key=None,
+                value=None,
+                changed=False,
+                persisted=False,
+                found=False,
+                safe_message=self._language_text(
+                    "Нет ожидающего подтверждения удаления памяти.",
+                    "There is no pending memory deletion confirmation.",
+                ),
+                operation_id=None,
+            )
+        if pending.completed:
+            return MemoryOperationResult(
+                ok=True,
+                action="forget_all.confirm",
+                memory_id=None,
+                key=None,
+                value=None,
+                changed=False,
+                persisted=False,
+                found=False,
+                safe_message=self._language_text(
+                    "Эта операция удаления памяти уже завершена.",
+                    "This memory deletion operation is already complete.",
+                ),
+                operation_id=pending.operation_id,
+            )
+        result = self.memory_manager.forget_all_user_facts()
+        self._pending_memory_forget_all = PendingMemoryForgetAllConfirmation(
+            operation_id=pending.operation_id,
+            active=False,
+            completed=True,
+        )
+        return MemoryOperationResult(
+            ok=result.ok,
+            action=result.action,
+            memory_id=None,
+            key=None,
+            value=None,
+            changed=result.changed,
+            persisted=result.persisted,
+            found=result.found,
+            safe_message=self._language_text(
+                result.safe_message,
+                "All explicit user memories were deleted." if result.changed else "There were no explicit user memories to delete.",
+            ),
+            operation_id=pending.operation_id,
+        )
+
+    def get_conversation_context_snapshot(self):
+        return self.conversation_context.snapshot()
+
+    def _consume_pending_memory_forget_all(
+        self,
+        input_text: str,
+        source: AppCommandSource,
+    ) -> AppCommandResult | None:
+        pending = self._pending_memory_forget_all
+        if pending is None or not pending.active:
+            return None
+        normalized = self._normalize_memory_text(input_text)
+        if normalized in {"да", "подтверждаю", "подтвердить", "yes"}:
+            operation = self.confirm_forget_all_memories()
+            return self._memory_app_result(
+                input_text,
+                source,
+                operation,
+                side_effecting=operation.changed,
+            )
+        if normalized in {"нет", "отмена", "отмени", "cancel", "no"}:
+            self._pending_memory_forget_all = None
+            operation = MemoryOperationResult(
+                ok=True,
+                action="forget_all.cancel",
+                memory_id=None,
+                key=None,
+                value=None,
+                changed=False,
+                persisted=False,
+                found=False,
+                safe_message=self._language_text(
+                    "Удаление памяти отменено. Записи сохранены.",
+                    "Memory deletion cancelled. Memories were preserved.",
+                ),
+                operation_id=pending.operation_id,
+            )
+            return self._memory_app_result(input_text, source, operation)
+        operation = MemoryOperationResult(
+            ok=True,
+            action="forget_all.awaiting_confirmation",
+            memory_id=None,
+            key=None,
+            value=None,
+            changed=False,
+            persisted=False,
+            found=False,
+            safe_message=self._language_text(
+                "Нужно подтверждение: да или отмена.",
+                "Confirmation required: yes or cancel.",
+            ),
+            awaiting_confirmation=True,
+            operation_id=pending.operation_id,
+        )
+        return self._memory_app_result(input_text, source, operation)
+
+    def _handle_memory_command(
+        self,
+        input_text: str,
+        source: AppCommandSource,
+    ) -> AppCommandResult | None:
+        parsed = self._parse_memory_command(input_text)
+        if parsed is None:
+            return None
+        action, key, value = parsed
+        if action == "repeat_last_memory":
+            turn = self.conversation_context.last_read_only_memory_turn()
+            if turn is None:
+                operation = MemoryOperationResult(
+                    ok=True,
+                    action="repeat",
+                    memory_id=None,
+                    key=None,
+                    value=None,
+                    changed=False,
+                    persisted=False,
+                    found=False,
+                    safe_message=self._language_text(
+                        "Нет безопасного ответа из памяти, который можно повторить.",
+                        "There is no safe memory answer to repeat.",
+                    ),
+                )
+                return self._memory_app_result(input_text, source, operation)
+            result = AppCommandResult(
+                ok=True,
+                input_text=input_text,
+                output_text=turn.assistant_summary,
+                source=source,
+                registry_match_id="memory.repeat",
+                category="memory",
+                risk_level="read_only",
+                executed=False,
+                requires_confirmation=False,
+                network_may_be_used=False,
+                response_executed_as_command=False,
+                error=None,
+            )
+            self.conversation_context.add_turn(
+                user_text=input_text,
+                assistant_text=result.output_text,
+                intent_id="memory.recall",
+                topic_key=turn.topic_key,
+                read_only=True,
+                side_effecting=False,
+                outcome="repeated",
+            )
+            return result
+        if action == "vague":
+            operation = MemoryOperationResult(
+                ok=True,
+                action="clarify",
+                memory_id=None,
+                key=key,
+                value=None,
+                changed=False,
+                persisted=False,
+                found=False,
+                safe_message=self._language_text(
+                    "Уточните конкретный ключ и значение памяти. Я не буду угадывать.",
+                    "Please specify the exact memory key and value. I will not guess.",
+                ),
+                safe_error_code="memory_command_needs_clarification",
+            )
+            return self._memory_app_result(input_text, source, operation)
+        if action == "remember":
+            operation = self.remember_user_fact(key, value)
+            return self._memory_app_result(
+                input_text,
+                source,
+                operation,
+                side_effecting=operation.changed,
+            )
+        if action == "recall":
+            operation = self.recall_user_fact(key)
+            return self._memory_app_result(input_text, source, operation)
+        if action == "list":
+            operation = self.list_user_memories()
+            return self._memory_app_result(input_text, source, operation)
+        if action == "forget":
+            operation = self.forget_user_fact(key)
+            return self._memory_app_result(
+                input_text,
+                source,
+                operation,
+                side_effecting=operation.changed,
+            )
+        if action == "forget_all":
+            operation = self.request_forget_all_memories()
+            return self._memory_app_result(input_text, source, operation)
+        return None
+
+    def _memory_app_result(
+        self,
+        input_text: str,
+        source: AppCommandSource,
+        operation: MemoryOperationResult,
+        *,
+        side_effecting: bool = False,
+    ) -> AppCommandResult:
+        output_text = self._memory_response_text(operation)
+        if operation.action == "recall" or operation.action == "repeat":
+            intent_id = "memory.recall"
+        elif operation.action == "list":
+            intent_id = "memory.list"
+        else:
+            intent_id = f"memory.{operation.action}"
+        topic_key = (
+            LocalMemoryManager.normalize_user_fact_key(operation.key)
+            if operation.key
+            else None
+        )
+        self.conversation_context.add_turn(
+            user_text=input_text,
+            assistant_text=output_text,
+            intent_id=intent_id,
+            topic_key=topic_key,
+            read_only=not side_effecting,
+            side_effecting=side_effecting,
+            outcome=operation.action,
+        )
+        return AppCommandResult(
+            ok=operation.ok,
+            input_text=input_text,
+            output_text=output_text,
+            source=source,
+            registry_match_id=intent_id,
+            category="memory",
+            risk_level="local_write" if side_effecting else "read_only",
+            executed=side_effecting,
+            requires_confirmation=operation.awaiting_confirmation,
+            network_may_be_used=False,
+            response_executed_as_command=False,
+            error=operation.safe_error_code,
+            operation_id=operation.operation_id,
+            operation_status="awaiting_confirmation" if operation.awaiting_confirmation else "succeeded",
+            awaiting_confirmation=operation.awaiting_confirmation,
+        )
+
+    def _memory_response_text(self, operation: MemoryOperationResult) -> str:
+        english = self.language_manager.get_preference().language_code == "en-US"
+        if operation.action == "remember":
+            if not operation.ok:
+                return operation.safe_message
+            if operation.previous_value is not None:
+                return (
+                    f"Updated remembered fact: {operation.key} = {operation.value}."
+                    if english
+                    else f"Обновил запомненный факт: {operation.key} = {operation.value}."
+                )
+            return (
+                f"Remembered: {operation.key} = {operation.value}."
+                if english
+                else f"Запомнил: {operation.key} = {operation.value}."
+            )
+        if operation.action == "recall":
+            if operation.found:
+                return (
+                    f"I remember: {operation.key} = {operation.value}."
+                    if english
+                    else f"Я помню: {operation.key} — {operation.value}."
+                )
+            return (
+                f"I do not remember {operation.key}."
+                if english
+                else f"Я не помню: {operation.key}."
+            )
+        if operation.action == "list":
+            if not operation.entries:
+                return (
+                    "I do not have explicit user memories yet."
+                    if english
+                    else "В явной пользовательской памяти пока нет записей."
+                )
+            lines = ["Explicit user memories:" if english else "Явная пользовательская память:"]
+            for entry in operation.entries:
+                lines.append(f"- {entry.display_key}: {entry.value}")
+            return "\n".join(lines)
+        if operation.action == "forget":
+            if operation.changed:
+                return (
+                    f"Forgot: {operation.key}."
+                    if english
+                    else f"Забыл: {operation.key}."
+                )
+            return (
+                f"No memory existed for: {operation.key}."
+                if english
+                else f"В памяти не было записи: {operation.key}."
+            )
+        if operation.action.startswith("forget_all"):
+            return operation.safe_message
+        if operation.action == "clarify":
+            return operation.safe_message
+        return operation.safe_message
+
+    def _parse_memory_command(self, text: str) -> tuple[str, str | None, str | None] | None:
+        raw = str(text or "").strip()
+        normalized = self._normalize_memory_text(raw)
+        if not normalized:
+            return None
+        vague = {
+            "запомни это",
+            "помни",
+            "забудь это",
+            "удали память",
+            "remember this",
+            "forget it",
+        }
+        if normalized in vague:
+            return ("vague", None, None)
+        if normalized in {"покажи еще раз", "покажи ещё раз", "show again", "repeat that"}:
+            return ("repeat_last_memory", None, None)
+        if normalized in {
+            "сделай это еще раз",
+            "сделай это ещё раз",
+            "выполни это еще раз",
+            "выполни это ещё раз",
+            "do it again",
+        }:
+            return ("vague", None, None)
+        if normalized in {
+            "забудь все что ты помнишь обо мне",
+            "забудь все, что ты помнишь обо мне",
+            "forget everything you remember about me",
+        }:
+            return ("forget_all", None, None)
+        if normalized in {
+            "покажи что ты помнишь обо мне",
+            "покажи, что ты помнишь обо мне",
+            "what do you remember about me",
+            "show what you remember about me",
+        }:
+            return ("list", None, None)
+        remember = self._parse_remember_command(raw, normalized)
+        if remember is not None:
+            return remember
+        forget = self._parse_forget_command(raw, normalized)
+        if forget is not None:
+            return forget
+        recall = self._parse_recall_command(raw, normalized)
+        if recall is not None:
+            return recall
+        return None
+
+    def _parse_remember_command(self, raw: str, normalized: str):
+        match = re.match(
+            r"(?is)^\s*(?:запомни(?:\s*,?\s*что|:)?|сохрани\s+в\s+памяти(?:\s*,?\s*что)?|remember(?:\s+that|:)?)\s+(.+?)\s*$",
+            raw,
+        )
+        if match is None:
+            return None
+        raw_body = match.group(1).strip()
+        key_value = self._split_memory_key_value(raw_body)
+        if key_value is None:
+            return ("vague", None, None)
+        key, value = key_value
+        return ("remember", key, value)
+
+    def _parse_forget_command(self, raw: str, normalized: str):
+        prefixes = (
+            "забудь ",
+            "удали из памяти ",
+            "forget ",
+            "delete ",
+        )
+        for prefix in prefixes:
+            if normalized.startswith(prefix):
+                key = raw[len(prefix) :].strip()
+                if normalized.startswith("delete ") and self._normalize_memory_text(key).endswith(" from memory"):
+                    key = key[: -len(" from memory")].strip()
+                if self._normalize_memory_text(key) in {"это", "it", "memory", "память", ""}:
+                    return ("vague", key, None)
+                return ("forget", key, None)
+        return None
+
+    def _parse_recall_command(self, raw: str, normalized: str):
+        prefixes = (
+            "какой мой ",
+            "какой моё ",
+            "какой мое ",
+            "какое моё ",
+            "какое мое ",
+            "какая моя ",
+            "что ты помнишь о ",
+            "что ты помнишь об ",
+            "что ты помнишь про ",
+            "что ты запомнил про ",
+            "what is my ",
+            "what do you remember about ",
+        )
+        for prefix in prefixes:
+            if normalized.startswith(prefix):
+                key = raw[len(prefix) :].strip()
+                return ("recall", key, None)
+        return None
+
+    def _split_memory_key_value(self, body: str) -> tuple[str, str] | None:
+        for separator in (" — ", " – ", " - ", "=", ":"):
+            if separator in body:
+                left, right = body.split(separator, 1)
+                return left.strip(), right.strip()
+        match = re.match(r"(?is)^(.+?)\s+is\s+(.+)$", body.strip())
+        if match:
+            return match.group(1).strip(), match.group(2).strip()
+        return None
+
+    @staticmethod
+    def _normalize_memory_text(text: str) -> str:
+        normalized = str(text or "").strip().lower().replace("ё", "е")
+        normalized = re.sub(r"[,:;]+", " ", normalized)
+        return " ".join(normalized.split())
 
     def _handle_language_preference_command(
         self,
