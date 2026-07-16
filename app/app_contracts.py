@@ -43,6 +43,29 @@ class _ContractMixin:
 
 
 @dataclass(frozen=True)
+class AppClarificationOption(_ContractMixin):
+    option_id: str
+    label_ru: str
+    command_text: str
+    command_id: str | None
+
+
+@dataclass(frozen=True)
+class AppIntentResolutionContract(_ContractMixin):
+    original_text: str
+    processing_text: str
+    intent_kind: str
+    resolution_status: str
+    matched_command: str | None
+    confidence: str
+    reason_codes: tuple[str, ...]
+    clarification_question: str | None
+    clarification_options: tuple[AppClarificationOption, ...]
+    requires_clarification: bool
+    source: str
+
+
+@dataclass(frozen=True)
 class AppContractStatus(_ContractMixin):
     schema_name: str
     version: str
@@ -181,6 +204,10 @@ class AppExecutionContract(_ContractMixin):
     response_executed_as_command: bool
     secrets_included: bool
     error: str | None
+    intent_resolution: AppIntentResolutionContract | None = None
+    requires_clarification: bool = False
+    clarification_question: str | None = None
+    clarification_options: tuple[AppClarificationOption, ...] = ()
 
     def safe_text_ru(self) -> str:
         lines = [
@@ -192,10 +219,20 @@ class AppExecutionContract(_ContractMixin):
             f"- risk: {self.risk_level or 'unknown'}",
             f"- executed: {'yes' if self.executed else 'no'}",
             f"- requires confirmation: {'yes' if self.requires_confirmation else 'no'}",
+            f"- requires clarification: {'yes' if self.requires_clarification else 'no'}",
             f"- network may be used: {'yes' if self.network_may_be_used else 'no'}",
             "- response executed as command: no",
             "- secrets included: no",
         ]
+        if self.clarification_question:
+            lines.append("Требуется уточнение:")
+            lines.append(safe_contract_text(self.clarification_question))
+        if self.clarification_options:
+            lines.append("Варианты:")
+            lines.extend(
+                f"- {safe_contract_text(option.label_ru)}"
+                for option in self.clarification_options
+            )
         if self.error:
             lines.append(f"- error: {safe_contract_text(self.error)}")
         if self.output_text:

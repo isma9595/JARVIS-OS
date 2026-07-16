@@ -14,6 +14,7 @@ from app.app_contracts import (
     APP_CONTRACT_SCHEMA_NAME,
     APP_CONTRACT_VERSION,
     AppCommandCard,
+    AppClarificationOption,
     AppContractManifest,
     AppContractStatus,
     AppExecutionContract,
@@ -21,6 +22,13 @@ from app.app_contracts import (
     AppStatusCard,
     AppVoiceRequestResult,
     safe_contract_text,
+)
+from app.intent_resolver import (
+    ClarificationState,
+    HybridIntentResolver,
+    IntentKind,
+    ResolutionStatus,
+    option_matches_text,
 )
 from app.conversational_loop import (
     ConversationalRequest,
@@ -80,6 +88,10 @@ class AppCommandResult:
     network_may_be_used: bool
     response_executed_as_command: bool
     error: str | None
+    intent_resolution: object | None = None
+    requires_clarification: bool = False
+    clarification_question: str | None = None
+    clarification_options: tuple[AppClarificationOption, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -140,6 +152,8 @@ class JarvisAppService:
             app_service=self,
             command_registry=self.command_registry,
         )
+        self.intent_resolver = HybridIntentResolver(self.command_registry)
+        self._pending_clarification: ClarificationState | None = None
 
     def status_snapshot(self) -> AppStatusSnapshot:
         return AppStatusSnapshot(
@@ -449,6 +463,14 @@ class JarvisAppService:
             response_executed_as_command=False,
             secrets_included=False,
             error=safe_contract_text(result.error) if result.error else None,
+            intent_resolution=(
+                result.intent_resolution.to_contract()
+                if hasattr(result.intent_resolution, "to_contract")
+                else result.intent_resolution
+            ),
+            requires_clarification=result.requires_clarification,
+            clarification_question=result.clarification_question,
+            clarification_options=result.clarification_options,
         )
 
     def process_one_shot_voice_request(
@@ -773,6 +795,120 @@ class JarvisAppService:
         if not isinstance(source, AppCommandSource):
             source = AppCommandSource.UNKNOWN
         input_text = str(text or "").strip()
+        clarification_result = self._consume_pending_clarification(input_text, source)
+        if clarification_result is not None:
+            return clarification_result
+
+        resolution = self.intent_resolver.resolve(
+            original_text=input_text,
+            processing_text=input_text,
+            source=source.value,
+        )
+        if resolution.resolution_status == ResolutionStatus.REQUIRES_CLARIFICATION:
+            self._pending_clarification = ClarificationState(
+                question_ru=resolution.clarification_question or "",
+                options=resolution.clarification_options,
+                original_text=input_text,
+                source=source.value,
+            )
+            return AppCommandResult(
+                ok=True,
+                input_text=input_text,
+                output_text=self._clarification_text_ru(
+                    resolution.clarification_question,
+                    resolution.clarification_options,
+                ),
+                source=source,
+                registry_match_id=None,
+                category="clarification",
+                risk_level="read_only",
+                executed=False,
+                requires_confirmation=False,
+                network_may_be_used=False,
+                response_executed_as_command=False,
+                error=None,
+                intent_resolution=resolution,
+                requires_clarification=True,
+                clarification_question=resolution.clarification_question,
+                clarification_options=resolution.clarification_options,
+            )
+
+        if resolution.intent_kind == IntentKind.UNSUPPORTED:
+            self._pending_clarification = None
+            return AppCommandResult(
+                ok=True,
+                input_text=input_text,
+                output_text=(
+                    "Запрос не выполнен: намерение небезопасно или недостаточно точно. "
+                    "Команда не запускалась."
+                ),
+                source=source,
+                registry_match_id=None,
+                category="unsupported",
+                risk_level="unknown",
+                executed=False,
+                requires_confirmation=False,
+                network_may_be_used=False,
+                response_executed_as_command=False,
+                error=None,
+                intent_resolution=resolution,
+            )
+
+        if resolution.intent_kind == IntentKind.ORDINARY_CONVERSATION:
+            self._pending_clarification = None
+            if "risky_action_question" in resolution.reason_codes:
+                return AppCommandResult(
+                    ok=True,
+                    input_text=input_text,
+                    output_text=(
+                        "Это вопрос о рискованном действии. Я не запускаю удаление "
+                        "и не создаю подтверждение без точной команды."
+                    ),
+                    source=source,
+                    registry_match_id=None,
+                    category="conversation",
+                    risk_level="safe_metadata_only",
+                    executed=False,
+                    requires_confirmation=False,
+                    network_may_be_used=False,
+                    response_executed_as_command=False,
+                    error=None,
+                    intent_resolution=resolution,
+                )
+            conversational = self.conversational_loop.handle(
+                ConversationalRequest(
+                    text=input_text,
+                    source=source.value,
+                    allow_network=False,
+                    allow_command_execution=False,
+                    allow_risky_actions=False,
+                )
+            )
+            return AppCommandResult(
+                ok=True,
+                input_text=input_text,
+                output_text=self.conversational_loop.result_text_ru(conversational),
+                source=source,
+                registry_match_id=conversational.command_id,
+                category=conversational.command_category or "conversation",
+                risk_level=conversational.command_risk or conversational.safety_level,
+                executed=False,
+                requires_confirmation=conversational.requires_confirmation,
+                network_may_be_used=False,
+                response_executed_as_command=False,
+                error=None,
+                intent_resolution=resolution,
+            )
+
+        command_text = resolution.command_text or input_text
+        return self._execute_resolved_command(command_text, source, resolution)
+
+    def _execute_resolved_command(
+        self,
+        input_text: str,
+        source: AppCommandSource,
+        resolution=None,
+    ) -> AppCommandResult:
         preview = self.preview_command(input_text)
         if preview.known_command and preview.requires_confirmation:
             return AppCommandResult(
@@ -791,6 +927,7 @@ class JarvisAppService:
                 network_may_be_used=preview.requires_network,
                 response_executed_as_command=False,
                 error=None,
+                intent_resolution=resolution,
             )
         try:
             processor_result = self.command_processor.process(input_text)
@@ -808,6 +945,7 @@ class JarvisAppService:
                 network_may_be_used=preview.requires_network,
                 response_executed_as_command=False,
                 error=None,
+                intent_resolution=resolution,
             )
         except Exception as exc:
             return AppCommandResult(
@@ -823,7 +961,72 @@ class JarvisAppService:
                 network_may_be_used=preview.requires_network,
                 response_executed_as_command=False,
                 error=str(exc),
+                intent_resolution=resolution,
             )
+
+    def _consume_pending_clarification(
+        self,
+        input_text: str,
+        source: AppCommandSource,
+    ) -> AppCommandResult | None:
+        state = self._pending_clarification
+        if state is None:
+            return None
+        resolution = self.intent_resolver.resolve(
+            original_text=input_text,
+            processing_text=input_text,
+            source=source.value,
+        )
+        if resolution.intent_kind == IntentKind.CANCELLATION_RESPONSE:
+            self._pending_clarification = None
+            return AppCommandResult(
+                ok=True,
+                input_text=input_text,
+                output_text="Уточнение отменено. Команда не запускалась.",
+                source=source,
+                registry_match_id=None,
+                category="clarification",
+                risk_level="read_only",
+                executed=False,
+                requires_confirmation=False,
+                network_may_be_used=False,
+                response_executed_as_command=False,
+                error=None,
+                intent_resolution=resolution,
+            )
+        selected = None
+        for option in state.options:
+            if option_matches_text(option, input_text, self.command_registry):
+                selected = option
+                break
+        if selected is None:
+            self._pending_clarification = None
+            return None
+        self._pending_clarification = None
+        selected_resolution = self.intent_resolver.resolve(
+            original_text=state.original_text,
+            processing_text=selected.command_text,
+            source=source.value,
+        )
+        return self._execute_resolved_command(
+            selected.command_text,
+            source,
+            selected_resolution,
+        )
+
+    @staticmethod
+    def _clarification_text_ru(
+        question: str | None,
+        options: tuple[AppClarificationOption, ...],
+    ) -> str:
+        lines = [
+            "Требуется уточнение:",
+            question or "Уточните вариант.",
+            "",
+            "Варианты:",
+        ]
+        lines.extend(f"- {option.label_ru}" for option in options)
+        return "\n".join(lines)
 
     def execute_command_text_ru(
         self,

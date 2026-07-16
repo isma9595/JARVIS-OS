@@ -14,6 +14,9 @@ class FakeExecutionResult:
     risk_level: str | None = "read_only"
     network_may_be_used: bool = False
     error: str | None = None
+    requires_clarification: bool = False
+    clarification_question: str | None = None
+    clarification_options: tuple = ()
 
 
 @dataclass
@@ -196,6 +199,36 @@ def test_execute_command_calls_app_service_execute_only():
     assert "Desktop shell execution:" in text
     assert "- executed through AppService: yes" in text
     assert "processed: статус ai" in text
+
+
+def test_execute_command_displays_clarification_options():
+    @dataclass(frozen=True)
+    class Option:
+        label_ru: str
+
+    class ClarifyingService(FakeAppService):
+        def execute_command(self, text, source):
+            self.execute_calls.append((text, source))
+            return FakeExecutionResult(
+                ok=True,
+                output_text="Требуется уточнение:\nКакой статус проверить?",
+                registry_match_id=None,
+                category="clarification",
+                risk_level="read_only",
+                requires_clarification=True,
+                clarification_question="Какой статус проверить?",
+                clarification_options=(Option("системы"), Option("AI")),
+            )
+
+    service = ClarifyingService()
+    view_model = DesktopShellViewModel(service)
+
+    text = view_model.execute_command("покажи статус")
+
+    assert "Требуется уточнение:" in text
+    assert "Какой статус проверить?" in text
+    assert "- системы" in text
+    assert "- AI" in text
 
 
 def test_execute_command_wraps_output_safely():

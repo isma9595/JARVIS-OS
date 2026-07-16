@@ -210,10 +210,21 @@ class DesktopShellViewModel:
         error = getattr(result, "error", None)
         if error:
             lines.append(f"- error: {error}")
-        output_text = getattr(result, "output_text", "")
-        if output_text:
-            lines.append("Output:")
-            lines.append(str(output_text))
+        if getattr(result, "requires_clarification", False):
+            question = getattr(result, "clarification_question", None)
+            options = getattr(result, "clarification_options", ())
+            lines.append("Требуется уточнение:")
+            if question:
+                lines.append(str(question))
+            if options:
+                lines.append("")
+                lines.append("Варианты:")
+                lines.extend(f"- {getattr(option, 'label_ru', option)}" for option in options)
+        else:
+            output_text = getattr(result, "output_text", "")
+            if output_text:
+                lines.append("Output:")
+                lines.append(str(output_text))
         return self._safe_text("\n".join(lines))
 
     def _format_voice_result(self, result) -> str:

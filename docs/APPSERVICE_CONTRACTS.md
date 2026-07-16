@@ -134,6 +134,45 @@ and safe failures. Error codes may remain English for machines. Complete
 multilingual support is not claimed; the language manager is only an
 application-level extension point for future user-selected languages.
 
+## Hybrid Intent Resolver And Clarification
+
+TASK-080 adds a typed deterministic resolver before AppService execution:
+
+`user text -> source normalization -> intent resolution -> AppService path`
+
+Resolution order is exact command/registered alias, safe Russian voice
+normalization result, explicit read-only semantic status patterns, explicit
+provider-request syntax, confirmation/cancellation response words, bounded
+clarification, then ordinary conversation or safe unsupported result.
+
+Intent categories are `local_command`, `ordinary_conversation`,
+`provider_request`, `confirmation_response`, `cancellation_response`,
+`ambiguous`, and `unsupported`. Resolution statuses are `resolved`,
+`requires_clarification`, and `unsupported`.
+
+Confidence is explainable: `high` for exact aliases, explicit provider syntax,
+or unique safe patterns; `medium` for bounded clarification; `low` for ordinary
+conversation or unsupported input. Only uniquely resolved high-confidence local
+commands continue to the existing execution path.
+
+Clarification state is local to one `JarvisAppService` instance, in-memory,
+single-use, serializable, and not persisted. It contains only a Russian
+question and explicit options. It is cleared after option selection,
+cancellation, or unrelated new input.
+
+Clarification is separate from dangerous-action confirmation. A clarification
+answer never approves a risky action; selected commands still pass through the
+existing confirmation and forbidden-command handling.
+
+Typed input is not destructively normalized. One-shot voice input keeps the
+original recognized text in `AppVoiceRequestResult`, uses TASK-079 safe Russian
+normalization only when marked safe, and then enters the same resolver
+boundary.
+
+Safety limitations: no fuzzy matching, no Levenshtein repair, no embeddings,
+no LLM classification, no translation, no external NLP, no provider calls, no
+microphone calls, and no direct `ActionRouter` calls inside the resolver.
+
 ## Mobile, Admin, And Support Relevance
 
 Mobile and admin/support clients can consume the same schema/version, status

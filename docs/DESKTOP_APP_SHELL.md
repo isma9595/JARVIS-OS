@@ -24,6 +24,10 @@ risk, and execute explicit user commands only through AppService.
 TASK-073 adds versioned AppService contracts. The shell may read contract
 status/cards through AppService, but TASK-073 adds no new screens or key input.
 
+TASK-080 keeps intent resolution inside AppService. The shell does not call the
+hybrid resolver directly; it only displays structured clarification questions
+and options returned by AppService.
+
 ## Relationship To CommandRegistry
 
 `CommandRegistry` remains the metadata source for categories, command lists,
@@ -49,6 +53,7 @@ python run_desktop.py
 - List command registry categories and commands.
 - Preview command risk without execution.
 - Execute explicit command text through AppService.
+- Display Russian clarification questions and options returned by AppService.
 - Start one explicit one-shot voice request through AppService with the
   `Микрофон` button.
 - Execute `диалог: <text>` through AppService/CommandProcessor as a safe
@@ -87,6 +92,8 @@ python run_desktop.py
   only recognized text can continue through AppService.
 - Conversational preview does not call providers, network, browser, audio, or
   file/OS automation.
+- Clarification does not count as confirmation for risky actions; selected
+  clarification options still go through AppService and existing safety checks.
 
 ## Future
 
