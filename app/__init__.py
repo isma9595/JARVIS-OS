@@ -24,6 +24,7 @@ from app.app_contracts import (
     AppExecutionContract,
     AppPreviewContract,
     AppStatusCard,
+    AppVoiceRequestResult,
 )
 from app.desktop_shell import (
     DesktopShellState,
@@ -48,6 +49,7 @@ __all__ = [
     "AppPreviewContract",
     "AppStatusSnapshot",
     "AppStatusCard",
+    "AppVoiceRequestResult",
     "APP_CONTRACT_SCHEMA_NAME",
     "APP_CONTRACT_VERSION",
     "ConversationIntent",

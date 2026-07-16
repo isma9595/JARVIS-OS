@@ -8,6 +8,7 @@ call providers, route actions, read arbitrary files, or persist prompts.
 from dataclasses import dataclass
 from enum import Enum
 import re
+from threading import Lock
 
 from app.app_contracts import (
     APP_CONTRACT_SCHEMA_NAME,
@@ -18,6 +19,7 @@ from app.app_contracts import (
     AppExecutionContract,
     AppPreviewContract,
     AppStatusCard,
+    AppVoiceRequestResult,
     safe_contract_text,
 )
 from app.conversational_loop import (
@@ -31,6 +33,7 @@ from core.command_registry import (
     CommandRegistry,
     DEFAULT_COMMAND_REGISTRY,
 )
+from language.language_manager import ApplicationLanguageManager
 from voice.audio_lifecycle import AudioLifecycleController, AudioLifecycleStatus
 from ai.secure_provider_runtime import SecureProviderRuntime
 
@@ -107,13 +110,30 @@ class JarvisAppService:
         "предварительная проверка команды:",
     )
 
-    def __init__(self, command_processor=None, command_registry=None):
+    def __init__(
+        self,
+        command_processor=None,
+        command_registry=None,
+        one_shot_voice_recognition=None,
+        language_manager=None,
+    ):
         self.command_registry = command_registry or DEFAULT_COMMAND_REGISTRY
         if command_processor is None:
             from core.command_processor import CommandProcessor
 
             command_processor = CommandProcessor(command_registry=self.command_registry)
         self.command_processor = command_processor
+        self.one_shot_voice_recognition = (
+            one_shot_voice_recognition
+            or getattr(command_processor, "one_shot_vosk_real_recognition", None)
+        )
+        self.language_manager = (
+            language_manager
+            or ApplicationLanguageManager.from_profile(
+                getattr(command_processor, "user_profile", None)
+            )
+        )
+        self._one_shot_voice_lock = Lock()
         self.audio_lifecycle_controller = self._build_audio_lifecycle_controller()
         self.conversational_loop = SafeConversationalLoop(
             app_service=self,
@@ -138,6 +158,9 @@ class JarvisAppService:
             consensus_explicit_only=True,
             voice_safety_active=True,
         )
+
+    def language_settings(self) -> dict[str, str]:
+        return self.language_manager.status_dict()
 
     def status_text_ru(self) -> str:
         snapshot = self.status_snapshot()
@@ -427,6 +450,116 @@ class JarvisAppService:
             error=safe_contract_text(result.error) if result.error else None,
         )
 
+    def process_one_shot_voice_request(
+        self,
+        source: AppCommandSource = AppCommandSource.VOICE,
+    ) -> AppVoiceRequestResult:
+        if not isinstance(source, AppCommandSource):
+            source = AppCommandSource.UNKNOWN
+
+        if not self._one_shot_voice_lock.acquire(blocking=False):
+            return self._voice_error_result(
+                error_code="overlapping_one_shot_request",
+                user_message="Одноразовый голосовой запрос уже выполняется.",
+                result_type="voice_rejected",
+            )
+
+        recognition_result = None
+        try:
+            self.audio_lifecycle_controller.start_one_shot_metadata_only()
+            recognizer = self._get_one_shot_voice_recognition()
+            recognition_result = recognizer.run_once(explicit_one_shot_requested=True)
+            recognized_text = str(
+                self._get_value(recognition_result, "recognized_text", "") or ""
+            ).strip()
+            recognition_completed = bool(
+                self._get_value(recognition_result, "completed", False)
+            )
+            recognition_blocked = bool(
+                self._get_value(recognition_result, "blocked", False)
+            )
+            recognition_allowed = bool(
+                self._get_value(recognition_result, "allowed", False)
+            )
+
+            if recognition_blocked or not recognition_allowed:
+                return self._voice_error_result(
+                    error_code=self._voice_error_code_from_reasons(
+                        self._get_value(recognition_result, "reasons", ())
+                    ),
+                    user_message=self._voice_message_from_recognition(
+                        recognition_result,
+                        "Одноразовое распознавание голоса безопасно заблокировано.",
+                    ),
+                    result_type="voice_recognition_blocked",
+                )
+
+            if not recognition_completed:
+                return self._voice_error_result(
+                    error_code="recognition_incomplete",
+                    user_message=self._voice_message_from_recognition(
+                        recognition_result,
+                        "Одноразовое распознавание голоса не завершилось.",
+                    ),
+                    result_type="voice_recognition_failed",
+                )
+
+            if not recognized_text:
+                return self._voice_error_result(
+                    error_code="empty_recognition",
+                    user_message="Распознавание завершилось, но полезный текст речи не найден.",
+                    result_type="voice_recognition_empty",
+                    voice_capture_succeeded=True,
+                )
+
+            text_result = self.execute_contract(recognized_text, source)
+            return AppVoiceRequestResult(
+                ok=bool(text_result.ok),
+                voice_capture_succeeded=True,
+                recognition_succeeded=True,
+                recognized_text=safe_contract_text(recognized_text),
+                text_processing_succeeded=bool(text_result.ok),
+                result_type=(
+                    "confirmation_required"
+                    if text_result.requires_confirmation
+                    else ("text_processed" if text_result.ok else "text_processing_failed")
+                ),
+                category=text_result.category,
+                requires_confirmation=text_result.requires_confirmation,
+                error_code=None if text_result.ok else "text_processing_failed",
+                user_message=(
+                    "Голосовой запрос обработан через обычный текстовый путь."
+                    if text_result.ok
+                    else "Распознавание голоса прошло, но обработка текста безопасно завершилась ошибкой."
+                ),
+                text_result=text_result,
+                secrets_included=False,
+                raw_audio_included=False,
+                provider_objects_included=False,
+                microphone_objects_included=False,
+            )
+        except Exception as exc:
+            return self._voice_error_result(
+                error_code="one_shot_voice_failure",
+                user_message=(
+                    "Голосовой запрос безопасно завершился ошибкой: "
+                    + self._safe_text_preview(str(exc))
+                ),
+                result_type="voice_failure",
+            )
+        finally:
+            try:
+                self._cleanup_one_shot_voice_recognition()
+            finally:
+                self.audio_lifecycle_controller.reset_to_idle()
+                self._one_shot_voice_lock.release()
+
+    def process_one_shot_voice_request_text_ru(
+        self,
+        source: AppCommandSource = AppCommandSource.VOICE,
+    ) -> str:
+        return self.process_one_shot_voice_request(source).safe_text_ru()
+
     def capabilities_text_ru(self) -> str:
         return "\n".join(
             [
@@ -624,6 +757,24 @@ class JarvisAppService:
             source = AppCommandSource.UNKNOWN
         input_text = str(text or "").strip()
         preview = self.preview_command(input_text)
+        if preview.known_command and preview.requires_confirmation:
+            return AppCommandResult(
+                ok=True,
+                input_text=input_text,
+                output_text=(
+                    preview.safe_summary_ru
+                    + "\nТребуется подтверждение. Команда не выполнена автоматически."
+                ),
+                source=source,
+                registry_match_id=preview.registry_match_id,
+                category=preview.category,
+                risk_level=preview.risk_level,
+                executed=False,
+                requires_confirmation=True,
+                network_may_be_used=preview.requires_network,
+                response_executed_as_command=False,
+                error=None,
+            )
         try:
             processor_result = self.command_processor.process(input_text)
             output_text = str(processor_result.get("response", processor_result))
@@ -794,3 +945,86 @@ class JarvisAppService:
         if runtime is not None:
             return runtime
         return SecureProviderRuntime()
+
+    def _get_one_shot_voice_recognition(self):
+        if self.one_shot_voice_recognition is not None:
+            return self.one_shot_voice_recognition
+        recognizer_factory = getattr(
+            self.command_processor,
+            "_get_one_shot_vosk_real_recognition",
+            None,
+        )
+        if callable(recognizer_factory):
+            self.one_shot_voice_recognition = recognizer_factory()
+            return self.one_shot_voice_recognition
+        from voice.one_shot_vosk_real_recognition import OneShotVoskRealRecognition
+
+        self.one_shot_voice_recognition = OneShotVoskRealRecognition()
+        return self.one_shot_voice_recognition
+
+    def _cleanup_one_shot_voice_recognition(self):
+        recognizer = self.one_shot_voice_recognition
+        if recognizer is None:
+            return
+        for method_name in ("close", "cleanup", "release"):
+            method = getattr(recognizer, method_name, None)
+            if callable(method):
+                try:
+                    method()
+                except Exception:
+                    pass
+                return
+
+    def _voice_error_result(
+        self,
+        error_code: str,
+        user_message: str,
+        result_type: str,
+        voice_capture_succeeded: bool = False,
+    ) -> AppVoiceRequestResult:
+        return AppVoiceRequestResult(
+            ok=False,
+            voice_capture_succeeded=voice_capture_succeeded,
+            recognition_succeeded=False,
+            recognized_text=None,
+            text_processing_succeeded=False,
+            result_type=result_type,
+            category=None,
+            requires_confirmation=False,
+            error_code=error_code,
+            user_message=safe_contract_text(user_message),
+            text_result=None,
+            secrets_included=False,
+            raw_audio_included=False,
+            provider_objects_included=False,
+            microphone_objects_included=False,
+        )
+
+    def _voice_message_from_recognition(self, recognition_result, fallback: str) -> str:
+        reasons = list(self._get_value(recognition_result, "reasons", ()) or ())
+        if reasons:
+            return safe_contract_text("; ".join(str(reason) for reason in reasons))
+        return fallback
+
+    @staticmethod
+    def _voice_error_code_from_reasons(reasons) -> str:
+        text = " ".join(str(reason or "").lower() for reason in reasons or ())
+        mapping = (
+            ("runtime", "vosk_runtime_unavailable"),
+            ("vosk", "vosk_unavailable"),
+            ("model", "vosk_model_unavailable"),
+            ("microphone", "microphone_unavailable"),
+            ("audio", "audio_capture_failure"),
+            ("timeout", "capture_timeout"),
+            ("cancel", "request_cancelled"),
+        )
+        for marker, code in mapping:
+            if marker in text:
+                return code
+        return "recognition_blocked"
+
+    @staticmethod
+    def _get_value(source, key, default=None):
+        if isinstance(source, dict):
+            return source.get(key, default)
+        return getattr(source, key, default)

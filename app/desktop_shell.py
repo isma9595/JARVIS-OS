@@ -6,6 +6,7 @@ registry browsing, preview, and explicit execution.
 
 from dataclasses import dataclass
 import re
+from threading import Thread
 
 from app.app_service import AppCommandSource, JarvisAppService
 
@@ -114,6 +115,28 @@ class DesktopShellViewModel:
             self.state = self._replace(output_text=error, last_error=error)
             return error
 
+    def process_one_shot_voice_request(self) -> str:
+        try:
+            result = self.app_service.process_one_shot_voice_request(
+                AppCommandSource.DESKTOP_UI,
+            )
+            output_text = self._format_voice_result(result)
+            recognized_text = getattr(result, "recognized_text", None)
+            self.state = self._replace(
+                command_input=str(recognized_text or self.state.command_input),
+                preview_text=(
+                    "Одноразовый голосовой запрос завершён.\n"
+                    f"Распознанный текст: {recognized_text or 'нет'}"
+                ),
+                output_text=output_text,
+                last_error=None if getattr(result, "ok", False) else output_text,
+            )
+            return output_text
+        except Exception as exc:
+            error = self._safe_error(exc)
+            self.state = self._replace(output_text=error, last_error=error)
+            return error
+
     def clear_output(self) -> str:
         output_text = "Output cleared. No command has been executed by clear."
         self.state = self._replace(
@@ -188,6 +211,35 @@ class DesktopShellViewModel:
             lines.append(str(output_text))
         return self._safe_text("\n".join(lines))
 
+    def _format_voice_result(self, result) -> str:
+        lines = [
+            "Голосовой запрос Desktop Shell:",
+            f"- успешно: {'да' if getattr(result, 'ok', False) else 'нет'}",
+            "- source: desktop_ui",
+            f"- захват голоса: {'да' if getattr(result, 'voice_capture_succeeded', False) else 'нет'}",
+            f"- распознавание: {'да' if getattr(result, 'recognition_succeeded', False) else 'нет'}",
+            f"- распознано: {getattr(result, 'recognized_text', None) or 'нет'}",
+            f"- обработка текста: {'да' if getattr(result, 'text_processing_succeeded', False) else 'нет'}",
+            f"- result type: {getattr(result, 'result_type', 'unknown')}",
+            f"- category: {getattr(result, 'category', None) or 'unknown'}",
+            f"- требуется подтверждение: {'да' if getattr(result, 'requires_confirmation', False) else 'нет'}",
+            "- executed through AppService: yes",
+            "- сырое аудио отправлено наружу: нет",
+            "- response executed as command: no",
+            "- no secrets",
+        ]
+        error_code = getattr(result, "error_code", None)
+        if error_code:
+            lines.append(f"- error code: {error_code}")
+        user_message = getattr(result, "user_message", "")
+        if user_message:
+            lines.append(f"- сообщение: {user_message}")
+        text_result = getattr(result, "text_result", None)
+        if text_result is not None:
+            lines.append("Ответ:")
+            lines.append(getattr(text_result, "output_text", ""))
+        return self._safe_text("\n".join(lines))
+
     def _replace(self, **changes) -> DesktopShellState:
         values = self.state.__dict__.copy() if hasattr(self, "state") else {}
         values.update(changes)
@@ -231,6 +283,7 @@ class JarvisDesktopShell:
         self.root.geometry("1000x700")
         self.root.minsize(900, 600)
         self.root.configure(bg=self.COLORS["bg"])
+        self._voice_worker_active = False
         self._build()
         self._render_state()
 
@@ -381,6 +434,19 @@ class JarvisDesktopShell:
             padx=12,
             pady=8,
         ).grid(row=1, column=2, padx=(4, 0), pady=(8, 0))
+        self.voice_button = tk.Button(
+            input_panel,
+            text="Микрофон",
+            command=self._on_voice_once,
+            bg=self.COLORS["panel_alt"],
+            fg=self.COLORS["text"],
+            activebackground=self.COLORS["accent"],
+            activeforeground=self.COLORS["text"],
+            relief="flat",
+            padx=12,
+            pady=8,
+        )
+        self.voice_button.grid(row=1, column=3, padx=(8, 0), pady=(8, 0))
 
         note = tk.Label(
             main,
@@ -437,6 +503,33 @@ class JarvisDesktopShell:
 
     def _on_execute(self) -> None:
         self.view_model.execute_command(self._command_input())
+        self._render_state()
+
+    def _on_voice_once(self) -> None:
+        if self._voice_worker_active:
+            return
+        self._voice_worker_active = True
+        self.voice_button.configure(state="disabled")
+        self.view_model.state = self.view_model._replace(
+            output_text=(
+                "Одноразовый голосовой запрос активен.\n"
+                "Запись и локальное распознавание запущены после явного нажатия кнопки."
+            ),
+            last_error=None,
+        )
+        self._render_state()
+
+        def worker():
+            try:
+                self.view_model.process_one_shot_voice_request()
+            finally:
+                self.root.after(0, self._finish_voice_once)
+
+        Thread(target=worker, daemon=True).start()
+
+    def _finish_voice_once(self) -> None:
+        self._voice_worker_active = False
+        self.voice_button.configure(state="normal")
         self._render_state()
 
     def _on_status(self) -> None:

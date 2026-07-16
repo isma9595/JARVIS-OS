@@ -204,6 +204,48 @@ class AppExecutionContract(_ContractMixin):
 
 
 @dataclass(frozen=True)
+class AppVoiceRequestResult(_ContractMixin):
+    ok: bool
+    voice_capture_succeeded: bool
+    recognition_succeeded: bool
+    recognized_text: str | None
+    text_processing_succeeded: bool
+    result_type: str
+    category: str | None
+    requires_confirmation: bool
+    error_code: str | None
+    user_message: str
+    text_result: AppExecutionContract | None
+    secrets_included: bool
+    raw_audio_included: bool
+    provider_objects_included: bool
+    microphone_objects_included: bool
+
+    def safe_text_ru(self) -> str:
+        lines = [
+            "App one-shot voice request:",
+            f"- ok: {'yes' if self.ok else 'no'}",
+            f"- voice capture succeeded: {'yes' if self.voice_capture_succeeded else 'no'}",
+            f"- recognition succeeded: {'yes' if self.recognition_succeeded else 'no'}",
+            f"- recognized text: {safe_contract_text(self.recognized_text or 'none')}",
+            f"- text processing succeeded: {'yes' if self.text_processing_succeeded else 'no'}",
+            f"- result type: {self.result_type}",
+            f"- category: {self.category or 'unknown'}",
+            f"- requires confirmation: {'yes' if self.requires_confirmation else 'no'}",
+            f"- error code: {self.error_code or 'none'}",
+            f"- message: {safe_contract_text(self.user_message)}",
+            "- secrets included: no",
+            "- raw audio included: no",
+            "- provider objects included: no",
+            "- microphone objects included: no",
+        ]
+        if self.text_result is not None:
+            lines.append("Text result:")
+            lines.append(self.text_result.safe_text_ru())
+        return "\n".join(lines)
+
+
+@dataclass(frozen=True)
 class AppContractManifest(_ContractMixin):
     schema_name: str
     version: str

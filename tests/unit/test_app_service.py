@@ -1,4 +1,5 @@
 from app import AppCommandSource, JarvisAppService
+from voice.one_shot_vosk_real_recognition import OneShotVoskRealRecognitionResult
 
 
 class FakeCommandProcessor:
@@ -13,6 +14,33 @@ class FakeCommandProcessor:
     def process(self, text):
         self.calls.append(text)
         return {"intent": "fake.intent", "response": f"processed: {text}"}
+
+
+class FakeOneShotRecognition:
+    def __init__(self, result=None, error=None, reentrant_service=None):
+        self.calls = 0
+        self.closed = False
+        self.error = error
+        self.reentrant_service = reentrant_service
+        self.result = result or OneShotVoskRealRecognitionResult(
+            allowed=True,
+            completed=True,
+            blocked=False,
+            recognized_text="СЃС‚Р°С‚СѓСЃ app service",
+            capture_seconds=1,
+        )
+
+    def run_once(self, explicit_one_shot_requested=False):
+        self.calls += 1
+        assert explicit_one_shot_requested is True
+        if self.reentrant_service is not None:
+            self.reentrant_result = self.reentrant_service.process_one_shot_voice_request()
+        if self.error is not None:
+            raise self.error
+        return self.result
+
+    def close(self):
+        self.closed = True
 
 
 def test_app_service_status_snapshot_safe():
@@ -351,3 +379,195 @@ def test_contract_outputs_contain_no_secrets():
     )
 
     assert secret not in text
+
+
+def test_one_shot_voice_success_forwards_recognized_text_to_execute_contract():
+    processor = FakeCommandProcessor()
+    recognizer = FakeOneShotRecognition()
+    service = JarvisAppService(
+        command_processor=processor,
+        one_shot_voice_recognition=recognizer,
+    )
+
+    result = service.process_one_shot_voice_request(AppCommandSource.TEST)
+
+    assert recognizer.calls == 1
+    assert processor.calls == ["СЃС‚Р°С‚СѓСЃ app service"]
+    assert result.ok is True
+    assert result.voice_capture_succeeded is True
+    assert result.recognition_succeeded is True
+    assert result.recognized_text == "СЃС‚Р°С‚СѓСЃ app service"
+    assert result.text_processing_succeeded is True
+    assert result.text_result is not None
+    assert result.text_result.source == "test"
+    assert recognizer.closed is True
+    assert service.audio_lifecycle_status().one_shot_active is False
+
+
+def test_one_shot_voice_runtime_language_defaults_to_ru_ru_and_vosk_ru():
+    service = JarvisAppService(
+        command_processor=FakeCommandProcessor(),
+        one_shot_voice_recognition=FakeOneShotRecognition(
+            OneShotVoskRealRecognitionResult(
+                allowed=True,
+                completed=True,
+                blocked=False,
+                recognized_text="статус app service",
+                capture_seconds=1,
+            )
+        ),
+    )
+
+    settings = service.language_settings()
+
+    assert settings["runtime_locale"] == "ru-RU"
+    assert settings["command_language"] == "ru"
+    assert settings["speech_recognition_language"] == "ru"
+    assert settings["ui_language"] == "ru"
+    assert settings["assistant_response_language"] == "ru"
+
+
+def test_one_shot_voice_does_not_call_text_path_after_empty_recognition():
+    processor = FakeCommandProcessor()
+    recognizer = FakeOneShotRecognition(
+        OneShotVoskRealRecognitionResult(
+            allowed=True,
+            completed=True,
+            blocked=False,
+            recognized_text=None,
+            capture_seconds=1,
+        )
+    )
+    service = JarvisAppService(
+        command_processor=processor,
+        one_shot_voice_recognition=recognizer,
+    )
+
+    result = service.process_one_shot_voice_request(AppCommandSource.TEST)
+
+    assert result.ok is False
+    assert result.error_code == "empty_recognition"
+    assert result.voice_capture_succeeded is True
+    assert result.recognition_succeeded is False
+    assert processor.calls == []
+    assert recognizer.closed is True
+
+
+def test_one_shot_voice_blocks_without_provider_call_after_recognition_failure():
+    processor = FakeCommandProcessor()
+    recognizer = FakeOneShotRecognition(
+        OneShotVoskRealRecognitionResult(
+            allowed=False,
+            completed=False,
+            blocked=True,
+            recognized_text=None,
+            capture_seconds=0,
+            reasons=["Vosk runtime unavailable"],
+        )
+    )
+    service = JarvisAppService(
+        command_processor=processor,
+        one_shot_voice_recognition=recognizer,
+    )
+
+    result = service.process_one_shot_voice_request(AppCommandSource.TEST)
+
+    assert result.ok is False
+    assert result.error_code == "vosk_runtime_unavailable"
+    assert processor.calls == []
+    assert recognizer.closed is True
+
+
+def test_one_shot_voice_text_processing_failure_is_serializable_and_redacted():
+    class FailingProcessor(FakeCommandProcessor):
+        def process(self, text):
+            self.calls.append(text)
+            raise RuntimeError("api key sk-test-1234567890secret failed")
+
+    service = JarvisAppService(
+        command_processor=FailingProcessor(),
+        one_shot_voice_recognition=FakeOneShotRecognition(),
+    )
+
+    result = service.process_one_shot_voice_request(AppCommandSource.TEST)
+    data = result.to_dict()
+    text = result.safe_text_ru()
+
+    assert result.ok is False
+    assert result.text_processing_succeeded is False
+    assert result.error_code == "text_processing_failed"
+    assert data["text_result"]["error"] == "[REDACTED] failed"
+    assert "sk-test-1234567890secret" not in text
+
+
+def test_one_shot_voice_failure_message_is_russian_and_safe():
+    class BrokenRecognizer:
+        def run_once(self, explicit_one_shot_requested=False):
+            raise RuntimeError("device exploded")
+
+    service = JarvisAppService(
+        command_processor=FakeCommandProcessor(),
+        one_shot_voice_recognition=BrokenRecognizer(),
+    )
+
+    result = service.process_one_shot_voice_request(AppCommandSource.TEST)
+
+    assert result.ok is False
+    assert result.error_code == "one_shot_voice_failure"
+    assert "Голосовой запрос безопасно завершился ошибкой" in result.user_message
+    assert "Traceback" not in result.user_message
+
+
+def test_one_shot_voice_empty_recognition_message_is_russian():
+    service = JarvisAppService(
+        command_processor=FakeCommandProcessor(),
+        one_shot_voice_recognition=FakeOneShotRecognition(
+            OneShotVoskRealRecognitionResult(
+                allowed=True,
+                completed=True,
+                blocked=False,
+                recognized_text="",
+                capture_seconds=1,
+            )
+        ),
+    )
+
+    result = service.process_one_shot_voice_request(AppCommandSource.TEST)
+
+    assert result.ok is False
+    assert result.error_code == "empty_recognition"
+    assert "полезный текст речи не найден" in result.user_message
+
+
+def test_one_shot_voice_rejects_overlapping_request_and_cleans_state():
+    recognizer = FakeOneShotRecognition()
+    service = JarvisAppService(
+        command_processor=FakeCommandProcessor(),
+        one_shot_voice_recognition=recognizer,
+    )
+    recognizer.reentrant_service = service
+
+    result = service.process_one_shot_voice_request(AppCommandSource.TEST)
+
+    assert result.ok is True
+    assert recognizer.reentrant_result.ok is False
+    assert recognizer.reentrant_result.error_code == "overlapping_one_shot_request"
+    assert recognizer.closed is True
+    assert service.audio_lifecycle_status().one_shot_active is False
+
+
+def test_one_shot_voice_allows_repeated_request_after_failure():
+    recognizer = FakeOneShotRecognition(error=RuntimeError("capture timeout"))
+    service = JarvisAppService(
+        command_processor=FakeCommandProcessor(),
+        one_shot_voice_recognition=recognizer,
+    )
+
+    first = service.process_one_shot_voice_request(AppCommandSource.TEST)
+    recognizer.error = None
+    second = service.process_one_shot_voice_request(AppCommandSource.TEST)
+
+    assert first.ok is False
+    assert second.ok is True
+    assert recognizer.calls == 2
+    assert service.audio_lifecycle_status().one_shot_active is False

@@ -16,10 +16,26 @@ class FakeExecutionResult:
     error: str | None = None
 
 
+@dataclass
+class FakeVoiceResult:
+    ok: bool = True
+    voice_capture_succeeded: bool = True
+    recognition_succeeded: bool = True
+    recognized_text: str | None = "СЃС‚Р°С‚СѓСЃ ai"
+    text_processing_succeeded: bool = True
+    result_type: str = "text_processed"
+    category: str | None = "ai"
+    requires_confirmation: bool = False
+    error_code: str | None = None
+    user_message: str = "processed through text path"
+    text_result: FakeExecutionResult | None = None
+
+
 class FakeAppService:
     def __init__(self):
         self.preview_calls = []
         self.execute_calls = []
+        self.voice_calls = []
         self.list_calls = []
 
     def status_text_ru(self):
@@ -79,6 +95,12 @@ class FakeAppService:
     def execute_command(self, text, source):
         self.execute_calls.append((text, source))
         return FakeExecutionResult(output_text=f"processed: {text}")
+
+    def process_one_shot_voice_request(self, source):
+        self.voice_calls.append(source)
+        return getattr(self, "voice_result", None) or FakeVoiceResult(
+            text_result=FakeExecutionResult(output_text="processed voice command")
+        )
 
 
 def test_view_model_builds_initial_state_safely():
@@ -182,6 +204,63 @@ def test_execute_command_wraps_output_safely():
     assert "sk-test-1234567890secret" not in text
     assert "[REDACTED]" in text
     assert "- no secrets" in text
+
+
+def test_process_one_shot_voice_request_uses_app_service_only():
+    service = FakeAppService()
+    view_model = DesktopShellViewModel(service)
+
+    text = view_model.process_one_shot_voice_request()
+
+    assert service.voice_calls == [AppCommandSource.DESKTOP_UI]
+    assert service.execute_calls == []
+    assert "Голосовой запрос Desktop Shell:" in text
+    assert "- распознавание: да" in text
+    assert "- распознано:" in text
+    assert "processed voice command" in text
+    assert "- сырое аудио отправлено наружу: нет" in text
+
+
+def test_process_one_shot_voice_request_wraps_failure_safely():
+    class FailingVoiceService(FakeAppService):
+        def process_one_shot_voice_request(self, source):
+            self.voice_calls.append(source)
+            return FakeVoiceResult(
+                ok=False,
+                voice_capture_succeeded=False,
+                recognition_succeeded=False,
+                recognized_text=None,
+                text_processing_succeeded=False,
+                result_type="voice_recognition_failed",
+                category=None,
+                error_code="vosk_runtime_unavailable",
+                user_message="api key sk-test-1234567890secret failed",
+                text_result=None,
+            )
+
+    view_model = DesktopShellViewModel(FailingVoiceService())
+
+    text = view_model.process_one_shot_voice_request()
+
+    assert "vosk_runtime_unavailable" in text
+    assert "sk-test-1234567890secret" not in text
+    assert "[REDACTED]" in text
+    assert view_model.state.last_error == text
+
+
+def test_process_one_shot_voice_request_formats_cyrillic_recognition():
+    service = FakeAppService()
+    service.voice_result = FakeVoiceResult(
+        recognized_text="статус app service",
+        text_result=FakeExecutionResult(output_text="Статус готов."),
+    )
+    view_model = DesktopShellViewModel(service)
+
+    text = view_model.process_one_shot_voice_request()
+
+    assert "- распознано: статус app service" in text
+    assert "Статус готов." in text
+    assert "Recognized text" not in text
 
 
 def test_execute_dialog_greeting_with_real_service_is_safe():
