@@ -217,6 +217,13 @@ class AppExecutionContract(_ContractMixin):
     duplicate_suppressed: bool = False
     cancellable: bool = False
     workflow_id: str | None = None
+    workflow_status: str | None = None
+    current_step_id: str | None = None
+    current_step_name: str | None = None
+    completed_steps: tuple[str, ...] = ()
+    total_steps: int | None = None
+    progress_percent: int | None = None
+    awaiting_confirmation: bool = False
     source_filename: str | None = None
     proposed_output_filename: str | None = None
     issue_count: int | None = None
@@ -249,6 +256,13 @@ class AppExecutionContract(_ContractMixin):
             lines.extend(
                 [
                     f"- workflow id: {safe_contract_text(self.workflow_id)}",
+                    f"- workflow status: {safe_contract_text(self.workflow_status or 'none')}",
+                    f"- current step id: {safe_contract_text(self.current_step_id or 'none')}",
+                    f"- current step name: {safe_contract_text(self.current_step_name or 'none')}",
+                    f"- completed steps: {len(self.completed_steps)}",
+                    f"- total steps: {self.total_steps if self.total_steps is not None else 0}",
+                    f"- progress percent: {self.progress_percent if self.progress_percent is not None else 0}",
+                    f"- awaiting confirmation: {'yes' if self.awaiting_confirmation else 'no'}",
                     f"- source filename: {safe_contract_text(self.source_filename or 'none')}",
                     f"- issue count: {self.issue_count if self.issue_count is not None else 0}",
                     f"- proposed output filename: {safe_contract_text(self.proposed_output_filename or 'none')}",

@@ -103,6 +103,43 @@ class DocumentReviewSaveResult:
     bytes_written: int
 
 
+@dataclass
+class DocumentReviewRunState:
+    source_path: str
+    source: Path | None = None
+    output: Path | None = None
+    raw: bytes | None = None
+    text: str | None = None
+    encoding: str | None = None
+    size: int = 0
+    issues: tuple[DocumentReviewIssue, ...] = ()
+    revised_content: str | None = None
+    newline: str | None = None
+    proposal: DocumentReviewProposal | None = None
+    save_result: DocumentReviewSaveResult | None = None
+
+    def safe_metadata(self) -> dict[str, object]:
+        metadata: dict[str, object] = {"workflow_id": WORKFLOW_ID}
+        if self.source is not None:
+            metadata["source_filename"] = self.source.name
+            metadata["source_size_bytes"] = self.size
+        if self.output is not None:
+            metadata["proposed_output_filename"] = self.output.name
+        if self.proposal is not None:
+            metadata.update(self.proposal.safe_metadata())
+        if self.save_result is not None:
+            metadata.update(
+                {
+                    "saved": self.save_result.saved,
+                    "verified": self.save_result.verified,
+                    "source_hash_unchanged": self.save_result.source_hash_unchanged,
+                    "bytes_written": self.save_result.bytes_written,
+                    "output_hash": self.save_result.output_hash,
+                }
+            )
+        return metadata
+
+
 class DocumentReviewWorkflowError(ValueError):
     def __init__(self, error_code: DocumentReviewErrorCode, message_ru: str):
         super().__init__(message_ru)
@@ -161,6 +198,81 @@ class LocalTextDocumentReviewWorkflow:
             output_encoding=encoding,
             newline=newline,
             changed=revised != text,
+        )
+
+    def validate_source_step(self, state: DocumentReviewRunState) -> None:
+        source = self._validate_source(state.source_path)
+        size = source.stat().st_size
+        if size > self.max_bytes:
+            raise DocumentReviewWorkflowError(
+                DocumentReviewErrorCode.FILE_TOO_LARGE,
+                f"Р¤Р°Р№Р» Р±РѕР»СЊС€Рµ РґРѕРїСѓСЃС‚РёРјРѕРіРѕ Р»РёРјРёС‚Р° {self.max_bytes} Р±Р°Р№С‚.",
+            )
+        output = self.propose_output_path(source)
+        self._validate_distinct_paths(source, output)
+        if output.exists():
+            raise DocumentReviewWorkflowError(
+                DocumentReviewErrorCode.OUTPUT_ALREADY_EXISTS,
+                "РџСЂРµРґР»Р°РіР°РµРјС‹Р№ РІС‹С…РѕРґРЅРѕР№ С„Р°Р№Р» СѓР¶Рµ СЃСѓС‰РµСЃС‚РІСѓРµС‚. РџРµСЂРµР·Р°РїРёСЃСЊ Р·Р°РїСЂРµС‰РµРЅР°.",
+            )
+        state.source = source
+        state.output = output
+        state.size = size
+
+    def read_source_step(self, state: DocumentReviewRunState) -> None:
+        if state.source is None:
+            self.validate_source_step(state)
+        assert state.source is not None
+        raw = state.source.read_bytes()
+        if b"\x00" in raw:
+            raise DocumentReviewWorkflowError(
+                DocumentReviewErrorCode.BINARY_FILE,
+                "Р¤Р°Р№Р» РїРѕС…РѕР¶ РЅР° Р±РёРЅР°СЂРЅС‹Р№: РЅР°Р№РґРµРЅ РЅСѓР»РµРІРѕР№ Р±Р°Р№С‚.",
+            )
+        try:
+            text, encoding = self._decode_utf8(raw)
+        except UnicodeDecodeError as exc:
+            raise DocumentReviewWorkflowError(
+                DocumentReviewErrorCode.INVALID_UTF8,
+                "Р¤Р°Р№Р» РЅРµ СЏРІР»СЏРµС‚СЃСЏ РєРѕСЂСЂРµРєС‚РЅС‹Рј UTF-8 С‚РµРєСЃС‚РѕРј.",
+            ) from exc
+        state.raw = raw
+        state.text = text
+        state.encoding = encoding
+
+    def analyze_document_step(self, state: DocumentReviewRunState) -> None:
+        if state.text is None:
+            self.read_source_step(state)
+        assert state.text is not None
+        issues, revised, newline = analyze_and_revise_text(state.text)
+        state.issues = issues
+        state.revised_content = revised
+        state.newline = newline
+
+    def prepare_revision_step(self, state: DocumentReviewRunState) -> None:
+        if state.revised_content is None:
+            self.analyze_document_step(state)
+        assert state.source is not None
+        assert state.output is not None
+        assert state.raw is not None
+        assert state.text is not None
+        assert state.encoding is not None
+        assert state.revised_content is not None
+        assert state.newline is not None
+        state.proposal = DocumentReviewProposal(
+            workflow_id=WORKFLOW_ID,
+            source_path=str(state.source),
+            source_filename=state.source.name,
+            source_hash=_hash_bytes(state.raw),
+            source_size_bytes=state.size,
+            output_path=str(state.output),
+            proposed_output_filename=state.output.name,
+            issue_count=len(state.issues),
+            issues=state.issues,
+            revised_content=state.revised_content,
+            output_encoding=state.encoding,
+            newline=state.newline,
+            changed=state.revised_content != state.text,
         )
 
     def save_confirmed(self, proposal: DocumentReviewProposal) -> DocumentReviewSaveResult:
@@ -230,6 +342,26 @@ class LocalTextDocumentReviewWorkflow:
             output_hash=_hash_bytes(output_raw),
             bytes_written=len(output_raw),
         )
+
+    def write_output_step(self, state: DocumentReviewRunState) -> None:
+        if state.proposal is None:
+            self.prepare_revision_step(state)
+        assert state.proposal is not None
+        state.save_result = self.save_confirmed(state.proposal)
+
+    def verify_output_step(self, state: DocumentReviewRunState) -> None:
+        if state.save_result is None or not state.save_result.verified:
+            raise DocumentReviewWorkflowError(
+                DocumentReviewErrorCode.OUTPUT_VERIFY_FAILED,
+                "РЎРѕС…СЂР°РЅРµРЅРЅР°СЏ РєРѕРїРёСЏ РЅРµ РїСЂРѕС€Р»Р° РїСЂРѕРІРµСЂРєСѓ.",
+            )
+
+    def verify_source_unchanged_step(self, state: DocumentReviewRunState) -> None:
+        if state.save_result is None or not state.save_result.source_hash_unchanged:
+            raise DocumentReviewWorkflowError(
+                DocumentReviewErrorCode.SOURCE_CHANGED,
+                "РСЃС…РѕРґРЅС‹Р№ С„Р°Р№Р» РёР·РјРµРЅРёР»СЃСЏ РїСЂРё workflow.",
+            )
 
     def propose_output_path(self, source: Path) -> Path:
         return source.with_name(f"{source.stem}.jarvis-reviewed.txt")

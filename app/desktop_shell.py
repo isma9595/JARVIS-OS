@@ -218,6 +218,13 @@ class DesktopShellViewModel:
             lines.extend(
                 [
                     f"- workflow id: {workflow_id}",
+                    f"- workflow status: {getattr(result, 'workflow_status', None) or 'none'}",
+                    f"- current step id: {getattr(result, 'current_step_id', None) or 'none'}",
+                    f"- current step name: {getattr(result, 'current_step_name', None) or 'none'}",
+                    f"- completed steps: {len(getattr(result, 'completed_steps', ()) or ())}",
+                    f"- total steps: {getattr(result, 'total_steps', None) if getattr(result, 'total_steps', None) is not None else 0}",
+                    f"- progress percent: {getattr(result, 'progress_percent', None) if getattr(result, 'progress_percent', None) is not None else 0}",
+                    f"- awaiting confirmation: {'yes' if getattr(result, 'awaiting_confirmation', False) else 'no'}",
                     f"- source filename: {getattr(result, 'source_filename', None) or 'none'}",
                     f"- issue count: {getattr(result, 'issue_count', None) if getattr(result, 'issue_count', None) is not None else 0}",
                     f"- proposed output filename: {getattr(result, 'proposed_output_filename', None) or 'none'}",
@@ -462,6 +469,7 @@ class JarvisDesktopShell:
             font=("Segoe UI", 12),
         )
         self.command_entry.grid(row=1, column=0, sticky="ew", pady=(8, 0), ipady=8)
+        self._bind_command_clipboard(self.command_entry)
         tk.Button(
             input_panel,
             text="Preview",
@@ -510,6 +518,8 @@ class JarvisDesktopShell:
         self.preview_box = self._text_box(split, height=10)
         self.output_box = self._text_box(split, height=14)
         self.command_list_box = self._text_box(split, height=10)
+        for text_widget in (self.preview_box, self.output_box, self.command_list_box):
+            self._bind_readonly_text_copy(text_widget)
         split.add(self.preview_box)
         split.add(self.output_box)
         split.add(self.command_list_box)
@@ -527,6 +537,113 @@ class JarvisDesktopShell:
             pady=10,
         )
         return box
+
+    def _bind_command_clipboard(self, entry) -> None:
+        menu = self.tk.Menu(entry, tearoff=0)
+        menu.add_command(label="Вырезать", command=lambda: self._entry_cut(entry))
+        menu.add_command(label="Копировать", command=lambda: self._entry_copy(entry))
+        menu.add_command(label="Вставить", command=lambda: self._entry_paste(entry))
+        menu.add_separator()
+        menu.add_command(label="Выделить всё", command=lambda: self._entry_select_all(entry))
+        self.command_entry_context_menu = menu
+
+        entry.bind("<Control-c>", lambda _event: self._entry_copy(entry))
+        entry.bind("<Control-C>", lambda _event: self._entry_copy(entry))
+        entry.bind("<Control-v>", lambda _event: self._entry_paste(entry))
+        entry.bind("<Control-V>", lambda _event: self._entry_paste(entry))
+        entry.bind("<Control-x>", lambda _event: self._entry_cut(entry))
+        entry.bind("<Control-X>", lambda _event: self._entry_cut(entry))
+        entry.bind("<Control-a>", lambda _event: self._entry_select_all(entry))
+        entry.bind("<Control-A>", lambda _event: self._entry_select_all(entry))
+        entry.bind("<Shift-Insert>", lambda _event: self._entry_paste(entry))
+        entry.bind("<Button-3>", lambda event: self._show_context_menu(menu, event))
+
+    def _bind_readonly_text_copy(self, widget) -> None:
+        menu = self.tk.Menu(widget, tearoff=0)
+        menu.add_command(label="Копировать", command=lambda: self._text_copy(widget))
+        menu.add_separator()
+        menu.add_command(label="Выделить всё", command=lambda: self._text_select_all(widget))
+        widget.readonly_context_menu = menu
+        widget.bind("<Control-c>", lambda _event: self._text_copy(widget))
+        widget.bind("<Control-C>", lambda _event: self._text_copy(widget))
+        widget.bind("<Control-a>", lambda _event: self._text_select_all(widget))
+        widget.bind("<Control-A>", lambda _event: self._text_select_all(widget))
+        widget.bind("<Button-3>", lambda event: self._show_context_menu(menu, event))
+        for sequence in ("<Key>", "<Control-v>", "<Control-V>", "<Control-x>", "<Control-X>"):
+            widget.bind(sequence, lambda _event: "break")
+
+    def _entry_copy(self, entry):
+        try:
+            selected = entry.selection_get()
+            self._clipboard_set(selected)
+        except Exception:
+            pass
+        return "break"
+
+    def _entry_cut(self, entry):
+        try:
+            selected = entry.selection_get()
+            self._clipboard_set(selected)
+            entry.delete("sel.first", "sel.last")
+        except Exception:
+            pass
+        return "break"
+
+    def _entry_paste(self, entry):
+        try:
+            text = self.root.clipboard_get()
+            try:
+                entry.delete("sel.first", "sel.last")
+            except Exception:
+                pass
+            entry.insert("insert", text)
+        except Exception:
+            pass
+        return "break"
+
+    @staticmethod
+    def _entry_select_all(entry):
+        try:
+            entry.selection_range(0, "end")
+            entry.icursor("end")
+        except Exception:
+            pass
+        return "break"
+
+    def _text_copy(self, widget):
+        try:
+            selected = widget.get("sel.first", "sel.last")
+            self._clipboard_set(selected)
+        except Exception:
+            pass
+        return "break"
+
+    @staticmethod
+    def _text_select_all(widget):
+        try:
+            widget.tag_add("sel", "1.0", "end-1c")
+            widget.mark_set("insert", "1.0")
+            widget.see("insert")
+        except Exception:
+            pass
+        return "break"
+
+    def _clipboard_set(self, text: str) -> None:
+        self.root.clipboard_clear()
+        self.root.clipboard_append(str(text))
+
+    @staticmethod
+    def _show_context_menu(menu, event):
+        try:
+            menu.tk_popup(event.x_root, event.y_root)
+        except Exception:
+            pass
+        finally:
+            try:
+                menu.grab_release()
+            except Exception:
+                pass
+        return "break"
 
     def _render_state(self) -> None:
         state = self.view_model.state

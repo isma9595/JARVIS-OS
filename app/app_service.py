@@ -57,9 +57,12 @@ from ai.secure_provider_runtime import SecureProviderRuntime
 from workflows.document_review import (
     LocalTextDocumentReviewWorkflow,
     DocumentReviewProposal,
+    DocumentReviewRunState,
     DocumentReviewWorkflowError,
     WORKFLOW_ID as DOCUMENT_REVIEW_WORKFLOW_ID,
 )
+from workflows.contracts import WorkflowRunSnapshot, WorkflowStepResult, WorkflowStepStatus
+from workflows.runner import WorkflowExecutableStep, WorkflowRunner
 
 
 class AppCommandSource(Enum):
@@ -114,6 +117,13 @@ class AppCommandResult:
     duplicate_suppressed: bool = False
     cancellable: bool = False
     workflow_id: str | None = None
+    workflow_status: str | None = None
+    current_step_id: str | None = None
+    current_step_name: str | None = None
+    completed_steps: tuple[str, ...] = ()
+    total_steps: int | None = None
+    progress_percent: int | None = None
+    awaiting_confirmation: bool = False
     source_filename: str | None = None
     proposed_output_filename: str | None = None
     issue_count: int | None = None
@@ -141,7 +151,7 @@ class PendingDocumentReviewConfirmation:
     request_fingerprint: str
     command_text: str
     source: str
-    proposal: DocumentReviewProposal
+    state: DocumentReviewRunState
 
 
 @dataclass(frozen=True)
@@ -212,6 +222,7 @@ class JarvisAppService:
         self.policy_boundary = PolicyDecisionBoundary()
         self.execution_coordinator = ExecutionCoordinator()
         self.document_review_workflow = LocalTextDocumentReviewWorkflow()
+        self.document_review_runner = self._build_document_review_runner()
 
     def status_snapshot(self) -> AppStatusSnapshot:
         return AppStatusSnapshot(
@@ -541,6 +552,13 @@ class JarvisAppService:
             duplicate_suppressed=result.duplicate_suppressed,
             cancellable=result.cancellable,
             workflow_id=result.workflow_id,
+            workflow_status=result.workflow_status,
+            current_step_id=result.current_step_id,
+            current_step_name=result.current_step_name,
+            completed_steps=result.completed_steps,
+            total_steps=result.total_steps,
+            progress_percent=result.progress_percent,
+            awaiting_confirmation=result.awaiting_confirmation,
             source_filename=result.source_filename,
             proposed_output_filename=result.proposed_output_filename,
             issue_count=result.issue_count,
@@ -1284,10 +1302,11 @@ class JarvisAppService:
         if pending_document is not None:
             if resolution.intent_kind == IntentKind.CANCELLATION_RESPONSE:
                 self._pending_document_review = None
-                operation = self.execution_coordinator.cancel(
+                snapshot = self.document_review_runner.cancel(
                     pending_document.operation_id,
                     reason="document_review_cancelled",
                 )
+                operation = self.execution_coordinator.journal.get(pending_document.operation_id)
                 result = self._operation_metadata_result(
                     input_text=input_text,
                     source=source,
@@ -1304,12 +1323,24 @@ class JarvisAppService:
                 )
                 result = self._with_document_review_fields(
                     result,
-                    pending_document.proposal,
+                    pending_document.state.proposal,
                     user_message=result.output_text,
                 )
+                result = self._with_workflow_snapshot(result, snapshot)
                 self._remember_operation_result(result)
                 return result
             if resolution.intent_kind != IntentKind.CONFIRMATION_RESPONSE:
+                if input_text == pending_document.command_text:
+                    operation = self.execution_coordinator.journal.get(
+                        pending_document.operation_id
+                    )
+                    existing = self._operation_results.get(pending_document.operation_id)
+                    if existing is not None:
+                        return self._with_operation(
+                            existing,
+                            operation,
+                            duplicate_suppressed=True,
+                        )
                 self._pending_document_review = None
                 return None
             return self._confirm_document_review(input_text, source, pending_document)
@@ -1470,106 +1501,69 @@ class JarvisAppService:
             self._remember_operation_result(result)
             return result
 
-        operation = self.execution_coordinator.mark_running(operation.operation_id)
-        read_policy = self.policy_boundary.evaluate(
-            PolicyRequest(
-                source=source.value,
-                command_id=operation.command_id,
-                action_id="document_review.local_text.read",
-                intent_kind=getattr(getattr(resolution, "intent_kind", None), "value", None),
-                risk="read_only",
-                required_capabilities=(PolicyCapability.FILE_READ.value,),
-                confirmation_present=True,
-                metadata={
-                    "normalized_text": self.DOCUMENT_REVIEW_PREFIX,
-                    "workflow_id": DOCUMENT_REVIEW_WORKFLOW_ID,
-                },
-            )
+        source_path = self._document_review_path_from_command(input_text) or ""
+        state = DocumentReviewRunState(source_path=source_path)
+        self.document_review_runner.policy_boundary = self.policy_boundary
+        snapshot = self.document_review_runner.start(
+            operation=operation,
+            state=state,
+            token=registration.token,
+            safe_metadata={"workflow_id": DOCUMENT_REVIEW_WORKFLOW_ID},
         )
-        if read_policy.decision == PolicyDecisionType.DENY:
-            operation = self.execution_coordinator.mark_denied(
-                operation.operation_id,
-                policy_decision=read_policy.to_dict(),
-                error_code="document_review_read_policy_denied",
-            )
+        operation = self.execution_coordinator.journal.get(operation.operation_id) or operation
+        if snapshot.status.value == "denied":
             result = self._operation_metadata_result(
                 input_text=input_text,
                 source=source,
                 operation=operation,
-                output_text=read_policy.user_message,
+                output_text="Запрос отклонен политикой безопасности. Файлы не изменены.",
                 category="policy_denied",
                 risk_level="confirmation_required",
-                error="document_review_read_policy_denied",
+                error=operation.safe_error_code or "document_review_policy_denied",
             )
+            result = self._with_workflow_snapshot(result, snapshot)
             self._remember_operation_result(result)
             return result
-        self.execution_coordinator.set_policy_decision(operation.operation_id, read_policy.to_dict())
-
-        source_path = self._document_review_path_from_command(input_text) or ""
-        try:
-            proposal = self.document_review_workflow.review(source_path)
-        except DocumentReviewWorkflowError as exc:
-            operation = self.execution_coordinator.mark_failed(
-                operation.operation_id,
-                error_code=exc.error_code,
-            )
+        if snapshot.status.value == "failed":
+            failed = self.document_review_runner.latest_failed_result(operation.operation_id)
             result = self._operation_metadata_result(
                 input_text=input_text,
                 source=source,
                 operation=operation,
-                output_text=exc.message_ru,
+                output_text=failed.safe_message if failed else "Workflow проверки документа завершился ошибкой.",
                 category="document_review",
                 risk_level="confirmation_required",
-                error=exc.error_code,
+                error=(failed.error_code if failed else "document_review_failed"),
             )
+            result = self._with_workflow_snapshot(result, snapshot)
             self._remember_operation_result(result)
             return result
-
-        write_policy = self.policy_boundary.evaluate(
-            PolicyRequest(
-                source=source.value,
-                command_id=operation.command_id,
-                action_id="document_review.local_text.write",
-                intent_kind=getattr(getattr(resolution, "intent_kind", None), "value", None),
-                risk="confirmation_required",
-                required_capabilities=(
-                    PolicyCapability.FILE_READ.value,
-                    PolicyCapability.FILE_WRITE.value,
-                ),
-                confirmation_present=False,
-                metadata={
-                    "normalized_text": self.DOCUMENT_REVIEW_PREFIX,
-                    "workflow_id": DOCUMENT_REVIEW_WORKFLOW_ID,
-                    "source_filename": proposal.source_filename,
-                    "proposed_output_filename": proposal.proposed_output_filename,
-                },
-            )
-        )
-        if write_policy.decision == PolicyDecisionType.DENY:
-            operation = self.execution_coordinator.mark_denied(
+        proposal = state.proposal
+        if proposal is None:
+            operation = self.execution_coordinator.mark_failed(
                 operation.operation_id,
-                policy_decision=write_policy.to_dict(),
-                error_code="document_review_write_policy_denied",
+                error_code="document_review_proposal_missing",
             )
             result = self._operation_metadata_result(
                 input_text=input_text,
                 source=source,
                 operation=operation,
-                output_text=write_policy.user_message,
-                category="policy_denied",
+                output_text="Workflow проверки документа не подготовил предложение.",
+                category="document_review",
                 risk_level="confirmation_required",
-                error="document_review_write_policy_denied",
+                error="document_review_proposal_missing",
             )
+            result = self._with_workflow_snapshot(result, snapshot)
             self._remember_operation_result(result)
             return result
-        operation = self.execution_coordinator.mark_awaiting_confirmation(operation.operation_id)
+        write_policy = operation.policy_decision or {}
         self._pending_document_review = PendingDocumentReviewConfirmation(
             operation_id=operation.operation_id,
             idempotency_key=operation.idempotency_key,
             request_fingerprint=operation.request_fingerprint,
             command_text=input_text,
             source=source.value,
-            proposal=proposal,
+            state=state,
         )
         result = AppCommandResult(
             ok=True,
@@ -1603,6 +1597,7 @@ class JarvisAppService:
             ),
         )
         result = self._with_operation(result, operation)
+        result = self._with_workflow_snapshot(result, snapshot)
         self._remember_operation_result(result)
         return result
 
@@ -1628,69 +1623,62 @@ class JarvisAppService:
                 risk_level="confirmation_required",
                 error="stale_document_review_confirmation",
             )
-        operation = self.execution_coordinator.mark_running(pending.operation_id)
-        write_policy = self.policy_boundary.evaluate(
-            PolicyRequest(
-                source=source.value,
-                command_id=operation.command_id,
-                action_id="document_review.local_text.write",
-                intent_kind="local_command",
-                risk="confirmation_required",
-                required_capabilities=(
-                    PolicyCapability.FILE_READ.value,
-                    PolicyCapability.FILE_WRITE.value,
-                ),
-                confirmation_present=True,
-                metadata={
-                    "normalized_text": self.DOCUMENT_REVIEW_PREFIX,
-                    "workflow_id": DOCUMENT_REVIEW_WORKFLOW_ID,
-                    "source_filename": pending.proposal.source_filename,
-                    "proposed_output_filename": pending.proposal.proposed_output_filename,
-                },
-            )
-        )
-        if write_policy.decision != PolicyDecisionType.ALLOW:
-            operation = self.execution_coordinator.mark_denied(
-                pending.operation_id,
-                policy_decision=write_policy.to_dict(),
-                error_code="document_review_confirmation_policy_denied",
-            )
-            result = self._operation_metadata_result(
-                input_text=input_text,
-                source=source,
-                operation=operation,
-                output_text=write_policy.user_message,
-                category="policy_denied",
-                risk_level="confirmation_required",
-                error="document_review_confirmation_policy_denied",
-            )
-            result = self._with_document_review_fields(result, pending.proposal)
-            self._remember_operation_result(result)
-            return result
-        try:
-            saved = self.document_review_workflow.save_confirmed(pending.proposal)
-        except DocumentReviewWorkflowError as exc:
+        proposal = pending.state.proposal
+        if proposal is None:
             operation = self.execution_coordinator.mark_failed(
                 pending.operation_id,
-                error_code=exc.error_code,
+                error_code="document_review_proposal_missing",
             )
             result = self._operation_metadata_result(
                 input_text=input_text,
                 source=source,
                 operation=operation,
-                output_text=exc.message_ru,
+                output_text="Workflow проверки документа не подготовил предложение.",
                 category="document_review",
                 risk_level="confirmation_required",
-                error=exc.error_code,
+                error="document_review_proposal_missing",
             )
-            result = self._with_document_review_fields(result, pending.proposal)
             self._remember_operation_result(result)
             return result
-        output_text = self._document_review_saved_text(pending.proposal, saved.output_path)
-        operation = self.execution_coordinator.mark_succeeded(
-            pending.operation_id,
-            summary=output_text,
-        )
+        self.document_review_runner.policy_boundary = self.policy_boundary
+        snapshot = self.document_review_runner.resume(pending.operation_id)
+        operation = self.execution_coordinator.journal.get(pending.operation_id) or operation
+        if snapshot.status.value in {"failed", "denied"}:
+            failed = self.document_review_runner.latest_failed_result(pending.operation_id)
+            result = self._operation_metadata_result(
+                input_text=input_text,
+                source=source,
+                operation=operation,
+                output_text=failed.safe_message if failed else "Workflow проверки документа завершился ошибкой.",
+                category="policy_denied" if snapshot.status.value == "denied" else "document_review",
+                risk_level="confirmation_required",
+                error=failed.error_code if failed else operation.safe_error_code,
+            )
+            result = self._with_document_review_fields(result, proposal)
+            result = self._with_workflow_snapshot(result, snapshot)
+            self._remember_operation_result(result)
+            return result
+        saved = pending.state.save_result
+        if saved is None:
+            operation = self.execution_coordinator.mark_failed(
+                pending.operation_id,
+                error_code="document_review_save_missing",
+            )
+            result = self._operation_metadata_result(
+                input_text=input_text,
+                source=source,
+                operation=operation,
+                output_text="Workflow проверки документа не вернул результат сохранения.",
+                category="document_review",
+                risk_level="confirmation_required",
+                error="document_review_save_missing",
+            )
+            result = self._with_document_review_fields(result, proposal)
+            result = self._with_workflow_snapshot(result, snapshot)
+            self._remember_operation_result(result)
+            return result
+        output_text = self._document_review_saved_text(proposal, saved.output_path)
+        operation = self.execution_coordinator.mark_succeeded(pending.operation_id, summary=output_text)
         result = AppCommandResult(
             ok=True,
             input_text=input_text,
@@ -1704,12 +1692,12 @@ class JarvisAppService:
             network_may_be_used=False,
             response_executed_as_command=False,
             error=None,
-            policy_decision=write_policy,
-            workflow_id=pending.proposal.workflow_id,
-            source_filename=pending.proposal.source_filename,
-            proposed_output_filename=pending.proposal.proposed_output_filename,
-            issue_count=pending.proposal.issue_count,
-            issue_summaries=self._issue_summaries(pending.proposal),
+            policy_decision=operation.policy_decision,
+            workflow_id=proposal.workflow_id,
+            source_filename=proposal.source_filename,
+            proposed_output_filename=proposal.proposed_output_filename,
+            issue_count=proposal.issue_count,
+            issue_summaries=self._issue_summaries(proposal),
             proposed_output_path=saved.output_path,
             saved=saved.saved,
             verified=saved.verified and saved.source_hash_unchanged,
@@ -1722,6 +1710,7 @@ class JarvisAppService:
             ),
         )
         result = self._with_operation(result, operation)
+        result = self._with_workflow_snapshot(result, snapshot)
         self._remember_operation_result(result)
         return result
 
@@ -1830,6 +1819,13 @@ class JarvisAppService:
             ),
             cancellable=operation.cancellable,
             workflow_id=result.workflow_id,
+            workflow_status=result.workflow_status,
+            current_step_id=result.current_step_id,
+            current_step_name=result.current_step_name,
+            completed_steps=result.completed_steps,
+            total_steps=result.total_steps,
+            progress_percent=result.progress_percent,
+            awaiting_confirmation=result.awaiting_confirmation,
             source_filename=result.source_filename,
             proposed_output_filename=result.proposed_output_filename,
             issue_count=result.issue_count,
@@ -1998,6 +1994,187 @@ class JarvisAppService:
     def _issue_summaries(proposal: DocumentReviewProposal) -> tuple[dict[str, object], ...]:
         return tuple(issue.to_dict() for issue in proposal.issues)
 
+    def _build_document_review_runner(self) -> WorkflowRunner[DocumentReviewRunState]:
+        from workflows.contracts import WorkflowStepDefinition
+
+        def action(method_name: str):
+            def _run(state: DocumentReviewRunState, token) -> WorkflowStepResult:
+                token.raise_if_cancelled()
+                try:
+                    getattr(self.document_review_workflow, method_name)(state)
+                except DocumentReviewWorkflowError as exc:
+                    return WorkflowStepResult(
+                        step_id=self._current_document_step_id(method_name),
+                        status=WorkflowStepStatus.FAILED,
+                        safe_message=exc.message_ru,
+                        error_code=exc.error_code,
+                    )
+                return WorkflowStepResult(
+                    step_id=self._current_document_step_id(method_name),
+                    status=WorkflowStepStatus.SUCCEEDED,
+                    safe_message="Шаг проверки документа выполнен.",
+                    safe_output_metadata=state.safe_metadata(),
+                )
+
+            return _run
+
+        steps: tuple[WorkflowExecutableStep[DocumentReviewRunState], ...] = (
+            WorkflowExecutableStep(
+                WorkflowStepDefinition("validate_source", "Проверка исходного файла"),
+                action("validate_source_step"),
+                self._document_read_policy,
+            ),
+            WorkflowExecutableStep(
+                WorkflowStepDefinition("read_source", "Чтение исходного файла"),
+                action("read_source_step"),
+            ),
+            WorkflowExecutableStep(
+                WorkflowStepDefinition("analyze_document", "Анализ документа"),
+                action("analyze_document_step"),
+            ),
+            WorkflowExecutableStep(
+                WorkflowStepDefinition("prepare_revision", "Подготовка исправленной копии"),
+                action("prepare_revision_step"),
+            ),
+            WorkflowExecutableStep(
+                WorkflowStepDefinition(
+                    "write_output",
+                    "Сохранение новой копии",
+                    requires_confirmation=True,
+                ),
+                action("write_output_step"),
+                self._document_write_policy,
+            ),
+            WorkflowExecutableStep(
+                WorkflowStepDefinition(
+                    "verify_output",
+                    "Проверка сохраненной копии",
+                    verification_step=True,
+                ),
+                action("verify_output_step"),
+            ),
+            WorkflowExecutableStep(
+                WorkflowStepDefinition(
+                    "verify_source_unchanged",
+                    "Проверка неизменности оригинала",
+                    verification_step=True,
+                ),
+                action("verify_source_unchanged_step"),
+            ),
+        )
+        return WorkflowRunner(
+            workflow_id=DOCUMENT_REVIEW_WORKFLOW_ID,
+            steps=steps,
+            execution_coordinator=self.execution_coordinator,
+            policy_boundary=self.policy_boundary,
+        )
+
+    @staticmethod
+    def _current_document_step_id(method_name: str) -> str:
+        return {
+            "validate_source_step": "validate_source",
+            "read_source_step": "read_source",
+            "analyze_document_step": "analyze_document",
+            "prepare_revision_step": "prepare_revision",
+            "write_output_step": "write_output",
+            "verify_output_step": "verify_output",
+            "verify_source_unchanged_step": "verify_source_unchanged",
+        }[method_name]
+
+    def _document_read_policy(
+        self,
+        state: DocumentReviewRunState,
+        confirmation_present: bool,
+    ) -> PolicyRequest:
+        return PolicyRequest(
+            source="workflow",
+            command_id="document_review.local_text",
+            action_id="document_review.local_text.read",
+            intent_kind="local_command",
+            risk="read_only",
+            required_capabilities=(PolicyCapability.FILE_READ.value,),
+            confirmation_present=True,
+            metadata={
+                "normalized_text": self.DOCUMENT_REVIEW_PREFIX,
+                "workflow_id": DOCUMENT_REVIEW_WORKFLOW_ID,
+            },
+        )
+
+    def _document_write_policy(
+        self,
+        state: DocumentReviewRunState,
+        confirmation_present: bool,
+    ) -> PolicyRequest:
+        proposal = state.proposal
+        return PolicyRequest(
+            source="workflow",
+            command_id="document_review.local_text",
+            action_id="document_review.local_text.write",
+            intent_kind="local_command",
+            risk="confirmation_required",
+            required_capabilities=(
+                PolicyCapability.FILE_READ.value,
+                PolicyCapability.FILE_WRITE.value,
+            ),
+            confirmation_present=confirmation_present,
+            metadata={
+                "normalized_text": self.DOCUMENT_REVIEW_PREFIX,
+                "workflow_id": DOCUMENT_REVIEW_WORKFLOW_ID,
+                "source_filename": proposal.source_filename if proposal else None,
+                "proposed_output_filename": (
+                    proposal.proposed_output_filename if proposal else None
+                ),
+            },
+        )
+
+    def _with_workflow_snapshot(
+        self,
+        result: AppCommandResult,
+        snapshot: WorkflowRunSnapshot | None,
+    ) -> AppCommandResult:
+        if snapshot is None:
+            return result
+        return AppCommandResult(
+            ok=result.ok,
+            input_text=result.input_text,
+            output_text=result.output_text,
+            source=result.source,
+            registry_match_id=result.registry_match_id,
+            category=result.category,
+            risk_level=result.risk_level,
+            executed=result.executed,
+            requires_confirmation=result.requires_confirmation,
+            network_may_be_used=result.network_may_be_used,
+            response_executed_as_command=result.response_executed_as_command,
+            error=result.error,
+            intent_resolution=result.intent_resolution,
+            requires_clarification=result.requires_clarification,
+            clarification_question=result.clarification_question,
+            clarification_options=result.clarification_options,
+            policy_decision=result.policy_decision,
+            operation_id=result.operation_id,
+            operation_status=result.operation_status,
+            idempotency_key=result.idempotency_key,
+            duplicate_suppressed=result.duplicate_suppressed,
+            cancellable=result.cancellable,
+            workflow_id=snapshot.workflow_id,
+            workflow_status=snapshot.status.value,
+            current_step_id=snapshot.current_step_id,
+            current_step_name=snapshot.current_step_name,
+            completed_steps=snapshot.completed_step_ids,
+            total_steps=snapshot.total_steps,
+            progress_percent=snapshot.progress_percent,
+            awaiting_confirmation=snapshot.awaiting_confirmation,
+            source_filename=result.source_filename,
+            proposed_output_filename=result.proposed_output_filename,
+            issue_count=result.issue_count,
+            issue_summaries=result.issue_summaries,
+            proposed_output_path=result.proposed_output_path,
+            saved=result.saved,
+            verified=result.verified or snapshot.verified,
+            user_message=result.user_message,
+        )
+
     def _with_document_review_fields(
         self,
         result: AppCommandResult,
@@ -2029,6 +2206,13 @@ class JarvisAppService:
             duplicate_suppressed=result.duplicate_suppressed,
             cancellable=result.cancellable,
             workflow_id=proposal.workflow_id,
+            workflow_status=result.workflow_status,
+            current_step_id=result.current_step_id,
+            current_step_name=result.current_step_name,
+            completed_steps=result.completed_steps,
+            total_steps=result.total_steps,
+            progress_percent=result.progress_percent,
+            awaiting_confirmation=result.awaiting_confirmation,
             source_filename=proposal.source_filename,
             proposed_output_filename=proposal.proposed_output_filename,
             issue_count=proposal.issue_count,
