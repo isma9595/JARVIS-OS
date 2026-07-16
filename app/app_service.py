@@ -42,8 +42,10 @@ from core.command_registry import (
     DEFAULT_COMMAND_REGISTRY,
 )
 from core.policy_boundary import (
+    PolicyCapability,
     PolicyDecisionBoundary,
     PolicyDecisionType,
+    PolicyRequest,
     policy_request_from_metadata,
 )
 from core.execution_coordinator import ExecutionCoordinator
@@ -52,6 +54,12 @@ from language.language_manager import ApplicationLanguageManager
 from voice.audio_lifecycle import AudioLifecycleController, AudioLifecycleStatus
 from voice.russian_voice_normalizer import normalize_russian_voice_text
 from ai.secure_provider_runtime import SecureProviderRuntime
+from workflows.document_review import (
+    LocalTextDocumentReviewWorkflow,
+    DocumentReviewProposal,
+    DocumentReviewWorkflowError,
+    WORKFLOW_ID as DOCUMENT_REVIEW_WORKFLOW_ID,
+)
 
 
 class AppCommandSource(Enum):
@@ -105,6 +113,15 @@ class AppCommandResult:
     idempotency_key: str | None = None
     duplicate_suppressed: bool = False
     cancellable: bool = False
+    workflow_id: str | None = None
+    source_filename: str | None = None
+    proposed_output_filename: str | None = None
+    issue_count: int | None = None
+    issue_summaries: tuple[dict[str, object], ...] = ()
+    proposed_output_path: str | None = None
+    saved: bool = False
+    verified: bool = False
+    user_message: str | None = None
 
 
 @dataclass(frozen=True)
@@ -115,6 +132,16 @@ class PendingAppConfirmation:
     command_text: str
     source: str
     resolution: object | None = None
+
+
+@dataclass(frozen=True)
+class PendingDocumentReviewConfirmation:
+    operation_id: str
+    idempotency_key: str
+    request_fingerprint: str
+    command_text: str
+    source: str
+    proposal: DocumentReviewProposal
 
 
 @dataclass(frozen=True)
@@ -145,6 +172,7 @@ class JarvisAppService:
         "preview command:",
         "предварительная проверка команды:",
     )
+    DOCUMENT_REVIEW_PREFIX = "\u043f\u0440\u043e\u0432\u0435\u0440\u0438\u0442\u044c \u0434\u043e\u043a\u0443\u043c\u0435\u043d\u0442 "
 
     def __init__(
         self,
@@ -179,9 +207,11 @@ class JarvisAppService:
         self._pending_clarification: ClarificationState | None = None
         self._pending_clarification_operation_id: str | None = None
         self._pending_confirmation: PendingAppConfirmation | None = None
+        self._pending_document_review: PendingDocumentReviewConfirmation | None = None
         self._operation_results: dict[str, AppCommandResult] = {}
         self.policy_boundary = PolicyDecisionBoundary()
         self.execution_coordinator = ExecutionCoordinator()
+        self.document_review_workflow = LocalTextDocumentReviewWorkflow()
 
     def status_snapshot(self) -> AppStatusSnapshot:
         return AppStatusSnapshot(
@@ -510,6 +540,15 @@ class JarvisAppService:
             idempotency_key=result.idempotency_key,
             duplicate_suppressed=result.duplicate_suppressed,
             cancellable=result.cancellable,
+            workflow_id=result.workflow_id,
+            source_filename=result.source_filename,
+            proposed_output_filename=result.proposed_output_filename,
+            issue_count=result.issue_count,
+            issue_summaries=result.issue_summaries,
+            proposed_output_path=result.proposed_output_path,
+            saved=result.saved,
+            verified=result.verified,
+            user_message=result.user_message,
         )
 
     def process_one_shot_voice_request(
@@ -767,6 +806,45 @@ class JarvisAppService:
     def preview_command(self, text: str) -> AppCommandPreview:
         input_text = str(text or "").strip()
         normalized_text = self.command_registry.normalize_alias(input_text)
+        document_path = self._document_review_path_from_command(input_text)
+        if document_path is not None:
+            metadata = self._match_registry_command(input_text)
+            return AppCommandPreview(
+                input_text=input_text,
+                normalized_text=normalized_text,
+                registry_match_id=(
+                    metadata.command_id if metadata is not None else "document_review.local_text"
+                ),
+                title_ru=(
+                    metadata.title_ru
+                    if metadata is not None
+                    else "\u041f\u0440\u043e\u0432\u0435\u0440\u043a\u0430 TXT-\u0434\u043e\u043a\u0443\u043c\u0435\u043d\u0442\u0430"
+                ),
+                category=metadata.category.value if metadata is not None else "app",
+                risk_level=(
+                    metadata.risk_level.value if metadata is not None else "confirmation_required"
+                ),
+                read_only=False,
+                voice_auto_allowed=False,
+                requires_confirmation=True,
+                requires_network=False,
+                requires_ai_key=False,
+                requires_privacy_check=False,
+                app_ready=True,
+                known_command=True,
+                safe_summary_ru=(
+                    "\u042d\u0442\u043e workflow \u043b\u043e\u043a\u0430\u043b\u044c\u043d\u043e\u0439 "
+                    "\u043f\u0440\u043e\u0432\u0435\u0440\u043a\u0438 .txt: preview \u043d\u0435 "
+                    "\u0447\u0438\u0442\u0430\u0435\u0442 \u0444\u0430\u0439\u043b, \u043d\u0435 "
+                    "\u0441\u043e\u0437\u0434\u0430\u0435\u0442 \u043e\u043f\u0435\u0440\u0430\u0446\u0438\u044e "
+                    "\u0438 \u043d\u0435 \u043f\u0438\u0448\u0435\u0442 \u0444\u0430\u0439\u043b. "
+                    "\u041f\u0440\u0438 Execute \u0431\u0443\u0434\u0435\u0442 "
+                    "\u043b\u043e\u043a\u0430\u043b\u044c\u043d\u043e\u0435 \u0447\u0442\u0435\u043d\u0438\u0435, "
+                    "\u0430 \u0441\u043e\u0445\u0440\u0430\u043d\u0435\u043d\u0438\u0435 "
+                    "\u043d\u043e\u0432\u043e\u0439 \u043a\u043e\u043f\u0438\u0438 \u043f\u043e\u0442\u0440\u0435\u0431\u0443\u0435\u0442 "
+                    "\u043e\u0442\u0434\u0435\u043b\u044c\u043d\u043e\u0435 \u043f\u043e\u0434\u0442\u0432\u0435\u0440\u0436\u0434\u0435\u043d\u0438\u0435."
+                ),
+            )
         metadata = self._match_registry_command(input_text)
         if metadata is None:
             return AppCommandPreview(
@@ -849,6 +927,14 @@ class JarvisAppService:
         pending_result = self._consume_pending_control_response(input_text, source, resolution)
         if pending_result is not None:
             return pending_result
+
+        if self._document_review_path_from_command(input_text) is not None:
+            return self._execute_document_review_command(
+                input_text,
+                source,
+                idempotency_key=idempotency_key,
+                resolution=resolution,
+            )
 
         command_text = resolution.command_text or input_text
         metadata = self._match_registry_command(command_text)
@@ -1194,6 +1280,40 @@ class JarvisAppService:
         source: AppCommandSource,
         resolution,
     ) -> AppCommandResult | None:
+        pending_document = self._pending_document_review
+        if pending_document is not None:
+            if resolution.intent_kind == IntentKind.CANCELLATION_RESPONSE:
+                self._pending_document_review = None
+                operation = self.execution_coordinator.cancel(
+                    pending_document.operation_id,
+                    reason="document_review_cancelled",
+                )
+                result = self._operation_metadata_result(
+                    input_text=input_text,
+                    source=source,
+                    operation=operation,
+                    output_text=(
+                        "\u041f\u0440\u043e\u0432\u0435\u0440\u043a\u0430 "
+                        "\u0434\u043e\u043a\u0443\u043c\u0435\u043d\u0442\u0430 "
+                        "\u043e\u0442\u043c\u0435\u043d\u0435\u043d\u0430. "
+                        "\u0412\u044b\u0445\u043e\u0434\u043d\u043e\u0439 "
+                        "\u0444\u0430\u0439\u043b \u043d\u0435 \u0441\u043e\u0437\u0434\u0430\u043d."
+                    ),
+                    category="document_review",
+                    risk_level="confirmation_required",
+                )
+                result = self._with_document_review_fields(
+                    result,
+                    pending_document.proposal,
+                    user_message=result.output_text,
+                )
+                self._remember_operation_result(result)
+                return result
+            if resolution.intent_kind != IntentKind.CONFIRMATION_RESPONSE:
+                self._pending_document_review = None
+                return None
+            return self._confirm_document_review(input_text, source, pending_document)
+
         if self._pending_clarification is not None:
             operation_id = self._pending_clarification_operation_id
             if (
@@ -1286,6 +1406,321 @@ class JarvisAppService:
                 pending.operation_id,
                 error_code=result.error or "confirmation_not_executed",
             )
+        result = self._with_operation(result, operation)
+        self._remember_operation_result(result)
+        return result
+
+    def _execute_document_review_command(
+        self,
+        input_text: str,
+        source: AppCommandSource,
+        *,
+        idempotency_key: str | None,
+        resolution,
+    ) -> AppCommandResult:
+        metadata = self._match_registry_command(input_text)
+        fingerprint = self.execution_coordinator.create_request_fingerprint(
+            source=source.value,
+            text=input_text,
+            command_id=metadata.command_id if metadata is not None else "document_review.local_text",
+            action_id="document_review.local_text",
+        )
+        registration = self.execution_coordinator.register(
+            source=source.value,
+            idempotency_key=idempotency_key,
+            request_fingerprint=fingerprint,
+            command_id=metadata.command_id if metadata is not None else "document_review.local_text",
+            action_id="document_review.local_text",
+            metadata={
+                "input_preview": safe_journal_text(input_text),
+                "workflow_id": DOCUMENT_REVIEW_WORKFLOW_ID,
+                "intent_kind": getattr(resolution.intent_kind, "value", None),
+            },
+        )
+        operation = registration.operation
+        if registration.duplicate:
+            existing = self._operation_results.get(operation.operation_id)
+            if existing is not None:
+                return self._with_operation(existing, operation, duplicate_suppressed=True)
+            return self._operation_metadata_result(
+                input_text=input_text,
+                source=source,
+                operation=operation,
+                output_text=(
+                    "\u041f\u043e\u0432\u0442\u043e\u0440\u043d\u044b\u0439 "
+                    "\u0437\u0430\u043f\u0440\u043e\u0441 \u043f\u043e\u0434\u0430\u0432\u043b\u0435\u043d."
+                ),
+                category="duplicate_suppressed",
+                risk_level="safe_metadata_only",
+            )
+        if registration.conflict:
+            result = self._operation_metadata_result(
+                input_text=input_text,
+                source=source,
+                operation=operation,
+                output_text=(
+                    "\u0417\u0430\u043f\u0440\u043e\u0441 \u043e\u0442\u043a\u043b\u043e\u043d\u0435\u043d: "
+                    "\u043a\u043e\u043d\u0444\u043b\u0438\u043a\u0442 idempotency key. "
+                    "\u0424\u0430\u0439\u043b\u044b \u043d\u0435 \u0438\u0437\u043c\u0435\u043d\u0435\u043d\u044b."
+                ),
+                category="policy_denied",
+                risk_level="safe_metadata_only",
+                error="idempotency_conflict",
+            )
+            self._remember_operation_result(result)
+            return result
+
+        operation = self.execution_coordinator.mark_running(operation.operation_id)
+        read_policy = self.policy_boundary.evaluate(
+            PolicyRequest(
+                source=source.value,
+                command_id=operation.command_id,
+                action_id="document_review.local_text.read",
+                intent_kind=getattr(getattr(resolution, "intent_kind", None), "value", None),
+                risk="read_only",
+                required_capabilities=(PolicyCapability.FILE_READ.value,),
+                confirmation_present=True,
+                metadata={
+                    "normalized_text": self.DOCUMENT_REVIEW_PREFIX,
+                    "workflow_id": DOCUMENT_REVIEW_WORKFLOW_ID,
+                },
+            )
+        )
+        if read_policy.decision == PolicyDecisionType.DENY:
+            operation = self.execution_coordinator.mark_denied(
+                operation.operation_id,
+                policy_decision=read_policy.to_dict(),
+                error_code="document_review_read_policy_denied",
+            )
+            result = self._operation_metadata_result(
+                input_text=input_text,
+                source=source,
+                operation=operation,
+                output_text=read_policy.user_message,
+                category="policy_denied",
+                risk_level="confirmation_required",
+                error="document_review_read_policy_denied",
+            )
+            self._remember_operation_result(result)
+            return result
+        self.execution_coordinator.set_policy_decision(operation.operation_id, read_policy.to_dict())
+
+        source_path = self._document_review_path_from_command(input_text) or ""
+        try:
+            proposal = self.document_review_workflow.review(source_path)
+        except DocumentReviewWorkflowError as exc:
+            operation = self.execution_coordinator.mark_failed(
+                operation.operation_id,
+                error_code=exc.error_code,
+            )
+            result = self._operation_metadata_result(
+                input_text=input_text,
+                source=source,
+                operation=operation,
+                output_text=exc.message_ru,
+                category="document_review",
+                risk_level="confirmation_required",
+                error=exc.error_code,
+            )
+            self._remember_operation_result(result)
+            return result
+
+        write_policy = self.policy_boundary.evaluate(
+            PolicyRequest(
+                source=source.value,
+                command_id=operation.command_id,
+                action_id="document_review.local_text.write",
+                intent_kind=getattr(getattr(resolution, "intent_kind", None), "value", None),
+                risk="confirmation_required",
+                required_capabilities=(
+                    PolicyCapability.FILE_READ.value,
+                    PolicyCapability.FILE_WRITE.value,
+                ),
+                confirmation_present=False,
+                metadata={
+                    "normalized_text": self.DOCUMENT_REVIEW_PREFIX,
+                    "workflow_id": DOCUMENT_REVIEW_WORKFLOW_ID,
+                    "source_filename": proposal.source_filename,
+                    "proposed_output_filename": proposal.proposed_output_filename,
+                },
+            )
+        )
+        if write_policy.decision == PolicyDecisionType.DENY:
+            operation = self.execution_coordinator.mark_denied(
+                operation.operation_id,
+                policy_decision=write_policy.to_dict(),
+                error_code="document_review_write_policy_denied",
+            )
+            result = self._operation_metadata_result(
+                input_text=input_text,
+                source=source,
+                operation=operation,
+                output_text=write_policy.user_message,
+                category="policy_denied",
+                risk_level="confirmation_required",
+                error="document_review_write_policy_denied",
+            )
+            self._remember_operation_result(result)
+            return result
+        operation = self.execution_coordinator.mark_awaiting_confirmation(operation.operation_id)
+        self._pending_document_review = PendingDocumentReviewConfirmation(
+            operation_id=operation.operation_id,
+            idempotency_key=operation.idempotency_key,
+            request_fingerprint=operation.request_fingerprint,
+            command_text=input_text,
+            source=source.value,
+            proposal=proposal,
+        )
+        result = AppCommandResult(
+            ok=True,
+            input_text=input_text,
+            output_text=self._document_review_review_text(proposal),
+            source=source,
+            registry_match_id=operation.command_id,
+            category="document_review",
+            risk_level="confirmation_required",
+            executed=False,
+            requires_confirmation=True,
+            network_may_be_used=False,
+            response_executed_as_command=False,
+            error=None,
+            intent_resolution=resolution,
+            policy_decision=write_policy,
+            workflow_id=proposal.workflow_id,
+            source_filename=proposal.source_filename,
+            proposed_output_filename=proposal.proposed_output_filename,
+            issue_count=proposal.issue_count,
+            issue_summaries=self._issue_summaries(proposal),
+            proposed_output_path=proposal.output_path,
+            saved=False,
+            verified=False,
+            user_message=(
+                "\u041f\u0440\u043e\u0441\u043c\u043e\u0442\u0440 "
+                "\u0433\u043e\u0442\u043e\u0432. \u0414\u043b\u044f "
+                "\u0441\u043e\u0445\u0440\u0430\u043d\u0435\u043d\u0438\u044f "
+                "\u043d\u043e\u0432\u043e\u0439 \u043a\u043e\u043f\u0438\u0438 "
+                "\u043d\u0443\u0436\u043d\u043e \u043f\u043e\u0434\u0442\u0432\u0435\u0440\u0436\u0434\u0435\u043d\u0438\u0435."
+            ),
+        )
+        result = self._with_operation(result, operation)
+        self._remember_operation_result(result)
+        return result
+
+    def _confirm_document_review(
+        self,
+        input_text: str,
+        source: AppCommandSource,
+        pending: PendingDocumentReviewConfirmation,
+    ) -> AppCommandResult:
+        self._pending_document_review = None
+        operation = self.execution_coordinator.journal.get(pending.operation_id)
+        if operation is None or operation.request_fingerprint != pending.request_fingerprint:
+            return self._operation_metadata_result(
+                input_text=input_text,
+                source=source,
+                operation=operation,
+                output_text=(
+                    "\u041f\u043e\u0434\u0442\u0432\u0435\u0440\u0436\u0434\u0435\u043d\u0438\u0435 "
+                    "\u0443\u0441\u0442\u0430\u0440\u0435\u043b\u043e. \u0424\u0430\u0439\u043b "
+                    "\u043d\u0435 \u0441\u043e\u0445\u0440\u0430\u043d\u0435\u043d."
+                ),
+                category="document_review",
+                risk_level="confirmation_required",
+                error="stale_document_review_confirmation",
+            )
+        operation = self.execution_coordinator.mark_running(pending.operation_id)
+        write_policy = self.policy_boundary.evaluate(
+            PolicyRequest(
+                source=source.value,
+                command_id=operation.command_id,
+                action_id="document_review.local_text.write",
+                intent_kind="local_command",
+                risk="confirmation_required",
+                required_capabilities=(
+                    PolicyCapability.FILE_READ.value,
+                    PolicyCapability.FILE_WRITE.value,
+                ),
+                confirmation_present=True,
+                metadata={
+                    "normalized_text": self.DOCUMENT_REVIEW_PREFIX,
+                    "workflow_id": DOCUMENT_REVIEW_WORKFLOW_ID,
+                    "source_filename": pending.proposal.source_filename,
+                    "proposed_output_filename": pending.proposal.proposed_output_filename,
+                },
+            )
+        )
+        if write_policy.decision != PolicyDecisionType.ALLOW:
+            operation = self.execution_coordinator.mark_denied(
+                pending.operation_id,
+                policy_decision=write_policy.to_dict(),
+                error_code="document_review_confirmation_policy_denied",
+            )
+            result = self._operation_metadata_result(
+                input_text=input_text,
+                source=source,
+                operation=operation,
+                output_text=write_policy.user_message,
+                category="policy_denied",
+                risk_level="confirmation_required",
+                error="document_review_confirmation_policy_denied",
+            )
+            result = self._with_document_review_fields(result, pending.proposal)
+            self._remember_operation_result(result)
+            return result
+        try:
+            saved = self.document_review_workflow.save_confirmed(pending.proposal)
+        except DocumentReviewWorkflowError as exc:
+            operation = self.execution_coordinator.mark_failed(
+                pending.operation_id,
+                error_code=exc.error_code,
+            )
+            result = self._operation_metadata_result(
+                input_text=input_text,
+                source=source,
+                operation=operation,
+                output_text=exc.message_ru,
+                category="document_review",
+                risk_level="confirmation_required",
+                error=exc.error_code,
+            )
+            result = self._with_document_review_fields(result, pending.proposal)
+            self._remember_operation_result(result)
+            return result
+        output_text = self._document_review_saved_text(pending.proposal, saved.output_path)
+        operation = self.execution_coordinator.mark_succeeded(
+            pending.operation_id,
+            summary=output_text,
+        )
+        result = AppCommandResult(
+            ok=True,
+            input_text=input_text,
+            output_text=output_text,
+            source=source,
+            registry_match_id=operation.command_id,
+            category="document_review",
+            risk_level="confirmation_required",
+            executed=True,
+            requires_confirmation=False,
+            network_may_be_used=False,
+            response_executed_as_command=False,
+            error=None,
+            policy_decision=write_policy,
+            workflow_id=pending.proposal.workflow_id,
+            source_filename=pending.proposal.source_filename,
+            proposed_output_filename=pending.proposal.proposed_output_filename,
+            issue_count=pending.proposal.issue_count,
+            issue_summaries=self._issue_summaries(pending.proposal),
+            proposed_output_path=saved.output_path,
+            saved=saved.saved,
+            verified=saved.verified and saved.source_hash_unchanged,
+            user_message=(
+                "\u041d\u043e\u0432\u0430\u044f \u043a\u043e\u043f\u0438\u044f "
+                "\u0441\u043e\u0445\u0440\u0430\u043d\u0435\u043d\u0430 \u0438 "
+                "\u043f\u0440\u043e\u0432\u0435\u0440\u0435\u043d\u0430. "
+                "\u0418\u0441\u0445\u043e\u0434\u043d\u044b\u0439 \u0444\u0430\u0439\u043b "
+                "\u043d\u0435 \u0438\u0437\u043c\u0435\u043d\u0435\u043d."
+            ),
+        )
         result = self._with_operation(result, operation)
         self._remember_operation_result(result)
         return result
@@ -1394,6 +1829,15 @@ class JarvisAppService:
                 else duplicate_suppressed
             ),
             cancellable=operation.cancellable,
+            workflow_id=result.workflow_id,
+            source_filename=result.source_filename,
+            proposed_output_filename=result.proposed_output_filename,
+            issue_count=result.issue_count,
+            issue_summaries=result.issue_summaries,
+            proposed_output_path=result.proposed_output_path,
+            saved=result.saved,
+            verified=result.verified,
+            user_message=result.user_message,
         )
 
     def _remember_operation_result(self, result: AppCommandResult) -> None:
@@ -1530,6 +1974,8 @@ class JarvisAppService:
             return exact
 
         normalized_text = self.command_registry.normalize_alias(text)
+        if self._document_review_path_from_command(text) is not None:
+            return self.command_registry.find_by_id("document_review.local_text")
         for command in self.command_registry.commands:
             for alias in command.aliases:
                 normalized_alias = self.command_registry.normalize_alias(alias)
@@ -1539,6 +1985,104 @@ class JarvisAppService:
                 if prefix and normalized_text.startswith(prefix):
                     return command
         return None
+
+    @classmethod
+    def _document_review_path_from_command(cls, text: str) -> str | None:
+        command = str(text or "").strip()
+        if not command.startswith(cls.DOCUMENT_REVIEW_PREFIX):
+            return None
+        path = command[len(cls.DOCUMENT_REVIEW_PREFIX) :].strip()
+        return path or None
+
+    @staticmethod
+    def _issue_summaries(proposal: DocumentReviewProposal) -> tuple[dict[str, object], ...]:
+        return tuple(issue.to_dict() for issue in proposal.issues)
+
+    def _with_document_review_fields(
+        self,
+        result: AppCommandResult,
+        proposal: DocumentReviewProposal,
+        *,
+        user_message: str | None = None,
+    ) -> AppCommandResult:
+        return AppCommandResult(
+            ok=result.ok,
+            input_text=result.input_text,
+            output_text=result.output_text,
+            source=result.source,
+            registry_match_id=result.registry_match_id,
+            category=result.category,
+            risk_level=result.risk_level,
+            executed=result.executed,
+            requires_confirmation=result.requires_confirmation,
+            network_may_be_used=result.network_may_be_used,
+            response_executed_as_command=result.response_executed_as_command,
+            error=result.error,
+            intent_resolution=result.intent_resolution,
+            requires_clarification=result.requires_clarification,
+            clarification_question=result.clarification_question,
+            clarification_options=result.clarification_options,
+            policy_decision=result.policy_decision,
+            operation_id=result.operation_id,
+            operation_status=result.operation_status,
+            idempotency_key=result.idempotency_key,
+            duplicate_suppressed=result.duplicate_suppressed,
+            cancellable=result.cancellable,
+            workflow_id=proposal.workflow_id,
+            source_filename=proposal.source_filename,
+            proposed_output_filename=proposal.proposed_output_filename,
+            issue_count=proposal.issue_count,
+            issue_summaries=self._issue_summaries(proposal),
+            proposed_output_path=proposal.output_path,
+            saved=result.saved,
+            verified=result.verified,
+            user_message=user_message or result.user_message,
+        )
+
+    @staticmethod
+    def _document_review_review_text(proposal: DocumentReviewProposal) -> str:
+        lines = [
+            "\u041f\u0440\u043e\u0432\u0435\u0440\u043a\u0430 TXT-\u0434\u043e\u043a\u0443\u043c\u0435\u043d\u0442\u0430:",
+            f"- workflow status: awaiting_confirmation",
+            f"- workflow id: {proposal.workflow_id}",
+            f"- source filename: {proposal.source_filename}",
+            f"- issues: {proposal.issue_count}",
+            f"- proposed output path: {proposal.output_path}",
+            "- saved: no",
+            "- verified: no",
+            "- original modified: no",
+            "\u041d\u0430\u0439\u0434\u0435\u043d\u043d\u044b\u0435 \u043f\u0440\u043e\u0431\u043b\u0435\u043c\u044b:",
+        ]
+        if not proposal.issues:
+            lines.append("- \u041f\u0440\u043e\u0431\u043b\u0435\u043c \u043d\u0435 \u043d\u0430\u0439\u0434\u0435\u043d\u043e; \u0431\u0443\u0434\u0435\u0442 \u0441\u043e\u0437\u0434\u0430\u043d\u0430 \u043a\u043e\u043f\u0438\u044f \u0441 \u0442\u0435\u043c \u0436\u0435 \u0442\u0435\u043a\u0441\u0442\u043e\u043c.")
+        else:
+            for issue in proposal.issues:
+                lines.append(
+                    f"- {issue.issue_code}, line {issue.line_number}: {issue.description_ru}"
+                )
+        lines.append(
+            "\u0414\u043b\u044f \u0441\u043e\u0445\u0440\u0430\u043d\u0435\u043d\u0438\u044f "
+            "\u043d\u043e\u0432\u043e\u0439 \u043a\u043e\u043f\u0438\u0438 "
+            "\u043e\u0442\u0432\u0435\u0442\u044c\u0442\u0435: \u0434\u0430"
+        )
+        return "\n".join(lines)
+
+    @staticmethod
+    def _document_review_saved_text(proposal: DocumentReviewProposal, output_path: str) -> str:
+        return "\n".join(
+            [
+                "\u041f\u0440\u043e\u0432\u0435\u0440\u0435\u043d\u043d\u0430\u044f "
+                "\u043a\u043e\u043f\u0438\u044f \u0441\u043e\u0445\u0440\u0430\u043d\u0435\u043d\u0430:",
+                f"- workflow status: succeeded",
+                f"- workflow id: {proposal.workflow_id}",
+                f"- source filename: {proposal.source_filename}",
+                f"- issues fixed: {proposal.issue_count}",
+                f"- output path: {output_path}",
+                "- saved: yes",
+                "- verified: yes",
+                "- original modified: no",
+            ]
+        )
 
     @staticmethod
     def _parse_category(category: str | None) -> CommandCategory | None:

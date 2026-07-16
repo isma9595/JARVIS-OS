@@ -133,6 +133,9 @@ class CommandRegistry:
     def find_by_alias(self, text: str) -> CommandMetadata | None:
         return self._by_alias.get(self.normalize_alias(text))
 
+    def find_by_id(self, command_id: str) -> CommandMetadata | None:
+        return self._by_id.get(str(command_id or ""))
+
     def search(self, query: str) -> tuple[CommandMetadata, ...]:
         normalized_query = self.normalize_alias(query)
         if not normalized_query:
@@ -492,6 +495,25 @@ def default_command_metadata() -> tuple[CommandMetadata, ...]:
         _meta("app.ai_provider_settings_future", "AI provider settings", "Будущий экран настроек provider/API keys.", CommandCategory.APP, ("ai provider settings",), risk_level=CommandRiskLevel.FUTURE, read_only=False, app_ready=False, notes_ru="future/not implemented"),
         _meta("files.future", "Файлы и документы", "Будущие file/document возможности.", CommandCategory.FILES_FUTURE, ("файлы jarvis", "документы jarvis"), risk_level=CommandRiskLevel.FUTURE, read_only=False, app_ready=False, notes_ru="future/not implemented"),
     ]
+    commands.append(
+        _meta(
+            "document_review.local_text",
+            "\u041f\u0440\u043e\u0432\u0435\u0440\u043a\u0430 TXT-\u0434\u043e\u043a\u0443\u043c\u0435\u043d\u0442\u0430",
+            "\u041b\u043e\u043a\u0430\u043b\u044c\u043d\u0430\u044f deterministic-\u043f\u0440\u043e\u0432\u0435\u0440\u043a\u0430 UTF-8 .txt \u0441 \u0431\u0435\u0437\u043e\u043f\u0430\u0441\u043d\u043e\u0439 \u043d\u043e\u0432\u043e\u0439 \u043a\u043e\u043f\u0438\u0435\u0439.",
+            CommandCategory.APP,
+            ("\u043f\u0440\u043e\u0432\u0435\u0440\u0438\u0442\u044c \u0434\u043e\u043a\u0443\u043c\u0435\u043d\u0442 <text>",),
+            risk_level=CommandRiskLevel.CONFIRMATION_REQUIRED,
+            read_only=False,
+            requires_confirmation=True,
+            requires_network=False,
+            requires_ai_key=False,
+            requires_privacy_check=False,
+            voice_auto_allowed=False,
+            app_ready=True,
+            introduced_in="TASK-083",
+            notes_ru="local .txt only; read on execute; write only after confirmation; no providers",
+        )
+    )
     for provider, title_ru, status_aliases, request_aliases in (
         ("openai", "Статус OpenAI", ("статус openai",), ("openai реальный запрос: <text>",)),
         ("gemini", "Статус Gemini", ("статус gemini",), ("gemini реальный запрос: <text>",)),

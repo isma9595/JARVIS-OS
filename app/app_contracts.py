@@ -32,6 +32,8 @@ def _safe_value(value: Any) -> object:
         return tuple(_safe_value(item) for item in value)
     if isinstance(value, list):
         return tuple(_safe_value(item) for item in value)
+    if isinstance(value, dict):
+        return {str(key): _safe_value(item) for key, item in value.items()}
     if hasattr(value, "to_dict"):
         return value.to_dict()
     return value
@@ -214,6 +216,15 @@ class AppExecutionContract(_ContractMixin):
     idempotency_key: str | None = None
     duplicate_suppressed: bool = False
     cancellable: bool = False
+    workflow_id: str | None = None
+    source_filename: str | None = None
+    proposed_output_filename: str | None = None
+    issue_count: int | None = None
+    issue_summaries: tuple[dict[str, object], ...] = ()
+    proposed_output_path: str | None = None
+    saved: bool = False
+    verified: bool = False
+    user_message: str | None = None
 
     def safe_text_ru(self) -> str:
         lines = [
@@ -234,6 +245,30 @@ class AppExecutionContract(_ContractMixin):
             "- response executed as command: no",
             "- secrets included: no",
         ]
+        if self.workflow_id:
+            lines.extend(
+                [
+                    f"- workflow id: {safe_contract_text(self.workflow_id)}",
+                    f"- source filename: {safe_contract_text(self.source_filename or 'none')}",
+                    f"- issue count: {self.issue_count if self.issue_count is not None else 0}",
+                    f"- proposed output filename: {safe_contract_text(self.proposed_output_filename or 'none')}",
+                    f"- proposed output path: {safe_contract_text(self.proposed_output_path or 'none')}",
+                    f"- saved: {'yes' if self.saved else 'no'}",
+                    f"- verified: {'yes' if self.verified else 'no'}",
+                ]
+            )
+            if self.issue_summaries:
+                lines.append("Issue summaries:")
+                for issue in self.issue_summaries:
+                    lines.append(
+                        "- "
+                        + safe_contract_text(
+                            f"{issue.get('issue_code', 'unknown')} line {issue.get('line_number', '?')}: "
+                            f"{issue.get('description_ru', '')}"
+                        )
+                    )
+            if self.user_message:
+                lines.append(f"- user message: {safe_contract_text(self.user_message)}")
         if self.policy_decision:
             lines.append(f"- policy decision: {self.policy_decision.get('decision', 'unknown')}")
         if self.clarification_question:

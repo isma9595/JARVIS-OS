@@ -213,6 +213,32 @@ class DesktopShellViewModel:
         error = getattr(result, "error", None)
         if error:
             lines.append(f"- error: {error}")
+        workflow_id = getattr(result, "workflow_id", None)
+        if workflow_id:
+            lines.extend(
+                [
+                    f"- workflow id: {workflow_id}",
+                    f"- source filename: {getattr(result, 'source_filename', None) or 'none'}",
+                    f"- issue count: {getattr(result, 'issue_count', None) if getattr(result, 'issue_count', None) is not None else 0}",
+                    f"- proposed output filename: {getattr(result, 'proposed_output_filename', None) or 'none'}",
+                    f"- proposed output path: {getattr(result, 'proposed_output_path', None) or 'none'}",
+                    f"- saved: {'yes' if getattr(result, 'saved', False) else 'no'}",
+                    f"- verified: {'yes' if getattr(result, 'verified', False) else 'no'}",
+                ]
+            )
+            issue_summaries = getattr(result, "issue_summaries", ()) or ()
+            if issue_summaries:
+                lines.append("Issue summaries:")
+                for issue in issue_summaries:
+                    lines.append(
+                        "- "
+                        + str(issue.get("issue_code", "unknown"))
+                        + f" line {issue.get('line_number', '?')}: "
+                        + str(issue.get("description_ru", ""))
+                    )
+            user_message = getattr(result, "user_message", None)
+            if user_message:
+                lines.append(f"- message: {user_message}")
         if getattr(result, "requires_clarification", False):
             question = getattr(result, "clarification_question", None)
             options = getattr(result, "clarification_options", ())
