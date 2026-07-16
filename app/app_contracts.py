@@ -261,6 +261,9 @@ class AppExecutionContract(_ContractMixin):
     saved: bool = False
     verified: bool = False
     user_message: str | None = None
+    plan_id: str | None = None
+    plan_status: str | None = None
+    plan_step_count: int | None = None
 
     def safe_text_ru(self) -> str:
         lines = [
@@ -314,6 +317,14 @@ class AppExecutionContract(_ContractMixin):
                 lines.append(f"- user message: {safe_contract_text(self.user_message)}")
         if self.policy_decision:
             lines.append(f"- policy decision: {self.policy_decision.get('decision', 'unknown')}")
+        if self.plan_id:
+            lines.extend(
+                [
+                    f"- plan id: {safe_contract_text(self.plan_id)}",
+                    f"- plan status: {safe_contract_text(self.plan_status or 'none')}",
+                    f"- plan step count: {self.plan_step_count if self.plan_step_count is not None else 0}",
+                ]
+            )
         if self.clarification_question:
             lines.append("Требуется уточнение:")
             lines.append(safe_contract_text(self.clarification_question))

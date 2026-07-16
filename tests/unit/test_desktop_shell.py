@@ -405,6 +405,21 @@ def test_preview_of_status_ai_known_read_only_with_real_service():
     assert "- requires_network: no" in text
 
 
+def test_desktop_shell_displays_planner_preview_with_real_service():
+    view_model = DesktopShellViewModel(JarvisAppService())
+
+    text = view_model.preview_command(
+        "\u0441\u043e\u0441\u0442\u0430\u0432\u044c \u043f\u043b\u0430\u043d: \u0441\u0442\u0430\u0442\u0443\u0441 \u0441\u0438\u0441\u0442\u0435\u043c\u044b; \u0442\u0435\u043a\u0443\u0449\u0438\u0439 \u044f\u0437\u044b\u043a"
+    )
+
+    assert "- known command: yes" in text
+    assert "- command id: planner.general_multi_step" in text
+    assert "- category: planner" in text
+    assert "- app_ready: yes" in text
+    assert "- requires_network: no" in text
+    assert "- requires_confirmation: no" in text
+
+
 def test_preview_of_groq_real_request_marks_network_risk_privacy_without_execution():
     service = FakeAppService()
     view_model = DesktopShellViewModel(service)

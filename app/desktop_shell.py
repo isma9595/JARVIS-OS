@@ -210,6 +210,15 @@ class DesktopShellViewModel:
             "- response executed as command: no",
             "- no secrets",
         ]
+        plan_id = getattr(result, "plan_id", None)
+        if plan_id:
+            lines.extend(
+                [
+                    f"- plan id: {plan_id}",
+                    f"- plan status: {getattr(result, 'plan_status', None) or 'none'}",
+                    f"- plan step count: {getattr(result, 'plan_step_count', None) if getattr(result, 'plan_step_count', None) is not None else 0}",
+                ]
+            )
         error = getattr(result, "error", None)
         if error:
             lines.append(f"- error: {error}")

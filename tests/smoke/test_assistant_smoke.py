@@ -238,8 +238,26 @@ def test_assistant_smoke_appservice_safe_path(monkeypatch):
     )
 
     startup_profile = service.get_startup_profile()
+    assert service.multi_step_planner.snapshot() is None
     assert memory_path.exists() is False
     language = service.get_language_preference()
+    plan_created = service.execute_contract(
+        "составь план: статус системы; текущий язык",
+        AppCommandSource.TEST,
+    )
+    assert plan_created.plan_status == "proposed"
+    assert plan_created.plan_step_count == 2
+    assert plan_created.progress_percent == 0
+    assert processor.calls == []
+    assert memory_manager.list_user_facts().entries == ()
+    plan_executed = service.execute_contract("выполни план", AppCommandSource.TEST)
+    post_plan_profile = service.get_startup_profile()
+    assert plan_executed.plan_id == plan_created.plan_id
+    assert plan_executed.plan_status == "succeeded"
+    assert plan_executed.progress_percent == 100
+    assert plan_executed.network_may_be_used is False
+    assert plan_executed.response_executed_as_command is False
+    assert memory_manager.list_user_facts().entries == ()
     smoke_remember = service.execute_contract(
         "\u0437\u0430\u043f\u043e\u043c\u043d\u0438: smoke task088 = isolated",
         AppCommandSource.TEST,
@@ -267,6 +285,11 @@ def test_assistant_smoke_appservice_safe_path(monkeypatch):
     assert startup_profile.startup_completed is True
     assert deferred_components["secure_provider_runtime"].state == "deferred"
     assert deferred_components["one_shot_voice_recognition"].state == "deferred"
+    post_plan_deferred = {
+        component.component_id: component for component in post_plan_profile.deferred_components
+    }
+    assert post_plan_deferred["secure_provider_runtime"].state == "deferred"
+    assert post_plan_deferred["one_shot_voice_recognition"].state == "deferred"
     assert status.ok is True
     assert smoke_remember.ok is True
     assert "isolated" in smoke_recall.output_text
@@ -296,7 +319,7 @@ def test_assistant_smoke_appservice_safe_path(monkeypatch):
     assert delete_question.category == "conversation"
     assert delete_question.requires_confirmation is False
 
-    assert processor.calls == [STATUS_SYSTEM, STATUS_SYSTEM]
+    assert processor.calls == [STATUS_SYSTEM, STATUS_SYSTEM, STATUS_SYSTEM]
     assert processor.action_router.calls == []
     assert provider_router.calls == []
     assert all(gate.calls == [] for gate in provider_gates)
@@ -316,6 +339,8 @@ def test_assistant_smoke_appservice_safe_path(monkeypatch):
         smoke_remember,
         smoke_recall,
         smoke_forget,
+        plan_created,
+        plan_executed,
         status,
         clarification,
         clarified,

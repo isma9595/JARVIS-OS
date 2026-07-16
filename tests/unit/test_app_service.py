@@ -142,6 +142,91 @@ def test_preview_command_does_not_execute_command_processor():
     assert processor.calls == []
 
 
+def test_preview_valid_russian_create_plan_is_known_planner_without_mutation():
+    processor = FakeCommandProcessor()
+    service = JarvisAppService(command_processor=processor)
+    command = "\u0441\u043e\u0441\u0442\u0430\u0432\u044c \u043f\u043b\u0430\u043d: \u0441\u0442\u0430\u0442\u0443\u0441 \u0441\u0438\u0441\u0442\u0435\u043c\u044b; \u0442\u0435\u043a\u0443\u0449\u0438\u0439 \u044f\u0437\u044b\u043a"
+
+    preview = service.preview_command(command)
+
+    assert preview.known_command is True
+    assert preview.registry_match_id == "planner.general_multi_step"
+    assert preview.category == "planner"
+    assert preview.app_ready is True
+    assert preview.requires_network is False
+    assert preview.requires_confirmation is False
+    assert service.multi_step_planner.snapshot() is None
+    assert processor.calls == []
+
+
+def test_preview_show_execute_cancel_plan_are_known_and_read_only():
+    processor = FakeCommandProcessor()
+    service = JarvisAppService(command_processor=processor)
+
+    show = service.preview_command("\u043f\u043e\u043a\u0430\u0436\u0438 \u043f\u043b\u0430\u043d")
+    execute = service.preview_command("\u0432\u044b\u043f\u043e\u043b\u043d\u0438 \u043f\u043b\u0430\u043d")
+    cancel = service.preview_command("\u043e\u0442\u043c\u0435\u043d\u0438 \u043f\u043b\u0430\u043d")
+
+    for preview in (show, execute, cancel):
+        assert preview.known_command is True
+        assert preview.registry_match_id == "planner.general_multi_step"
+        assert preview.category == "planner"
+        assert preview.app_ready is True
+        assert preview.requires_network is False
+        assert preview.read_only is True
+    assert service.multi_step_planner.snapshot() is None
+    assert processor.calls == []
+
+
+def test_preview_english_planner_commands_are_known():
+    service = JarvisAppService(command_processor=FakeCommandProcessor())
+
+    create = service.preview_command("create plan: system status; current language")
+    show = service.preview_command("show current plan")
+    execute = service.preview_command("execute plan")
+    cancel = service.preview_command("cancel current plan")
+
+    for preview in (create, show, execute, cancel):
+        assert preview.known_command is True
+        assert preview.registry_match_id == "planner.general_multi_step"
+        assert preview.category == "planner"
+        assert preview.app_ready is True
+        assert preview.requires_network is False
+
+
+def test_preview_invalid_planner_text_fails_safely_without_active_plan():
+    processor = FakeCommandProcessor()
+    service = JarvisAppService(command_processor=processor)
+
+    preview = service.preview_command(
+        "\u0441\u043e\u0441\u0442\u0430\u0432\u044c \u043f\u043b\u0430\u043d: \u0437\u0430\u043f\u0443\u0441\u0442\u0438 \u043d\u0435\u0438\u0437\u0432\u0435\u0441\u0442\u043d\u0443\u044e \u0444\u0443\u043d\u043a\u0446\u0438\u044e"
+    )
+
+    assert preview.known_command is False
+    assert preview.category == "planner"
+    assert preview.app_ready is False
+    assert preview.requires_network is False
+    assert preview.requires_confirmation is False
+    assert service.multi_step_planner.snapshot() is None
+    assert processor.calls == []
+
+
+def test_preview_does_not_execute_capabilities_or_initialize_heavy_components():
+    processor = FakeCommandProcessor()
+    service = JarvisAppService(command_processor=processor)
+    before = service.get_startup_profile()
+
+    service.preview_command(
+        "\u0441\u043e\u0441\u0442\u0430\u0432\u044c \u043f\u043b\u0430\u043d: \u0441\u0442\u0430\u0442\u0443\u0441 \u0441\u0438\u0441\u0442\u0435\u043c\u044b; \u0442\u0435\u043a\u0443\u0449\u0438\u0439 \u044f\u0437\u044b\u043a"
+    )
+    service.preview_command("\u0432\u044b\u043f\u043e\u043b\u043d\u0438 \u043f\u043b\u0430\u043d")
+    after = service.get_startup_profile()
+
+    assert processor.calls == []
+    assert service.multi_step_planner.snapshot() is None
+    assert after.deferred_components == before.deferred_components
+
+
 def test_conversational_status_text_ru_works():
     text = JarvisAppService(command_processor=FakeCommandProcessor()).conversational_status_text_ru()
 

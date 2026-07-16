@@ -69,6 +69,17 @@ from workflows.document_review import (
 )
 from workflows.contracts import WorkflowRunSnapshot, WorkflowStepResult, WorkflowStepStatus
 from workflows.runner import WorkflowExecutableStep, WorkflowRunner
+from planner import (
+    MultiStepPlanner,
+    PlanCapability,
+    PlanCapabilityDescriptor,
+    PlanExecutor,
+    PlanParseStatus,
+    PlanSideEffect,
+    PlanStatus,
+    PlannerCapabilityRegistry,
+    TERMINAL_PLAN_STATUSES,
+)
 
 
 class AppCommandSource(Enum):
@@ -138,6 +149,9 @@ class AppCommandResult:
     saved: bool = False
     verified: bool = False
     user_message: str | None = None
+    plan_id: str | None = None
+    plan_status: str | None = None
+    plan_step_count: int | None = None
 
 
 @dataclass(frozen=True)
@@ -184,6 +198,11 @@ class AppStatusSnapshot:
     fallback_explicit_only: bool
     consensus_explicit_only: bool
     voice_safety_active: bool
+
+
+@dataclass(frozen=True)
+class PlannerCapabilityCallResult:
+    safe_message: str
 
 
 class JarvisAppService:
@@ -282,6 +301,13 @@ class JarvisAppService:
         self._pending_document_review: PendingDocumentReviewConfirmation | None = None
         self._pending_memory_forget_all: PendingMemoryForgetAllConfirmation | None = None
         self._operation_results: dict[str, AppCommandResult] = {}
+        self.planner_registry = self._build_planner_registry()
+        self.multi_step_planner = MultiStepPlanner(self.planner_registry)
+        self.plan_executor = PlanExecutor(
+            registry=self.planner_registry,
+            execution_coordinator=self.execution_coordinator,
+            policy_boundary=self.policy_boundary,
+        )
         with self._startup_profiler.phase("document_workflow", "Document workflow"):
             self._local_filesystem = local_filesystem or WindowsLocalFileSystemAdapter()
             self.document_review_workflow = LocalTextDocumentReviewWorkflow(
@@ -701,6 +727,9 @@ class JarvisAppService:
             saved=result.saved,
             verified=result.verified,
             user_message=result.user_message,
+            plan_id=result.plan_id,
+            plan_status=result.plan_status,
+            plan_step_count=result.plan_step_count,
         )
 
     def process_one_shot_voice_request(
@@ -1003,6 +1032,9 @@ class JarvisAppService:
                     "\u043e\u0442\u0434\u0435\u043b\u044c\u043d\u043e\u0435 \u043f\u043e\u0434\u0442\u0432\u0435\u0440\u0436\u0434\u0435\u043d\u0438\u0435."
                 ),
             )
+        planner_preview = self._preview_planner_command(input_text, normalized_text)
+        if planner_preview is not None:
+            return planner_preview
         metadata = self._match_registry_command(input_text)
         if metadata is None:
             return AppCommandPreview(
@@ -1045,6 +1077,87 @@ class JarvisAppService:
             safe_summary_ru=self._summary_for_metadata(metadata),
         )
 
+    def _preview_planner_command(
+        self,
+        input_text: str,
+        normalized_text: str,
+    ) -> AppCommandPreview | None:
+        language_code = self.language_manager.get_preference().language_code
+        kind = self.multi_step_planner.command_kind(input_text, language_code=language_code)
+        if kind == PlanParseStatus.NOT_PLANNER_COMMAND:
+            return None
+
+        active = self.multi_step_planner.snapshot()
+        valid = True
+        error_code = None
+        step_count = getattr(active, "total_steps", None)
+        status = getattr(getattr(active, "status", None), "value", None)
+        requires_confirmation = False
+
+        if kind == PlanParseStatus.CREATED:
+            parsed = self.multi_step_planner.preview_create_from_text(
+                input_text,
+                language_code=language_code,
+            )
+            valid = parsed.status == PlanParseStatus.CREATED
+            error_code = parsed.safe_error_code
+            step_count = getattr(parsed.snapshot, "total_steps", None)
+            status = getattr(getattr(parsed.snapshot, "status", None), "value", None)
+        elif kind == PlanParseStatus.EXECUTE:
+            requires_confirmation = bool(getattr(active, "awaiting_confirmation", False))
+
+        if not valid:
+            return AppCommandPreview(
+                input_text=input_text,
+                normalized_text=normalized_text,
+                registry_match_id=None,
+                title_ru=None,
+                category="planner",
+                risk_level="read_only",
+                read_only=True,
+                voice_auto_allowed=False,
+                requires_confirmation=False,
+                requires_network=False,
+                requires_ai_key=False,
+                requires_privacy_check=False,
+                app_ready=False,
+                known_command=False,
+                safe_summary_ru=(
+                    "Planner preview rejected the text safely"
+                    + (f": {error_code}" if error_code else ".")
+                    + " No plan was created, replaced, executed, cancelled, or persisted."
+                ),
+            )
+
+        summary_parts = [
+            f"Planner command preview: {kind.value}.",
+            "Preview is read-only and does not create, replace, execute, or cancel a plan.",
+        ]
+        if active is None and kind in {PlanParseStatus.SHOW, PlanParseStatus.EXECUTE, PlanParseStatus.CANCEL}:
+            summary_parts.append("Active plan: none.")
+        elif status:
+            summary_parts.append(f"Plan status: {status}.")
+        if step_count is not None:
+            summary_parts.append(f"Plan steps: {step_count}.")
+
+        return AppCommandPreview(
+            input_text=input_text,
+            normalized_text=normalized_text,
+            registry_match_id="planner.general_multi_step",
+            title_ru="General multi-step planner",
+            category="planner",
+            risk_level="read_only",
+            read_only=True,
+            voice_auto_allowed=False,
+            requires_confirmation=requires_confirmation,
+            requires_network=False,
+            requires_ai_key=False,
+            requires_privacy_check=False,
+            app_ready=True,
+            known_command=True,
+            safe_summary_ru=" ".join(summary_parts),
+        )
+
     def preview_text_ru(self, text: str) -> str:
         preview = self.preview_command(text)
         return "\n".join(
@@ -1085,6 +1198,13 @@ class JarvisAppService:
         memory_control = self._consume_pending_memory_forget_all(input_text, source)
         if memory_control is not None:
             return memory_control
+        planner_result = self._handle_planner_command(
+            input_text,
+            source,
+            idempotency_key=idempotency_key,
+        )
+        if planner_result is not None:
+            return planner_result
         memory_result = self._handle_memory_command(input_text, source)
         if memory_result is not None:
             return memory_result
@@ -1193,6 +1313,169 @@ class JarvisAppService:
         result = self._with_operation(result, operation)
         self._remember_operation_result(result)
         return result
+
+    def _handle_planner_command(
+        self,
+        input_text: str,
+        source: AppCommandSource,
+        *,
+        idempotency_key: str | None,
+    ) -> AppCommandResult | None:
+        language_code = self.language_manager.get_preference().language_code
+        kind = self.multi_step_planner.command_kind(input_text, language_code=language_code)
+        normalized = self._normalize_memory_text(input_text)
+        active = self.multi_step_planner.snapshot()
+        if (
+            active is not None
+            and active.status == PlanStatus.AWAITING_CONFIRMATION
+            and normalized in {"да", "подтверждаю", "подтвердить", "yes"}
+        ):
+            execution = self.plan_executor.resume(active)
+            if execution.snapshot is not None:
+                self.multi_step_planner.set_status(
+                    execution.status,
+                    operation_id=execution.operation_id,
+                    step_statuses={step.step_id: step.status for step in execution.snapshot.steps},
+                    step_messages={step.step_id: step.safe_message for step in execution.snapshot.steps},
+                    step_errors={step.step_id: step.error_code for step in execution.snapshot.steps},
+                    current_step_id=execution.snapshot.current_step_id,
+                    safe_message=execution.safe_message,
+                )
+            snapshot = self.multi_step_planner.snapshot() or execution.snapshot
+            return self._planner_app_result(input_text, source, snapshot, executed=True, message=execution.safe_message)
+
+        if (
+            active is not None
+            and active.status == PlanStatus.AWAITING_CONFIRMATION
+            and normalized in {"отмена", "отмени", "нет", "cancel", "no"}
+        ):
+            execution = self.plan_executor.cancel(active)
+            snapshot = execution.snapshot
+            self.multi_step_planner.set_status(
+                PlanStatus.CANCELLED,
+                operation_id=execution.operation_id,
+                current_step_id=None,
+                safe_message=self._language_text("План отменён.", "Plan cancelled."),
+            )
+            snapshot = self.multi_step_planner.snapshot() or snapshot
+            return self._planner_app_result(input_text, source, snapshot, executed=False, message=self._language_text("План отменён.", "Plan cancelled."))
+
+        if kind == PlanParseStatus.NOT_PLANNER_COMMAND:
+            return None
+        if kind == PlanParseStatus.CREATED:
+            parsed = self.multi_step_planner.create_from_text(input_text, language_code=language_code)
+            return self._planner_app_result(
+                input_text,
+                source,
+                parsed.snapshot,
+                executed=False,
+                ok=parsed.status == PlanParseStatus.CREATED,
+                message=parsed.safe_message,
+                error=parsed.safe_error_code,
+            )
+        if kind == PlanParseStatus.SHOW:
+            snapshot = self.multi_step_planner.snapshot()
+            message = self._language_text("Активного плана нет.", "There is no active plan.") if snapshot is None else snapshot.safe_message
+            return self._planner_app_result(input_text, source, snapshot, executed=False, message=message)
+        if kind == PlanParseStatus.CANCEL:
+            snapshot = self.multi_step_planner.snapshot()
+            if snapshot is None:
+                return self._planner_app_result(input_text, source, None, executed=False, message=self._language_text("Активного плана нет.", "There is no active plan."))
+            execution = self.plan_executor.cancel(snapshot)
+            updated = self.multi_step_planner.set_status(
+                PlanStatus.CANCELLED,
+                operation_id=execution.operation_id,
+                current_step_id=None,
+                safe_message=self._language_text("План отменён.", "Plan cancelled."),
+            )
+            return self._planner_app_result(input_text, source, updated, executed=False, message=self._language_text("План отменён.", "Plan cancelled."))
+        if kind == PlanParseStatus.EXECUTE:
+            snapshot = self.multi_step_planner.snapshot()
+            if snapshot is None:
+                return self._planner_app_result(input_text, source, None, executed=False, ok=False, message=self._language_text("Активного плана нет.", "There is no active plan."), error="no_active_plan")
+            if snapshot.status in TERMINAL_PLAN_STATUSES:
+                return self._planner_app_result(input_text, source, snapshot, executed=False, message=self._language_text("Терминальный план не выполняется повторно.", "A terminal plan is not executed again."), error="terminal_plan_not_reexecuted")
+            execution = self.plan_executor.start(
+                snapshot,
+                self.multi_step_planner.steps(),
+                source=source.value,
+                idempotency_key=idempotency_key,
+            )
+            if execution.snapshot is not None:
+                updated = self.multi_step_planner.set_status(
+                    execution.status,
+                    operation_id=execution.operation_id,
+                    step_statuses={step.step_id: step.status for step in execution.snapshot.steps},
+                    step_messages={step.step_id: step.safe_message for step in execution.snapshot.steps},
+                    step_errors={step.step_id: step.error_code for step in execution.snapshot.steps},
+                    current_step_id=execution.snapshot.current_step_id,
+                    safe_message=execution.safe_message,
+                )
+            else:
+                updated = snapshot
+            return self._planner_app_result(input_text, source, updated, executed=True, message=execution.safe_message, error=execution.safe_error_code)
+        return None
+
+    def _planner_app_result(
+        self,
+        input_text: str,
+        source: AppCommandSource,
+        snapshot,
+        *,
+        executed: bool,
+        ok: bool = True,
+        message: str | None = None,
+        error: str | None = None,
+    ) -> AppCommandResult:
+        output = self._planner_snapshot_text(snapshot, message=message)
+        return AppCommandResult(
+            ok=ok and error is None,
+            input_text=input_text,
+            output_text=output,
+            source=source,
+            registry_match_id="planner.general_multi_step",
+            category="planner",
+            risk_level="read_only" if not executed else "planner_controlled",
+            executed=executed,
+            requires_confirmation=bool(getattr(snapshot, "awaiting_confirmation", False)),
+            network_may_be_used=False,
+            response_executed_as_command=False,
+            error=error,
+            operation_id=getattr(snapshot, "operation_id", None),
+            operation_status=getattr(getattr(snapshot, "status", None), "value", None),
+            workflow_id="general_multi_step_plan" if getattr(snapshot, "operation_id", None) else None,
+            workflow_status=getattr(getattr(snapshot, "status", None), "value", None),
+            current_step_id=getattr(snapshot, "current_step_id", None),
+            current_step_name=None,
+            completed_steps=tuple(step.step_id for step in getattr(snapshot, "steps", ()) if step.status.value == "succeeded"),
+            total_steps=getattr(snapshot, "total_steps", None),
+            progress_percent=getattr(snapshot, "progress_percent", None),
+            awaiting_confirmation=bool(getattr(snapshot, "awaiting_confirmation", False)),
+            user_message=message,
+            plan_id=getattr(snapshot, "plan_id", None),
+            plan_status=getattr(getattr(snapshot, "status", None), "value", None),
+            plan_step_count=getattr(snapshot, "total_steps", None),
+        )
+
+    def _planner_snapshot_text(self, snapshot, *, message: str | None = None) -> str:
+        if snapshot is None:
+            return message or self._language_text("Активного плана нет.", "There is no active plan.")
+        lines = [
+            message or snapshot.safe_message,
+            f"plan_id: {snapshot.plan_id}",
+            f"status: {snapshot.status.value}",
+            f"operation_id: {snapshot.operation_id or 'none'}",
+            f"steps: {snapshot.total_steps}",
+            f"current_step: {snapshot.current_step_id or 'none'}",
+            f"progress: {snapshot.progress_percent}",
+            f"awaiting_confirmation: {'yes' if snapshot.awaiting_confirmation else 'no'}",
+        ]
+        for step in snapshot.steps:
+            lines.append(
+                f"{step.position}. {step.display_name} [{step.capability_id}] "
+                f"{step.status.value}: {step.safe_message}"
+            )
+        return "\n".join(lines)
 
     def _execute_command_uncoordinated(
         self,
@@ -2462,6 +2745,128 @@ class JarvisAppService:
 
     def forget_user_fact(self, key) -> MemoryOperationResult:
         return self.memory_manager.forget_user_fact(key)
+
+    def _build_planner_registry(self) -> PlannerCapabilityRegistry:
+        registry = PlannerCapabilityRegistry.empty()
+
+        def descriptor(
+            capability_id: str,
+            ru: str,
+            en: str,
+            category: str,
+            risk: str,
+            side_effect: PlanSideEffect,
+            requires_confirmation: bool,
+            schema: dict[str, object] | None = None,
+            description: str = "",
+        ) -> PlanCapabilityDescriptor:
+            return PlanCapabilityDescriptor(
+                capability_id=capability_id,
+                display_name_ru=ru,
+                display_name_en=en,
+                category=category,
+                risk_level=risk,
+                side_effect=side_effect,
+                requires_confirmation=requires_confirmation,
+                argument_schema=schema or {},
+                safe_description=description or capability_id,
+            )
+
+        def policy(command_id: str, risk: str, capabilities: tuple[str, ...], normalized: str, confirmation_present: bool):
+            return PolicyRequest(
+                source="planner",
+                command_id=command_id,
+                action_id=command_id,
+                intent_kind="local_command",
+                risk=risk,
+                required_capabilities=capabilities,
+                confirmation_present=confirmation_present,
+                metadata={"normalized_text": normalized},
+            )
+
+        def app_status(_args):
+            result = self.command_processor.process("статус системы")
+            return PlannerCapabilityCallResult(str(result.get("response", result)))
+
+        def startup_profile(_args):
+            return PlannerCapabilityCallResult(self.startup_profile_text_ru())
+
+        def language_get(_args):
+            return PlannerCapabilityCallResult(self.get_language_preference().message)
+
+        def language_set(args):
+            return PlannerCapabilityCallResult(self.set_language_preference(str(args.get("language_code", ""))).message)
+
+        def memory_remember(args):
+            result = self.remember_user_fact(args.get("key"), args.get("value"))
+            return PlannerCapabilityCallResult(self._memory_response_text(result))
+
+        def memory_recall(args):
+            result = self.recall_user_fact(args.get("key"))
+            return PlannerCapabilityCallResult(self._memory_response_text(result))
+
+        def memory_list(_args):
+            result = self.list_user_memories()
+            return PlannerCapabilityCallResult(self._memory_response_text(result))
+
+        def memory_forget(args):
+            result = self.forget_user_fact(args.get("key"))
+            return PlannerCapabilityCallResult(self._memory_response_text(result))
+
+        def memory_forget_all(_args):
+            result = self.memory_manager.forget_all_user_facts()
+            return PlannerCapabilityCallResult(self._memory_response_text(result))
+
+        registrations = (
+            PlanCapability(
+                descriptor("system.status", "Статус системы", "System status", "system", "read_only", PlanSideEffect.READ_ONLY, False, {}, "Read local system status through AppService."),
+                app_status,
+                lambda args, confirmed: policy("system.status", "read_only", (PolicyCapability.READ_SYSTEM_STATE.value,), "статус системы", True),
+            ),
+            PlanCapability(
+                descriptor("startup.profile", "Профиль запуска", "Startup profile", "app", "read_only", PlanSideEffect.READ_ONLY, False),
+                startup_profile,
+                lambda args, confirmed: policy("startup.profile", "read_only", (PolicyCapability.READ_SYSTEM_STATE.value,), "startup profile", True),
+            ),
+            PlanCapability(
+                descriptor("language.get", "Текущий язык", "Current language", "profile", "read_only", PlanSideEffect.READ_ONLY, False),
+                language_get,
+                lambda args, confirmed: policy("language.get", "read_only", (PolicyCapability.READ_SYSTEM_STATE.value,), "current language", True),
+            ),
+            PlanCapability(
+                descriptor("language.set", "Изменить язык", "Set language", "profile", "local_write", PlanSideEffect.BOUNDED_LOCAL_STATE, False, {"language_code": "ru-RU|en-US"}),
+                language_set,
+                lambda args, confirmed: policy("language.set", "read_only", (PolicyCapability.READ_SYSTEM_STATE.value,), "set language", True),
+            ),
+            PlanCapability(
+                descriptor("memory.remember", "Запомнить факт", "Remember fact", "memory", "local_write", PlanSideEffect.BOUNDED_LOCAL_STATE, False, {"key": "string", "value": "string"}),
+                memory_remember,
+                lambda args, confirmed: policy("memory.remember", "read_only", (PolicyCapability.READ_SYSTEM_STATE.value,), "memory remember", True),
+            ),
+            PlanCapability(
+                descriptor("memory.recall", "Показать память", "Recall memory", "memory", "read_only", PlanSideEffect.READ_ONLY, False, {"key": "string"}),
+                memory_recall,
+                lambda args, confirmed: policy("memory.recall", "read_only", (PolicyCapability.READ_SYSTEM_STATE.value,), "memory recall", True),
+            ),
+            PlanCapability(
+                descriptor("memory.list", "Список памяти", "List memory", "memory", "read_only", PlanSideEffect.READ_ONLY, False),
+                memory_list,
+                lambda args, confirmed: policy("memory.list", "read_only", (PolicyCapability.READ_SYSTEM_STATE.value,), "memory list", True),
+            ),
+            PlanCapability(
+                descriptor("memory.forget", "Забыть факт", "Forget fact", "memory", "local_write", PlanSideEffect.BOUNDED_LOCAL_STATE, False, {"key": "string"}),
+                memory_forget,
+                lambda args, confirmed: policy("memory.forget", "read_only", (PolicyCapability.READ_SYSTEM_STATE.value,), "memory forget", True),
+            ),
+            PlanCapability(
+                descriptor("memory.forget_all", "Удалить всю память", "Forget all memory", "memory", "confirmation_required", PlanSideEffect.BOUNDED_LOCAL_STATE, True),
+                memory_forget_all,
+                lambda args, confirmed: policy("memory.forget_all", "confirmation_required", (PolicyCapability.FILE_WRITE.value,), "забудь все что ты помнишь обо мне", confirmed),
+            ),
+        )
+        for capability in registrations:
+            registry = registry.register(capability)
+        return registry
 
     def request_forget_all_memories(self) -> MemoryOperationResult:
         operation_id = "memory-forget-all-" + uuid4().hex
