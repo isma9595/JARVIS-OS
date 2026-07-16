@@ -122,12 +122,17 @@ class DesktopShellViewModel:
             )
             output_text = self._format_voice_result(result)
             recognized_text = getattr(result, "recognized_text", None)
+            normalized_text = getattr(result, "normalized_text", None)
+            normalization_applied = getattr(result, "normalization_applied", False)
+            preview_lines = [
+                "Одноразовый голосовой запрос завершён.",
+                f"Распознано: {recognized_text or 'нет'}",
+            ]
+            if normalization_applied and normalized_text:
+                preview_lines.append(f"Нормализовано: {normalized_text}")
             self.state = self._replace(
                 command_input=str(recognized_text or self.state.command_input),
-                preview_text=(
-                    "Одноразовый голосовой запрос завершён.\n"
-                    f"Распознанный текст: {recognized_text or 'нет'}"
-                ),
+                preview_text="\n".join(preview_lines),
                 output_text=output_text,
                 last_error=None if getattr(result, "ok", False) else output_text,
             )
@@ -231,6 +236,9 @@ class DesktopShellViewModel:
         error_code = getattr(result, "error_code", None)
         if error_code:
             lines.append(f"- error code: {error_code}")
+        normalized_text = getattr(result, "normalized_text", None)
+        if getattr(result, "normalization_applied", False) and normalized_text:
+            lines.append(f"Нормализовано: {normalized_text}")
         user_message = getattr(result, "user_message", "")
         if user_message:
             lines.append(f"- сообщение: {user_message}")

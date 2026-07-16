@@ -80,6 +80,9 @@ python run_desktop.py
   command-processing internals.
 - TASK-078 shell messages are Russian-first by default and preserve recognized
   Cyrillic text.
+- TASK-079 shell messages keep the original recognition visible and, when a
+  safe voice normalization changes the command candidate, also show
+  `Нормализовано: ...`.
 - Raw microphone audio stays inside the local capture/recognition boundary;
   only recognized text can continue through AppService.
 - Conversational preview does not call providers, network, browser, audio, or

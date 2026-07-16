@@ -29,6 +29,9 @@ class FakeVoiceResult:
     error_code: str | None = None
     user_message: str = "processed through text path"
     text_result: FakeExecutionResult | None = None
+    normalized_text: str | None = None
+    normalization_applied: bool = False
+    normalization_rules: tuple[str, ...] = ()
 
 
 class FakeAppService:
@@ -261,6 +264,24 @@ def test_process_one_shot_voice_request_formats_cyrillic_recognition():
     assert "- распознано: статус app service" in text
     assert "Статус готов." in text
     assert "Recognized text" not in text
+
+
+def test_process_one_shot_voice_request_displays_safe_normalization():
+    service = FakeAppService()
+    service.voice_result = FakeVoiceResult(
+        recognized_text="статус система",
+        normalized_text="статус системы",
+        normalization_applied=True,
+        normalization_rules=("normalize_system_status_phrase",),
+        text_result=FakeExecutionResult(output_text="JARVIS status: ready"),
+    )
+    view_model = DesktopShellViewModel(service)
+
+    text = view_model.process_one_shot_voice_request()
+
+    assert "Распознано: статус система" in view_model.state.preview_text
+    assert "Нормализовано: статус системы" in view_model.state.preview_text
+    assert "Нормализовано: статус системы" in text
 
 
 def test_execute_dialog_greeting_with_real_service_is_safe():

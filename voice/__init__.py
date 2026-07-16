@@ -81,6 +81,10 @@ from voice.voice_recognition_corrections import (
     VoiceRecognitionCorrection,
     VoiceRecognitionCorrectionManager,
 )
+from voice.russian_voice_normalizer import (
+    RussianVoiceNormalizationResult,
+    normalize_russian_voice_text,
+)
 
 __all__ = [
     "DEFAULT_CAPTURE_DURATION_SECONDS",
@@ -133,6 +137,8 @@ __all__ = [
     "VoiceCommandSessionHistory",
     "VoiceRecognitionCorrection",
     "VoiceRecognitionCorrectionManager",
+    "RussianVoiceNormalizationResult",
+    "normalize_russian_voice_text",
     "check_vosk_model_path_status",
     "check_vosk_package_status",
     "evaluate_vosk_local_recognition_gate",

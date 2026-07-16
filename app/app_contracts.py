@@ -220,6 +220,9 @@ class AppVoiceRequestResult(_ContractMixin):
     raw_audio_included: bool
     provider_objects_included: bool
     microphone_objects_included: bool
+    normalized_text: str | None = None
+    normalization_applied: bool = False
+    normalization_rules: tuple[str, ...] = ()
 
     def safe_text_ru(self) -> str:
         lines = [
@@ -228,6 +231,10 @@ class AppVoiceRequestResult(_ContractMixin):
             f"- voice capture succeeded: {'yes' if self.voice_capture_succeeded else 'no'}",
             f"- recognition succeeded: {'yes' if self.recognition_succeeded else 'no'}",
             f"- recognized text: {safe_contract_text(self.recognized_text or 'none')}",
+            f"- normalized text: {safe_contract_text(self.normalized_text or 'none')}",
+            f"- normalization applied: {'yes' if self.normalization_applied else 'no'}",
+            "- normalization rules: "
+            + (", ".join(self.normalization_rules) if self.normalization_rules else "none"),
             f"- text processing succeeded: {'yes' if self.text_processing_succeeded else 'no'}",
             f"- result type: {self.result_type}",
             f"- category: {self.category or 'unknown'}",

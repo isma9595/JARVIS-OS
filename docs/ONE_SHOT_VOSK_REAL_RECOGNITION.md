@@ -47,6 +47,13 @@ Blocked responses include reasons, one next step when available, and safety
 notes. If speech is empty or unrecognized, the recognition attempt completes
 without command execution.
 
+In the AppService TASK-078 path, TASK-079 may conservatively normalize a known
+Russian status command candidate before the existing text execution contract.
+For example, `статус система` can become `статус системы`. The original
+recognized text remains available, risky misspellings are not repaired, and
+normalization itself performs no execution, provider calls, credential reads,
+or network access.
+
 ## Difference From Bridge And Dry Run
 
 The bridge commands remain dry/safe coordinator checks and do not start the real

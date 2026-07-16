@@ -27,6 +27,12 @@ explicit local Vosk utterance through the existing one-shot recognition
 boundary, then delegates recognized text to `execute_contract()` so voice input
 and typed input share the same application-level text route.
 
+TASK-079 adds a narrow Russian voice normalization boundary before that
+delegation. The original recognized text is preserved, and only a safe
+one-shot command candidate such as `статус система` is normalized to
+`статус системы`. The normalizer does not execute commands, call providers,
+read credentials, call `CommandProcessor`, or call `ActionRouter`.
+
 JARVIS remains Russian-first for user-facing runtime behavior. The AppService
 language boundary defaults to `ru-RU`, while existing command, intent,
 provider, and Vosk settings continue to use Russian defaults. Recognized
@@ -110,11 +116,17 @@ Future UI should not call `CommandProcessor` or `ActionRouter` directly.
 ## One-Shot Voice Contract
 
 `AppVoiceRequestResult` reports capture, recognition, text-processing state,
-recognized text when available, composed `AppExecutionContract` output, safe
-error code/message, and confirmation-required state.
+recognized text when available, optional normalization details, composed
+`AppExecutionContract` output, safe error code/message, and
+confirmation-required state.
 
 It serializes no Vosk runtime objects, audio buffers, microphone streams,
 provider objects, credentials, or command processor internals.
+
+For TASK-079 the result keeps `recognized_text` as the exact recognition output
+after the existing AppService trim, and reports `normalized_text`,
+`normalization_applied`, and `normalization_rules`. The normalized text is used
+as the command candidate only when the normalizer marks it safe.
 
 Russian is the current default user-facing language for voice results,
 confirmation messages, local command output, provider-facing language policy,

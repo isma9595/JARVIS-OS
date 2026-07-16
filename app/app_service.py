@@ -35,6 +35,7 @@ from core.command_registry import (
 )
 from language.language_manager import ApplicationLanguageManager
 from voice.audio_lifecycle import AudioLifecycleController, AudioLifecycleStatus
+from voice.russian_voice_normalizer import normalize_russian_voice_text
 from ai.secure_provider_runtime import SecureProviderRuntime
 
 
@@ -512,12 +513,28 @@ class JarvisAppService:
                     voice_capture_succeeded=True,
                 )
 
-            text_result = self.execute_contract(recognized_text, source)
+            normalization = normalize_russian_voice_text(
+                recognized_text,
+                locale=self.language_manager.runtime_locale(),
+            )
+            command_candidate = (
+                normalization.normalized_text
+                if normalization.safe_to_use_as_command_candidate
+                else recognized_text
+            )
+            normalization_applied = (
+                normalization.safe_to_use_as_command_candidate
+                and normalization.normalized_text != recognized_text
+            )
+            text_result = self.execute_contract(command_candidate, source)
             return AppVoiceRequestResult(
                 ok=bool(text_result.ok),
                 voice_capture_succeeded=True,
                 recognition_succeeded=True,
                 recognized_text=safe_contract_text(recognized_text),
+                normalized_text=safe_contract_text(normalization.normalized_text),
+                normalization_applied=normalization_applied,
+                normalization_rules=normalization.applied_rules,
                 text_processing_succeeded=bool(text_result.ok),
                 result_type=(
                     "confirmation_required"
@@ -998,6 +1015,9 @@ class JarvisAppService:
             raw_audio_included=False,
             provider_objects_included=False,
             microphone_objects_included=False,
+            normalized_text=None,
+            normalization_applied=False,
+            normalization_rules=(),
         )
 
     def _voice_message_from_recognition(self, recognition_result, fallback: str) -> str:
