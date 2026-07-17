@@ -3,6 +3,7 @@ from dataclasses import dataclass
 from app.app_service import AppCommandSource, JarvisAppService
 from app import desktop_shell
 from app.desktop_shell import DesktopShellViewModel, JarvisDesktopShell
+from memory import LocalMemoryManager
 
 
 @dataclass
@@ -418,6 +419,72 @@ def test_desktop_shell_displays_planner_preview_with_real_service():
     assert "- app_ready: yes" in text
     assert "- requires_network: no" in text
     assert "- requires_confirmation: no" in text
+
+
+def test_desktop_shell_projects_execute_plan_confirmation_with_real_service(tmp_path):
+    service = JarvisAppService(
+        memory_manager=LocalMemoryManager(tmp_path / "desktop_planner_memory.json")
+    )
+    service.memory_manager.remember_user_fact("marker", "survives")
+    view_model = DesktopShellViewModel(service)
+
+    create_text = view_model.execute_command("create plan: forget everything you remember about me")
+    preview_text = view_model.preview_command("execute plan")
+
+    assert "plan status: proposed" in create_text.lower()
+    assert "- command id: planner.general_multi_step" in preview_text
+    assert "- active plan id: plan-" in preview_text
+    assert "- active plan status: proposed" in preview_text
+    assert "- active step id: step-1" in preview_text
+    assert "- active step capability: memory.forget_all" in preview_text
+    assert "- operation id: none" in preview_text
+    assert "- risk: confirmation_required" in preview_text
+    assert "- requires_confirmation: yes" in preview_text
+    assert "- executed through AppService: yes" in preview_text
+    assert "- requires_network: no" in preview_text
+    assert len(service.memory_manager.list_user_facts().entries) == 1
+    assert service.memory_manager.recall_user_fact("marker").found is True
+
+
+def test_desktop_shell_awaiting_confirmation_plan_text_does_not_show_pending_step(tmp_path):
+    service = JarvisAppService(
+        memory_manager=LocalMemoryManager(tmp_path / "desktop_awaiting_message_memory.json")
+    )
+    service.set_language_preference("english")
+    service.memory_manager.remember_user_fact("marker", "survives")
+    view_model = DesktopShellViewModel(service)
+
+    view_model.execute_command("create plan: forget everything you remember about me")
+    text = view_model.execute_command("execute plan")
+
+    assert "- plan status: awaiting_confirmation" in text
+    assert "- awaiting confirmation: yes" in text
+    assert "awaiting_confirmation: awaiting_confirmation" in text
+    assert "awaiting_confirmation: Step is pending." not in text
+    assert service.memory_manager.recall_user_fact("marker").found is True
+
+
+def test_desktop_shell_projects_local_write_execute_plan_with_real_service(tmp_path):
+    service = JarvisAppService(
+        memory_manager=LocalMemoryManager(tmp_path / "desktop_planner_local_write_memory.json")
+    )
+    service.set_language_preference("english")
+    view_model = DesktopShellViewModel(service)
+
+    view_model.execute_command("create plan: remember test word north")
+    preview_text = view_model.preview_command("execute plan")
+
+    assert "- command id: planner.general_multi_step" in preview_text
+    assert "- active plan id: plan-" in preview_text
+    assert "- active plan status: proposed" in preview_text
+    assert "- active step id: step-1" in preview_text
+    assert "- active step capability: memory.remember" in preview_text
+    assert "- active step name: Remember fact" in preview_text
+    assert "- operation id: none" in preview_text
+    assert "- risk: local_write" in preview_text
+    assert "- requires_confirmation: no" in preview_text
+    assert "- executed through AppService: yes" in preview_text
+    assert service.memory_manager.recall_user_fact("test word").found is False
 
 
 def test_preview_of_groq_real_request_marks_network_risk_privacy_without_execution():

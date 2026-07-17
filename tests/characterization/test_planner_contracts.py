@@ -89,30 +89,46 @@ def test_characterizes_current_english_forget_all_plan_control(tmp_path):
     assert processor.calls == []
 
 
-def test_characterizes_current_execute_plan_preview_confirmation_mismatch(tmp_path):
+def test_characterizes_execute_plan_preview_confirmation_projection(tmp_path):
     service, processor, memory = make_service(tmp_path)
     memory.remember_user_fact("one", "1")
     memory.remember_user_fact("two", "2")
 
     created = service.execute_command(EN_PLAN_FORGET_ALL, AppCommandSource.TEST)
     preview = service.preview_command(EXECUTE_PLAN)
+    preview_snapshot = service.multi_step_planner.snapshot()
+    entries_after_preview = memory.list_user_facts().entries
     execution = service.execute_command(EXECUTE_PLAN, AppCommandSource.TEST)
     awaiting_snapshot = service.multi_step_planner.snapshot()
     cancelled = service.execute_command(CANCEL_PLAN, AppCommandSource.TEST)
     cancelled_snapshot = service.multi_step_planner.snapshot()
+    cancelled_execute = service.execute_command(EXECUTE_PLAN, AppCommandSource.TEST)
     post_cancel_status = service.execute_command(SHOW_PLAN, AppCommandSource.TEST)
     post_cancel_snapshot = service.multi_step_planner.snapshot()
 
-    # CHARACTERIZATION OF CURRENT BEHAVIOR: Preview projects read-only/no
-    # confirmation for execute plan, while actual execution pauses for
-    # confirmation before the destructive capability.
+    # AUD-012 remediation: preview remains read-only but projects the next
+    # effective plan step policy before execution.
     assert created.plan_status == "proposed"
     assert preview.known_command is True
     assert preview.registry_match_id == "planner.general_multi_step"
     assert preview.category == "planner"
-    assert preview.risk_level == "read_only"
-    assert preview.read_only is True
-    assert preview.requires_confirmation is False
+    assert preview.risk_level == "confirmation_required"
+    assert preview.read_only is False
+    assert preview.requires_confirmation is True
+    assert preview.requires_network is False
+    assert preview.active_plan_id == created.plan_id
+    assert preview.active_plan_status == "proposed"
+    assert preview.active_step_id == "step-1"
+    assert preview.active_step_capability_id == "memory.forget_all"
+    assert preview.active_step_name is not None
+    assert preview.operation_id is None
+    assert preview_snapshot is not None
+    assert preview_snapshot.status.value == "proposed"
+    assert preview_snapshot.steps[0].capability_id == "memory.forget_all"
+    assert preview_snapshot.steps[0].safe_argument_summary == EN_PLAN_FORGET_ALL.removeprefix("create plan:").strip()
+    assert preview_snapshot.steps[0].risk_level == "confirmation_required"
+    assert preview_snapshot.steps[0].side_effect == "bounded_local_state"
+    assert len(entries_after_preview) == 2
 
     assert execution.registry_match_id == "planner.general_multi_step"
     assert execution.category == "planner"
@@ -137,6 +153,13 @@ def test_characterizes_current_execute_plan_preview_confirmation_mismatch(tmp_pa
     assert cancelled_snapshot.operation_id == execution.operation_id
     assert cancelled_snapshot.status.value == "cancelled"
     assert cancelled_snapshot.awaiting_confirmation is False
+    assert len(memory.list_user_facts().entries) == 2
+
+    assert cancelled_execute.operation_id == execution.operation_id
+    assert cancelled_execute.operation_status == "cancelled"
+    assert cancelled_execute.plan_status == "cancelled"
+    assert cancelled_execute.error == "terminal_plan_not_reexecuted"
+    assert cancelled_execute.awaiting_confirmation is False
     assert len(memory.list_user_facts().entries) == 2
 
     assert post_cancel_status.registry_match_id == "planner.general_multi_step"

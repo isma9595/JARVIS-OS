@@ -11,6 +11,7 @@ from planner.contracts import (
     PlanStepDefinition,
     PlanStepSnapshot,
     PlanStepStatus,
+    default_plan_step_message,
 )
 from planner.multi_step_planner import MultiStepPlanner, TERMINAL_PLAN_STATUSES
 from planner.plan_executor import PlanExecutor
@@ -32,4 +33,5 @@ __all__ = [
     "PlannerCapabilityRegistry",
     "PlannerCapabilityRegistryError",
     "TERMINAL_PLAN_STATUSES",
+    "default_plan_step_message",
 ]

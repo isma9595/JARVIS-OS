@@ -11,6 +11,7 @@ from planner import (
     PlanStepStatus,
     PlannerCapabilityRegistry,
     PlannerCapabilityRegistryError,
+    default_plan_step_message,
 )
 
 
@@ -68,10 +69,80 @@ def test_snapshot_is_immutable_serializable_and_has_no_raw_executor_or_secret():
 
     assert data["status"] == "proposed"
     assert data["progress_percent"] == 0
+    assert data["steps"][0]["safe_argument_summary"] == "статус системы"
+    assert data["steps"][0]["risk_level"] == "read_only"
+    assert data["steps"][0]["side_effect"] == "read_only"
     assert "executor" not in str(data).lower()
     assert "callback" not in str(data).lower()
     with pytest.raises(AttributeError):
         parsed.snapshot.plan_id = "changed"
+
+
+def test_snapshot_steps_are_immutable_and_to_dict_is_defensive():
+    planner = MultiStepPlanner(registry())
+    parsed = planner.create_from_text(
+        "create plan: system status; current language",
+        language_code="en-US",
+    )
+    snapshot = parsed.snapshot
+    step = snapshot.steps[0]
+
+    assert isinstance(snapshot.steps, tuple)
+    with pytest.raises(AttributeError):
+        step.capability_id = "changed"
+    with pytest.raises(TypeError):
+        snapshot.steps[0] = snapshot.steps[1]
+
+    data = snapshot.to_dict()
+    data["plan_id"] = "changed"
+    data["steps"][0]["capability_id"] = "changed"
+
+    assert snapshot.plan_id != "changed"
+    assert snapshot.steps[0].capability_id == "system.status"
+    assert planner.snapshot().plan_id != "changed"
+    assert planner.snapshot().steps[0].capability_id == "system.status"
+
+
+def test_is_current_marker_is_deterministic_for_private_state_snapshots():
+    planner = MultiStepPlanner(registry())
+    planner.create_from_text("create plan: system status; current language", language_code="en-US")
+
+    proposed = planner.snapshot()
+    awaiting = planner.set_status(
+        PlanStatus.AWAITING_CONFIRMATION,
+        current_step_id="step-2",
+    )
+    terminal = planner.set_status(
+        PlanStatus.CANCELLED,
+        current_step_id=None,
+    )
+
+    assert [step.is_current for step in proposed.steps] == [False, False]
+    assert [step.is_current for step in awaiting.steps] == [False, True]
+    assert [step.is_current for step in terminal.steps] == [False, False]
+
+
+def test_default_step_messages_follow_current_public_status():
+    planner = MultiStepPlanner(registry())
+    planner.create_from_text("create plan: system status; current language", language_code="en-US")
+
+    awaiting = planner.set_status(
+        PlanStatus.AWAITING_CONFIRMATION,
+        step_statuses={"step-1": PlanStepStatus.AWAITING_CONFIRMATION},
+        current_step_id="step-1",
+    )
+    skipped = planner.set_status(
+        PlanStatus.BLOCKED,
+        step_statuses={"step-1": PlanStepStatus.CANCELLED, "step-2": PlanStepStatus.SKIPPED},
+        current_step_id=None,
+    )
+
+    assert default_plan_step_message(PlanStepStatus.PENDING, "en-US") == "Step is pending."
+    assert default_plan_step_message(PlanStepStatus.PENDING, "ru-RU") == "Этап ожидает выполнения."
+    assert awaiting.steps[0].safe_message == "awaiting_confirmation"
+    assert awaiting.steps[0].safe_message != "Step is pending."
+    assert skipped.steps[0].safe_message == "cancelled"
+    assert skipped.steps[1].safe_message == "skipped"
 
 
 def test_registry_rejects_duplicate_and_unregistered_capability():

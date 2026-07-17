@@ -178,6 +178,145 @@ def test_preview_show_execute_cancel_plan_are_known_and_read_only():
     assert processor.calls == []
 
 
+def test_preview_execute_plan_projects_read_only_next_step_without_mutation():
+    processor = FakeCommandProcessor()
+    service = JarvisAppService(command_processor=processor)
+    service.set_language_preference("english")
+    created = service.execute_command("create plan: system status", AppCommandSource.TEST)
+    before = service.multi_step_planner.snapshot()
+
+    preview = service.preview_command("execute plan")
+    after = service.multi_step_planner.snapshot()
+
+    assert created.plan_status == "proposed"
+    assert preview.risk_level == "read_only"
+    assert preview.read_only is True
+    assert preview.requires_confirmation is False
+    assert preview.active_plan_id == before.plan_id
+    assert preview.active_plan_status == "proposed"
+    assert preview.active_step_id == "step-1"
+    assert preview.active_step_capability_id == "system.status"
+    assert preview.active_step_name == "System status"
+    assert preview.operation_id is None
+    assert after.to_dict() == before.to_dict()
+    assert processor.calls == []
+
+
+def test_preview_execute_plan_projects_local_write_next_step_without_memory_mutation(tmp_path):
+    from memory import LocalMemoryManager
+
+    memory = LocalMemoryManager(tmp_path / "preview_memory.json")
+    service = JarvisAppService(
+        command_processor=FakeCommandProcessor(),
+        memory_manager=memory,
+    )
+    service.set_language_preference("english")
+    service.execute_command("create plan: remember test word north", AppCommandSource.TEST)
+    before = service.multi_step_planner.snapshot()
+
+    preview = service.preview_command("execute plan")
+    after = service.multi_step_planner.snapshot()
+
+    assert preview.risk_level == "local_write"
+    assert preview.read_only is False
+    assert preview.requires_confirmation is False
+    assert preview.active_plan_id == before.plan_id
+    assert preview.active_plan_status == "proposed"
+    assert preview.active_step_id == "step-1"
+    assert preview.active_step_capability_id == "memory.remember"
+    assert preview.active_step_name == "Remember fact"
+    assert preview.operation_id is None
+    assert memory.recall_user_fact("test word").found is False
+    assert after.to_dict() == before.to_dict()
+
+
+def test_preview_execute_plan_projects_destructive_next_step_without_arming_confirmation(tmp_path):
+    from memory import LocalMemoryManager
+
+    memory = LocalMemoryManager(tmp_path / "preview_forget_all_memory.json")
+    memory.remember_user_fact("marker", "survives")
+    service = JarvisAppService(
+        command_processor=FakeCommandProcessor(),
+        memory_manager=memory,
+    )
+    service.set_language_preference("english")
+    service.execute_command("create plan: forget everything you remember about me", AppCommandSource.TEST)
+    before = service.multi_step_planner.snapshot()
+
+    preview = service.preview_command("execute plan")
+    after = service.multi_step_planner.snapshot()
+
+    assert preview.risk_level == "confirmation_required"
+    assert preview.read_only is False
+    assert preview.requires_confirmation is True
+    assert preview.active_plan_id == before.plan_id
+    assert preview.active_plan_status == "proposed"
+    assert preview.active_step_id == "step-1"
+    assert preview.active_step_capability_id == "memory.forget_all"
+    assert preview.operation_id is None
+    assert after.awaiting_confirmation is False
+    assert after.progress_percent == 0
+    assert memory.recall_user_fact("marker").found is True
+    assert after.to_dict() == before.to_dict()
+
+
+def test_repeated_execute_plan_while_awaiting_confirmation_is_rejected_without_forgetting_memory(tmp_path):
+    from memory import LocalMemoryManager
+
+    class TrackingMemoryManager(LocalMemoryManager):
+        def __init__(self, path):
+            super().__init__(path)
+            self.forget_all_calls = 0
+
+        def forget_all_user_facts(self):
+            self.forget_all_calls += 1
+            return super().forget_all_user_facts()
+
+    memory = TrackingMemoryManager(tmp_path / "repeat_execute_forget_all_memory.json")
+    memory.remember_user_fact("marker", "survives")
+    service = JarvisAppService(
+        command_processor=FakeCommandProcessor(),
+        memory_manager=memory,
+    )
+    service.set_language_preference("english")
+
+    created = service.execute_command("create plan: forget everything you remember about me", AppCommandSource.TEST)
+    first = service.execute_command("execute plan", AppCommandSource.TEST)
+    first_snapshot = service.multi_step_planner.snapshot()
+    operation_id = first.operation_id
+    progress = first.progress_percent
+    repeated = service.execute_command("execute plan", AppCommandSource.TEST)
+    repeated_snapshot = service.multi_step_planner.snapshot()
+    cancelled = service.execute_command("cancel plan", AppCommandSource.TEST)
+
+    assert created.plan_status == "proposed"
+    assert first.plan_status == "awaiting_confirmation"
+    assert first.requires_confirmation is True
+    assert first.awaiting_confirmation is True
+    assert operation_id
+    assert first_snapshot.operation_id == operation_id
+    assert first_snapshot.steps[0].safe_message == "awaiting_confirmation"
+    assert first_snapshot.steps[0].safe_message != "Step is pending."
+
+    assert repeated.plan_status == "awaiting_confirmation"
+    assert repeated.requires_confirmation is True
+    assert repeated.awaiting_confirmation is True
+    assert repeated.operation_id == operation_id
+    assert repeated.executed is False
+    assert repeated.error == "explicit_confirmation_required"
+    assert repeated.progress_percent == progress
+    assert repeated_snapshot.operation_id == operation_id
+    assert repeated_snapshot.awaiting_confirmation is True
+    assert memory.recall_user_fact("marker").found is True
+    assert memory.forget_all_calls == 0
+
+    assert cancelled.plan_status == "cancelled"
+    assert cancelled.operation_id == operation_id
+    assert cancelled.awaiting_confirmation is False
+    assert memory.recall_user_fact("marker").found is True
+    assert memory.forget_all_calls == 0
+
+
 def test_preview_english_planner_commands_are_known():
     service = JarvisAppService(command_processor=FakeCommandProcessor())
 

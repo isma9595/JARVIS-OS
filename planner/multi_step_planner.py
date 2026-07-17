@@ -18,6 +18,7 @@ from planner.contracts import (
     PlanStepStatus,
     contains_control_characters,
     contains_credential_like_value,
+    default_plan_step_message,
     safe_plan_text,
 )
 
@@ -358,8 +359,12 @@ class _PlanState:
                     capability_id=step.capability_id,
                     display_name=descriptor.display_name(self.language_code),
                     status=status,
-                    safe_message=self.step_messages.get(step.step_id) or self._default_step_message(status),
+                    safe_message=self.step_messages.get(step.step_id) or default_plan_step_message(status, self.language_code),
+                    safe_argument_summary=step.safe_argument_summary,
+                    risk_level=step.risk_level,
+                    side_effect=descriptor.side_effect.value,
                     requires_confirmation=step.requires_confirmation,
+                    is_current=step.step_id == self.current_step_id,
                     error_code=self.step_errors.get(step.step_id),
                 )
             )
@@ -379,11 +384,6 @@ class _PlanState:
             steps=tuple(snapshots),
             safe_message=message or self._default_plan_message(),
         )
-
-    def _default_step_message(self, status: PlanStepStatus) -> str:
-        if status == PlanStepStatus.PENDING:
-            return "Step is pending." if self.language_code == "en-US" else "Этап ожидает выполнения."
-        return status.value
 
     def _default_plan_message(self) -> str:
         if self.status == PlanStatus.PROPOSED:

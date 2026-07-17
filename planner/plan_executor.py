@@ -11,8 +11,9 @@ from planner.contracts import (
     PlanExecutionResult,
     PlanSnapshot,
     PlanStatus,
-    PlanStepDefinition,
+    PlanStepSnapshot,
     PlanStepStatus,
+    default_plan_step_message,
 )
 from workflows.contracts import WorkflowStepDefinition, WorkflowStepResult, WorkflowStepStatus
 from workflows.runner import WorkflowExecutableStep, WorkflowRunner
@@ -42,6 +43,12 @@ class PlanExecutor:
         self._states: dict[str, _ExecutionState] = {}
 
     def start(self, plan: PlanSnapshot, steps, *, source: str, idempotency_key: str | None = None) -> PlanExecutionResult:
+        if plan.status == PlanStatus.AWAITING_CONFIRMATION:
+            return self._result(
+                plan,
+                "Explicit confirmation or cancellation is required. Repeating execute plan is not confirmation.",
+                "explicit_confirmation_required",
+            )
         if plan.status in {PlanStatus.SUCCEEDED, PlanStatus.FAILED, PlanStatus.CANCELLED, PlanStatus.BLOCKED}:
             return self._result(plan, "Terminal plan was not executed again.", "terminal_plan_not_reexecuted")
         fingerprint = self.execution_coordinator.create_request_fingerprint(
@@ -180,12 +187,12 @@ class PlanExecutor:
         for step in plan.steps:
             if step.step_id in workflow.completed_step_ids:
                 state.step_statuses[step.step_id] = PlanStepStatus.SUCCEEDED
+            elif status == PlanStatus.CANCELLED:
+                state.step_statuses[step.step_id] = PlanStepStatus.CANCELLED
             elif workflow.current_step_id == step.step_id and workflow.awaiting_confirmation:
                 state.step_statuses[step.step_id] = PlanStepStatus.AWAITING_CONFIRMATION
             elif status in {PlanStatus.FAILED, PlanStatus.BLOCKED} and state.step_statuses.get(step.step_id) is None:
                 state.step_statuses[step.step_id] = PlanStepStatus.SKIPPED
-            elif status == PlanStatus.CANCELLED and state.step_statuses.get(step.step_id) is None:
-                state.step_statuses[step.step_id] = PlanStepStatus.CANCELLED
         if status == PlanStatus.BLOCKED and workflow.current_step_id:
             state.step_statuses[workflow.current_step_id] = PlanStepStatus.BLOCKED
             state.step_errors[workflow.current_step_id] = "policy_denied"
@@ -211,33 +218,61 @@ class PlanExecutor:
         )
 
     def _snapshot_from_state(self, plan, *, operation_id, status, current_step_id, state, message):
-        from planner.multi_step_planner import _PlanState
-
-        plan_state = _PlanState(
+        steps = []
+        completed = 0
+        current_index = 0
+        terminal_statuses = {
+            PlanStatus.SUCCEEDED,
+            PlanStatus.FAILED,
+            PlanStatus.CANCELLED,
+            PlanStatus.BLOCKED,
+        }
+        for step in plan.steps:
+            step_status = state.step_statuses.get(step.step_id, step.status)
+            if step_status == PlanStepStatus.SUCCEEDED:
+                completed += 1
+            if current_step_id == step.step_id:
+                current_index = step.position - 1
+            steps.append(
+                PlanStepSnapshot(
+                    step_id=step.step_id,
+                    position=step.position,
+                    capability_id=step.capability_id,
+                    display_name=step.display_name,
+                    status=step_status,
+                    safe_message=state.step_messages.get(step.step_id) or default_plan_step_message(step_status, plan.language_code),
+                    safe_argument_summary=step.safe_argument_summary,
+                    risk_level=step.risk_level,
+                    side_effect=step.side_effect,
+                    requires_confirmation=step.requires_confirmation,
+                    is_current=step.step_id == current_step_id,
+                    error_code=state.step_errors.get(step.step_id),
+                )
+            )
+        if status == PlanStatus.SUCCEEDED:
+            progress = 100
+        elif not steps:
+            progress = 0
+        else:
+            progress = min(99, int((completed / len(steps)) * 100))
+        if current_step_id is None and status in terminal_statuses:
+            current_index = len(steps)
+        return PlanSnapshot(
             plan_id=plan.plan_id,
+            operation_id=operation_id,
             goal_summary=plan.goal_summary,
             language_code=plan.language_code,
-            steps=tuple(
-                PlanStepDefinition(
-                    step_id=s.step_id,
-                    position=s.position,
-                    capability_id=s.capability_id,
-                    arguments={},
-                    safe_argument_summary="",
-                    requires_confirmation=s.requires_confirmation,
-                    risk_level="",
-                )
-                for s in plan.steps
-            ),
-            registry=self.registry,
             status=status,
+            current_step_id=current_step_id,
+            current_step_index=current_index,
+            total_steps=len(steps),
+            completed_steps=completed,
+            progress_percent=progress,
+            awaiting_confirmation=status == PlanStatus.AWAITING_CONFIRMATION,
+            cancellable=status not in terminal_statuses,
+            steps=tuple(steps),
+            safe_message=message,
         )
-        plan_state.operation_id = operation_id
-        plan_state.current_step_id = current_step_id
-        plan_state.step_statuses.update(state.step_statuses)
-        plan_state.step_messages.update(state.step_messages)
-        plan_state.step_errors.update(state.step_errors)
-        return plan_state.snapshot(message=message)
 
     def _result(self, plan, message, error):
         return PlanExecutionResult(

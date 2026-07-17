@@ -59,6 +59,12 @@ class PlanSideEffect(Enum):
     BOUNDED_LOCAL_STATE = "bounded_local_state"
 
 
+def default_plan_step_message(status: PlanStepStatus, language_code: str) -> str:
+    if status == PlanStepStatus.PENDING:
+        return "Step is pending." if language_code == "en-US" else "Этап ожидает выполнения."
+    return status.value
+
+
 @dataclass(frozen=True)
 class PlanCapabilityDescriptor:
     capability_id: str
@@ -123,7 +129,11 @@ class PlanStepSnapshot:
     display_name: str
     status: PlanStepStatus
     safe_message: str
+    safe_argument_summary: str
+    risk_level: str
+    side_effect: str
     requires_confirmation: bool
+    is_current: bool = False
     error_code: str | None = None
 
     def __post_init__(self) -> None:
@@ -131,6 +141,10 @@ class PlanStepSnapshot:
         object.__setattr__(self, "capability_id", safe_plan_text(self.capability_id, 80))
         object.__setattr__(self, "display_name", safe_plan_text(self.display_name, 120))
         object.__setattr__(self, "safe_message", safe_plan_text(self.safe_message, 220))
+        object.__setattr__(self, "safe_argument_summary", safe_plan_text(self.safe_argument_summary, 160))
+        object.__setattr__(self, "risk_level", safe_plan_text(self.risk_level, 80))
+        object.__setattr__(self, "side_effect", safe_plan_text(self.side_effect, 80))
+        object.__setattr__(self, "is_current", bool(self.is_current))
         if self.error_code is not None:
             object.__setattr__(self, "error_code", safe_plan_text(self.error_code, 80))
 

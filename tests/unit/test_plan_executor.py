@@ -9,6 +9,7 @@ from planner import (
     PlanExecutor,
     PlanSideEffect,
     PlanStatus,
+    PlanStepStatus,
     PlannerCapabilityRegistry,
 )
 
@@ -115,6 +116,9 @@ def test_policy_checked_before_each_step_and_denial_stops_later_steps():
     assert ("language.get", True) in policy.requests
     assert result.status == PlanStatus.BLOCKED
     assert result.safe_error_code == "policy_denied"
+    assert result.snapshot.steps[1].status == PlanStepStatus.BLOCKED
+    assert result.snapshot.steps[1].safe_message == "blocked"
+    assert result.snapshot.steps[1].safe_message != "Step is pending."
 
 
 def test_failure_stops_later_steps_and_raw_exception_is_absent():
@@ -128,6 +132,9 @@ def test_failure_stops_later_steps_and_raw_exception_is_absent():
     assert calls == ["system.status", "memory.recall"]
     assert result.status == PlanStatus.FAILED
     assert "sk-test" not in str(result.to_dict())
+    assert result.snapshot.steps[2].status == PlanStepStatus.SKIPPED
+    assert result.snapshot.steps[2].safe_message == "skipped"
+    assert result.snapshot.steps[2].safe_message != "Step is pending."
 
 
 def test_confirmation_pause_resume_cancel_and_duplicate_resume_do_not_repeat_side_effect():
@@ -141,10 +148,48 @@ def test_confirmation_pause_resume_cancel_and_duplicate_resume_do_not_repeat_sid
     duplicate = executor.resume(resumed.snapshot)
 
     assert first.status == PlanStatus.AWAITING_CONFIRMATION
+    assert [step.is_current for step in first.snapshot.steps] == [False, True]
     assert calls == ["system.status", "memory.forget_all"]
     assert resumed.operation_id == first.operation_id
     assert duplicate.status == PlanStatus.SUCCEEDED
+    assert [step.is_current for step in duplicate.snapshot.steps] == [False, False]
     assert calls.count("memory.forget_all") == 1
+
+
+def test_start_rejects_awaiting_confirmation_snapshot_without_resume_or_capability_call():
+    calls = []
+    registry = build_registry(calls, confirm=True)
+    planner, plan = make_plan(registry, "create plan: forget everything you remember about me")
+    executor = PlanExecutor(registry=registry, execution_coordinator=ExecutionCoordinator(), policy_boundary=Policy())
+
+    first = executor.start(plan, planner.steps(), source="test")
+    repeated = executor.start(first.snapshot, planner.steps(), source="test")
+
+    assert first.status == PlanStatus.AWAITING_CONFIRMATION
+    assert first.operation_id
+    assert calls == []
+    assert repeated.status == PlanStatus.AWAITING_CONFIRMATION
+    assert repeated.safe_error_code == "explicit_confirmation_required"
+    assert repeated.operation_id == first.operation_id
+    assert repeated.snapshot.operation_id == first.operation_id
+    assert repeated.snapshot.awaiting_confirmation is True
+    assert repeated.snapshot.steps[0].status == PlanStepStatus.AWAITING_CONFIRMATION
+    assert calls == []
+
+
+def test_cancelled_executor_step_without_execution_message_does_not_keep_pending_message():
+    calls = []
+    registry = build_registry(calls, confirm=True)
+    planner, plan = make_plan(registry, "create plan: forget everything you remember about me")
+    executor = PlanExecutor(registry=registry, execution_coordinator=ExecutionCoordinator(), policy_boundary=Policy())
+
+    first = executor.start(plan, planner.steps(), source="test")
+    cancelled = executor.cancel(first.snapshot)
+
+    assert cancelled.status == PlanStatus.CANCELLED
+    assert cancelled.snapshot.steps[0].status == PlanStepStatus.CANCELLED
+    assert cancelled.snapshot.steps[0].safe_message == "cancelled"
+    assert cancelled.snapshot.steps[0].safe_message != "Step is pending."
 
 
 def test_idempotency_conflict_executes_nothing():

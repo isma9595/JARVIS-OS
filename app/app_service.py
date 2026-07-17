@@ -107,6 +107,12 @@ class AppCommandPreview:
     app_ready: bool
     known_command: bool
     safe_summary_ru: str
+    active_plan_id: str | None = None
+    active_plan_status: str | None = None
+    active_step_id: str | None = None
+    active_step_capability_id: str | None = None
+    active_step_name: str | None = None
+    operation_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -1093,6 +1099,14 @@ class JarvisAppService:
         step_count = getattr(active, "total_steps", None)
         status = getattr(getattr(active, "status", None), "value", None)
         requires_confirmation = False
+        risk_level = "read_only"
+        read_only = True
+        active_plan_id = None
+        active_plan_status = None
+        active_step_id = None
+        active_step_capability_id = None
+        active_step_name = None
+        operation_id = None
 
         if kind == PlanParseStatus.CREATED:
             parsed = self.multi_step_planner.preview_create_from_text(
@@ -1104,7 +1118,16 @@ class JarvisAppService:
             step_count = getattr(parsed.snapshot, "total_steps", None)
             status = getattr(getattr(parsed.snapshot, "status", None), "value", None)
         elif kind == PlanParseStatus.EXECUTE:
-            requires_confirmation = bool(getattr(active, "awaiting_confirmation", False))
+            projected_step = self._planner_next_effective_step(active)
+            active_plan_id = self._safe_optional_preview_text(getattr(active, "plan_id", None))
+            active_plan_status = self._safe_optional_preview_text(status)
+            if projected_step is not None:
+                risk_level = getattr(projected_step, "risk_level", None) or "read_only"
+                requires_confirmation = bool(getattr(projected_step, "requires_confirmation", False))
+                read_only = getattr(projected_step, "side_effect", None) == PlanSideEffect.READ_ONLY.value
+                active_step_id = self._safe_optional_preview_text(getattr(projected_step, "step_id", None))
+                active_step_capability_id = self._safe_optional_preview_text(getattr(projected_step, "capability_id", None))
+                active_step_name = self._safe_optional_preview_text(getattr(projected_step, "display_name", None))
 
         if not valid:
             return AppCommandPreview(
@@ -1139,6 +1162,14 @@ class JarvisAppService:
             summary_parts.append(f"Plan status: {status}.")
         if step_count is not None:
             summary_parts.append(f"Plan steps: {step_count}.")
+        if requires_confirmation:
+            summary_parts.append("Effective next step requires confirmation.")
+        if kind == PlanParseStatus.EXECUTE and active_plan_id:
+            summary_parts.append(f"Active plan id: {active_plan_id}.")
+            summary_parts.append(f"Active plan status: {active_plan_status or 'none'}.")
+            summary_parts.append(f"Operation id: none before execution.")
+            if active_step_id:
+                summary_parts.append(f"Active step: {active_step_id} {active_step_capability_id or 'unknown'}.")
 
         return AppCommandPreview(
             input_text=input_text,
@@ -1146,8 +1177,8 @@ class JarvisAppService:
             registry_match_id="planner.general_multi_step",
             title_ru="General multi-step planner",
             category="planner",
-            risk_level="read_only",
-            read_only=True,
+            risk_level=risk_level,
+            read_only=read_only,
             voice_auto_allowed=False,
             requires_confirmation=requires_confirmation,
             requires_network=False,
@@ -1156,7 +1187,38 @@ class JarvisAppService:
             app_ready=True,
             known_command=True,
             safe_summary_ru=" ".join(summary_parts),
+            active_plan_id=active_plan_id,
+            active_plan_status=active_plan_status,
+            active_step_id=active_step_id,
+            active_step_capability_id=active_step_capability_id,
+            active_step_name=active_step_name,
+            operation_id=operation_id,
         )
+
+    @staticmethod
+    def _planner_next_effective_step(snapshot):
+        if snapshot is None or getattr(snapshot, "status", None) in TERMINAL_PLAN_STATUSES:
+            return None
+        steps = tuple(getattr(snapshot, "steps", ()) or ())
+        current_step_id = getattr(snapshot, "current_step_id", None)
+        if current_step_id:
+            for step in steps:
+                if step.step_id == current_step_id:
+                    return step
+            return None
+        for step in steps:
+            status_value = getattr(getattr(step, "status", None), "value", None)
+            if status_value in {"succeeded", "cancelled", "skipped"}:
+                continue
+            return step
+        return None
+
+    @staticmethod
+    def _safe_optional_preview_text(value) -> str | None:
+        if value is None:
+            return None
+        text = JarvisAppService._safe_text_preview(str(value))
+        return None if text == "<empty>" else text
 
     def preview_text_ru(self, text: str) -> str:
         preview = self.preview_command(text)
@@ -1174,6 +1236,13 @@ class JarvisAppService:
                 f"- requires_confirmation: {'yes' if preview.requires_confirmation else 'no'}",
                 f"- requires_privacy_check: {'yes' if preview.requires_privacy_check else 'no'}",
                 f"- voice_auto_allowed: {'yes' if preview.voice_auto_allowed else 'no'}",
+                f"- active plan id: {preview.active_plan_id or 'none'}",
+                f"- active plan status: {preview.active_plan_status or 'none'}",
+                f"- active step id: {preview.active_step_id or 'none'}",
+                f"- active step capability: {preview.active_step_capability_id or 'none'}",
+                f"- active step name: {preview.active_step_name or 'none'}",
+                f"- operation id: {preview.operation_id or 'none'}",
+                "- executed through AppService: yes",
                 f"- safe summary: {preview.safe_summary_ru}",
                 "- no secrets",
                 "- no response execution",
@@ -1395,6 +1464,18 @@ class JarvisAppService:
                 return self._planner_app_result(input_text, source, None, executed=False, ok=False, message=self._language_text("Активного плана нет.", "There is no active plan."), error="no_active_plan")
             if snapshot.status in TERMINAL_PLAN_STATUSES:
                 return self._planner_app_result(input_text, source, snapshot, executed=False, message=self._language_text("Терминальный план не выполняется повторно.", "A terminal plan is not executed again."), error="terminal_plan_not_reexecuted")
+            if snapshot.status == PlanStatus.AWAITING_CONFIRMATION:
+                return self._planner_app_result(
+                    input_text,
+                    source,
+                    snapshot,
+                    executed=False,
+                    message=self._language_text(
+                        "Требуется явное подтверждение или отмена. Повтор execute plan не является подтверждением.",
+                        "Explicit confirmation or cancellation is required. Repeating execute plan is not confirmation.",
+                    ),
+                    error="explicit_confirmation_required",
+                )
             execution = self.plan_executor.start(
                 snapshot,
                 self.multi_step_planner.steps(),
