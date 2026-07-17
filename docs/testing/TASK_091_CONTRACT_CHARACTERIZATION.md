@@ -1,0 +1,24 @@
+# TASK-091 Contract Characterization
+
+TASK-091 records current behavior for AUD-008 through AUD-013. The tests are not fixes and should pass on the baseline production code.
+
+| Finding ID | Scenario | Current observed behavior | Safety invariant | Desired future contract | Expected remediation task |
+|---|---|---|---|---|---|
+| AUD-008 | Supported memory remember/recall/forget through Preview and Execute | Preview classifies each command as unknown with confirmation-like metadata; Execute recognizes remember, recall, and forget as memory operations with current risk/operation metadata | Preview exact before/after snapshots prove no fact is added, changed, or deleted; Execute uses isolated test memory only | Preview and Execute expose the same supported command metadata | TASK-093 / TASK-094 |
+| AUD-009 | Russian memory key saved as `маркер аудита 9073`, queried as `о маркере аудита 9073` | Exact-key control succeeds; inflected lookup misses | No accidental cross-key match | Safe Russian inflection normalization or aliasing | TASK-094 |
+| AUD-010 | Equivalent state changes for language and memory | Memory remember/forget expose `local_write` and succeeded operation status through AppService and rendered Desktop Shell fields; Desktop Shell matches the tested AppService values for the fields it renders, but currently omits the requires-confirmation field. The characterization tests assert both the AppService value and the Desktop omission. `profile.language.set` exposes `read_only`, no operation status, and no executed flag while still changing isolated profile state | Preview remains read-only; absence of the Desktop confirmation line is characterized | Consistent command id, category, risk, confirmation, operation, and mutation metadata | TASK-093 / TASK-094 |
+| AUD-011 | `составь план: забудь всё, что ты обо мне помнишь` | Planner creates `memory.forget` using literal key text, not `memory.forget_all` | Plan creation does not delete memory | Natural Russian forget-all maps to the real destructive capability with confirmation | TASK-092 / TASK-094 |
+| AUD-012 | Active forget-all plan, Preview `execute plan`, Execute, cancel, then `show plan` | Preview reports read-only/no confirmation; Execute pauses at `awaiting_confirmation`; cancellation preserves the operation relationship and terminal cancelled snapshot; later status read does not resume execution | No deletion before confirmation or after cancellation; tests never send positive confirmation | Preview exposes the active step's effective confirmation policy | TASK-092 |
+| AUD-013 | Local TTS diagnostics and local test commands | AppService Preview is unknown; Execute wraps CommandProcessor with generic confirmation metadata; diagnostics, disabled test, enable, and enabled test all have structured Execute metadata assertions; only the enabled fake test synthesizes once | Fake local backend only; diagnostics, disabled test, and enable do not synthesize; fake reports no network, no audio file, and `played_audio=False` | TTS metadata accurately distinguishes diagnostics, mode changes, skipped tests, and actual synthesis | TASK-096 |
+
+## Metadata Completeness Notes
+
+- Desktop Shell confirmation metadata is explicitly characterized for `memory.remember`, `memory.forget`, and `profile.language.set`: AppService structured results contain `requires_confirmation=False`, while Desktop Shell currently omits the requires-confirmation line for those routes.
+- AppService `profile.language.set` operation status and full structured metadata are explicitly characterized alongside the isolated language state change.
+- Local TTS diagnostics, disabled test, enable, and enabled test Execute routes all have structured metadata assertions.
+
+## Planner Introspection Boundary
+
+AppService structured results do not currently expose enough detail to distinguish a planned `memory.forget` step from `memory.forget_all` or inspect literal step arguments. TASK-091 therefore uses the planner's read-only `snapshot()` and `steps()` inspection boundary to characterize current planner behavior. The tests do not import or assert private `_PlanState` internals. Future public plan DTO work can replace this inspection route.
+
+When a remediation task changes production behavior, update the related characterization assertions in the same change and explain the new contract in this document.
