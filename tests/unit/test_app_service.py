@@ -1,4 +1,5 @@
-from app import AppCommandSource, JarvisAppService
+from app import AppCommandPreview, AppCommandResult, AppCommandSource, JarvisAppService
+from app.text_normalization import normalize_control_text
 from voice.one_shot_vosk_real_recognition import OneShotVoskRealRecognitionResult
 
 
@@ -41,6 +42,70 @@ class FakeOneShotRecognition:
 
     def close(self):
         self.closed = True
+
+
+class FakePlannerService:
+    def __init__(self):
+        self.preview_calls = []
+        self.handle_calls = []
+
+    def preview_command(self, input_text, normalized_text):
+        self.preview_calls.append((input_text, normalized_text))
+        if input_text in {"create plan: system status", "show plan", "execute plan", "cancel plan"}:
+            return AppCommandPreview(
+                input_text=input_text,
+                normalized_text=normalized_text,
+                registry_match_id="planner.general_multi_step",
+                title_ru="General multi-step planner",
+                category="planner",
+                risk_level="read_only",
+                read_only=True,
+                voice_auto_allowed=False,
+                requires_confirmation=False,
+                requires_network=False,
+                requires_ai_key=False,
+                requires_privacy_check=False,
+                app_ready=True,
+                known_command=True,
+                safe_summary_ru="fake planner preview",
+                active_plan_id="plan-fake",
+                active_plan_status="proposed",
+                active_step_id="step-1",
+                active_step_capability_id="system.status",
+                active_step_name="System status",
+                operation_id=None,
+            )
+        return None
+
+    def handle_command(self, input_text, source, *, idempotency_key):
+        self.handle_calls.append((input_text, source, idempotency_key))
+        if input_text in {"create plan: system status", "show plan", "execute plan", "cancel plan"}:
+            return AppCommandResult(
+                ok=True,
+                input_text=input_text,
+                output_text=f"fake planner handled: {input_text}",
+                source=source,
+                registry_match_id="planner.general_multi_step",
+                category="planner",
+                risk_level="planner_controlled",
+                executed=input_text == "execute plan",
+                requires_confirmation=False,
+                network_may_be_used=False,
+                response_executed_as_command=False,
+                error=None,
+                operation_id="op-fake",
+                operation_status="succeeded",
+                workflow_id="general_multi_step_plan",
+                workflow_status="succeeded",
+                current_step_id=None,
+                completed_steps=("step-1",),
+                total_steps=1,
+                progress_percent=100,
+                plan_id="plan-fake",
+                plan_status="succeeded",
+                plan_step_count=1,
+            )
+        return None
 
 
 def test_app_service_status_snapshot_safe():
@@ -436,6 +501,102 @@ def test_execute_command_does_not_call_action_router_directly():
 
     assert result.ok is True
     assert processor.calls == ["unknown command"]
+
+
+def test_app_service_delegates_planner_preview_and_preserves_preview_fields():
+    planner = FakePlannerService()
+    service = JarvisAppService(
+        command_processor=FakeCommandProcessor(),
+        planner_service=planner,
+    )
+
+    preview = service.preview_command("create plan: system status")
+
+    assert planner.preview_calls == [("create plan: system status", "create plan: system status")]
+    assert preview.registry_match_id == "planner.general_multi_step"
+    assert preview.category == "planner"
+    assert preview.risk_level == "read_only"
+    assert preview.active_plan_id == "plan-fake"
+    assert preview.active_step_capability_id == "system.status"
+    assert preview.operation_id is None
+
+
+def test_app_service_delegates_planner_execute_without_duplicate_handling():
+    planner = FakePlannerService()
+    processor = FakeCommandProcessor()
+    service = JarvisAppService(
+        command_processor=processor,
+        planner_service=planner,
+    )
+
+    result = service.execute_command(
+        "execute plan",
+        AppCommandSource.TEST,
+        idempotency_key="planner-idempotency",
+    )
+
+    assert planner.handle_calls == [
+        ("execute plan", AppCommandSource.TEST, "planner-idempotency")
+    ]
+    assert processor.calls == []
+    assert result.output_text == "fake planner handled: execute plan"
+    assert result.operation_id == "op-fake"
+    assert result.workflow_id == "general_multi_step_plan"
+    assert result.progress_percent == 100
+
+
+def test_app_service_delegates_planner_show_and_cancel():
+    planner = FakePlannerService()
+    service = JarvisAppService(
+        command_processor=FakeCommandProcessor(),
+        planner_service=planner,
+    )
+
+    show = service.execute_command("show plan", AppCommandSource.TEST)
+    cancel = service.execute_command("cancel plan", AppCommandSource.TEST)
+
+    assert planner.handle_calls == [
+        ("show plan", AppCommandSource.TEST, None),
+        ("cancel plan", AppCommandSource.TEST, None),
+    ]
+    assert show.registry_match_id == "planner.general_multi_step"
+    assert cancel.registry_match_id == "planner.general_multi_step"
+    assert show.plan_id == "plan-fake"
+    assert cancel.operation_id == "op-fake"
+
+
+def test_app_service_continues_to_handle_non_planner_commands_itself():
+    planner = FakePlannerService()
+    processor = FakeCommandProcessor()
+    service = JarvisAppService(
+        command_processor=processor,
+        planner_service=planner,
+    )
+
+    result = service.execute_command("статус app service", AppCommandSource.TEST)
+
+    assert planner.handle_calls == [("статус app service", AppCommandSource.TEST, None)]
+    assert processor.calls == ["статус app service"]
+    assert result.registry_match_id == "app_service.status"
+    assert result.category == "app"
+    assert result.executed is True
+
+
+def test_memory_and_confirmation_normalization_share_exact_helper():
+    assert normalize_control_text("  YES  ") == "yes"
+    assert normalize_control_text("\u0414\u0430, \u043f\u043e\u0434\u0442\u0432\u0435\u0440\u0434\u0438\u0442\u044c") == "\u0434\u0430 \u043f\u043e\u0434\u0442\u0432\u0435\u0440\u0434\u0438\u0442\u044c"
+    assert normalize_control_text("\u0442\u0435\u0441\u0442: \u0437\u043d\u0430\u0447\u0435\u043d\u0438\u0435; \u0435\u0449\u0451") == "\u0442\u0435\u0441\u0442 \u0437\u043d\u0430\u0447\u0435\u043d\u0438\u0435 \u0435\u0449\u0435"
+    assert normalize_control_text(None) == ""
+
+    samples = (
+        "  YES  ",
+        "Да, подтвердить",
+        "тест: значение; ещё",
+        None,
+    )
+
+    for sample in samples:
+        assert JarvisAppService._normalize_memory_text(sample) == normalize_control_text(sample)
 
 
 def test_no_secrets_in_text_outputs():

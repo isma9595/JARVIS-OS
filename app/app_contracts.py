@@ -6,6 +6,7 @@ execute commands, call providers, read secrets, or depend on UI internals.
 """
 
 from dataclasses import dataclass, fields
+from enum import Enum
 import re
 from typing import Any
 
@@ -42,6 +43,14 @@ def _safe_value(value: Any) -> object:
 class _ContractMixin:
     def to_dict(self) -> dict[str, object]:
         return {field.name: _safe_value(getattr(self, field.name)) for field in fields(self)}
+
+
+class AppCommandSource(Enum):
+    CLI = "cli"
+    DESKTOP_UI = "desktop_ui"
+    VOICE = "voice"
+    TEST = "test"
+    UNKNOWN = "unknown"
 
 
 @dataclass(frozen=True)
@@ -183,6 +192,31 @@ class AppCommandCard(_ContractMixin):
 
 
 @dataclass(frozen=True)
+class AppCommandPreview:
+    input_text: str
+    normalized_text: str
+    registry_match_id: str | None
+    title_ru: str | None
+    category: str | None
+    risk_level: str | None
+    read_only: bool
+    voice_auto_allowed: bool
+    requires_confirmation: bool
+    requires_network: bool
+    requires_ai_key: bool
+    requires_privacy_check: bool
+    app_ready: bool
+    known_command: bool
+    safe_summary_ru: str
+    active_plan_id: str | None = None
+    active_plan_status: str | None = None
+    active_step_id: str | None = None
+    active_step_capability_id: str | None = None
+    active_step_name: str | None = None
+    operation_id: str | None = None
+
+
+@dataclass(frozen=True)
 class AppPreviewContract(_ContractMixin):
     input_text: str
     known_command: bool
@@ -218,6 +252,51 @@ class AppPreviewContract(_ContractMixin):
                 "- secrets included: no",
             ]
         )
+
+
+@dataclass(frozen=True)
+class AppCommandResult:
+    ok: bool
+    input_text: str
+    output_text: str
+    source: AppCommandSource
+    registry_match_id: str | None
+    category: str | None
+    risk_level: str | None
+    executed: bool
+    requires_confirmation: bool
+    network_may_be_used: bool
+    response_executed_as_command: bool
+    error: str | None
+    intent_resolution: object | None = None
+    requires_clarification: bool = False
+    clarification_question: str | None = None
+    clarification_options: tuple[AppClarificationOption, ...] = ()
+    policy_decision: object | None = None
+    operation_id: str | None = None
+    operation_status: str | None = None
+    idempotency_key: str | None = None
+    duplicate_suppressed: bool = False
+    cancellable: bool = False
+    workflow_id: str | None = None
+    workflow_status: str | None = None
+    current_step_id: str | None = None
+    current_step_name: str | None = None
+    completed_steps: tuple[str, ...] = ()
+    total_steps: int | None = None
+    progress_percent: int | None = None
+    awaiting_confirmation: bool = False
+    source_filename: str | None = None
+    proposed_output_filename: str | None = None
+    issue_count: int | None = None
+    issue_summaries: tuple[dict[str, object], ...] = ()
+    proposed_output_path: str | None = None
+    saved: bool = False
+    verified: bool = False
+    user_message: str | None = None
+    plan_id: str | None = None
+    plan_status: str | None = None
+    plan_step_count: int | None = None
 
 
 @dataclass(frozen=True)

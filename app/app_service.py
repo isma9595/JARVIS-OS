@@ -6,7 +6,6 @@ call providers, route actions, read arbitrary files, or persist prompts.
 """
 
 from dataclasses import dataclass
-from enum import Enum
 import re
 from threading import Lock
 from uuid import uuid4
@@ -16,6 +15,9 @@ from app.app_contracts import (
     APP_CONTRACT_SCHEMA_NAME,
     APP_CONTRACT_VERSION,
     AppCommandCard,
+    AppCommandPreview,
+    AppCommandResult,
+    AppCommandSource,
     AppClarificationOption,
     AppContractManifest,
     AppContractStatus,
@@ -26,6 +28,7 @@ from app.app_contracts import (
     AppVoiceRequestResult,
     safe_contract_text,
 )
+from app.text_normalization import normalize_control_text
 from core.lazy_component import LazyComponent
 from app.intent_resolver import (
     ClarificationState,
@@ -74,90 +77,9 @@ from planner import (
     PlanCapability,
     PlanCapabilityDescriptor,
     PlanExecutor,
-    PlanParseStatus,
     PlanSideEffect,
-    PlanStatus,
     PlannerCapabilityRegistry,
-    TERMINAL_PLAN_STATUSES,
 )
-
-
-class AppCommandSource(Enum):
-    CLI = "cli"
-    DESKTOP_UI = "desktop_ui"
-    VOICE = "voice"
-    TEST = "test"
-    UNKNOWN = "unknown"
-
-
-@dataclass(frozen=True)
-class AppCommandPreview:
-    input_text: str
-    normalized_text: str
-    registry_match_id: str | None
-    title_ru: str | None
-    category: str | None
-    risk_level: str | None
-    read_only: bool
-    voice_auto_allowed: bool
-    requires_confirmation: bool
-    requires_network: bool
-    requires_ai_key: bool
-    requires_privacy_check: bool
-    app_ready: bool
-    known_command: bool
-    safe_summary_ru: str
-    active_plan_id: str | None = None
-    active_plan_status: str | None = None
-    active_step_id: str | None = None
-    active_step_capability_id: str | None = None
-    active_step_name: str | None = None
-    operation_id: str | None = None
-
-
-@dataclass(frozen=True)
-class AppCommandResult:
-    ok: bool
-    input_text: str
-    output_text: str
-    source: AppCommandSource
-    registry_match_id: str | None
-    category: str | None
-    risk_level: str | None
-    executed: bool
-    requires_confirmation: bool
-    network_may_be_used: bool
-    response_executed_as_command: bool
-    error: str | None
-    intent_resolution: object | None = None
-    requires_clarification: bool = False
-    clarification_question: str | None = None
-    clarification_options: tuple[AppClarificationOption, ...] = ()
-    policy_decision: object | None = None
-    operation_id: str | None = None
-    operation_status: str | None = None
-    idempotency_key: str | None = None
-    duplicate_suppressed: bool = False
-    cancellable: bool = False
-    workflow_id: str | None = None
-    workflow_status: str | None = None
-    current_step_id: str | None = None
-    current_step_name: str | None = None
-    completed_steps: tuple[str, ...] = ()
-    total_steps: int | None = None
-    progress_percent: int | None = None
-    awaiting_confirmation: bool = False
-    source_filename: str | None = None
-    proposed_output_filename: str | None = None
-    issue_count: int | None = None
-    issue_summaries: tuple[dict[str, object], ...] = ()
-    proposed_output_path: str | None = None
-    saved: bool = False
-    verified: bool = False
-    user_message: str | None = None
-    plan_id: str | None = None
-    plan_status: str | None = None
-    plan_step_count: int | None = None
 
 
 @dataclass(frozen=True)
@@ -234,6 +156,7 @@ class JarvisAppService:
         startup_clock=None,
         provider_runtime_factory=None,
         one_shot_voice_recognition_factory=None,
+        planner_service=None,
     ):
         self._startup_profiler = StartupProfiler(clock=startup_clock)
         self._startup_eager_components = (
@@ -314,6 +237,17 @@ class JarvisAppService:
             execution_coordinator=self.execution_coordinator,
             policy_boundary=self.policy_boundary,
         )
+        if planner_service is None:
+            from app.services.planner_command_service import PlannerCommandService
+
+            planner_service = PlannerCommandService(
+                multi_step_planner=self.multi_step_planner,
+                plan_executor=self.plan_executor,
+                language_code=lambda: self.language_manager.get_preference().language_code,
+                localized_text=self._language_text,
+                safe_text_preview=self._safe_text_preview,
+            )
+        self.planner_service = planner_service
         with self._startup_profiler.phase("document_workflow", "Document workflow"):
             self._local_filesystem = local_filesystem or WindowsLocalFileSystemAdapter()
             self.document_review_workflow = LocalTextDocumentReviewWorkflow(
@@ -1088,137 +1022,7 @@ class JarvisAppService:
         input_text: str,
         normalized_text: str,
     ) -> AppCommandPreview | None:
-        language_code = self.language_manager.get_preference().language_code
-        kind = self.multi_step_planner.command_kind(input_text, language_code=language_code)
-        if kind == PlanParseStatus.NOT_PLANNER_COMMAND:
-            return None
-
-        active = self.multi_step_planner.snapshot()
-        valid = True
-        error_code = None
-        step_count = getattr(active, "total_steps", None)
-        status = getattr(getattr(active, "status", None), "value", None)
-        requires_confirmation = False
-        risk_level = "read_only"
-        read_only = True
-        active_plan_id = None
-        active_plan_status = None
-        active_step_id = None
-        active_step_capability_id = None
-        active_step_name = None
-        operation_id = None
-
-        if kind == PlanParseStatus.CREATED:
-            parsed = self.multi_step_planner.preview_create_from_text(
-                input_text,
-                language_code=language_code,
-            )
-            valid = parsed.status == PlanParseStatus.CREATED
-            error_code = parsed.safe_error_code
-            step_count = getattr(parsed.snapshot, "total_steps", None)
-            status = getattr(getattr(parsed.snapshot, "status", None), "value", None)
-        elif kind == PlanParseStatus.EXECUTE:
-            projected_step = self._planner_next_effective_step(active)
-            active_plan_id = self._safe_optional_preview_text(getattr(active, "plan_id", None))
-            active_plan_status = self._safe_optional_preview_text(status)
-            if projected_step is not None:
-                risk_level = getattr(projected_step, "risk_level", None) or "read_only"
-                requires_confirmation = bool(getattr(projected_step, "requires_confirmation", False))
-                read_only = getattr(projected_step, "side_effect", None) == PlanSideEffect.READ_ONLY.value
-                active_step_id = self._safe_optional_preview_text(getattr(projected_step, "step_id", None))
-                active_step_capability_id = self._safe_optional_preview_text(getattr(projected_step, "capability_id", None))
-                active_step_name = self._safe_optional_preview_text(getattr(projected_step, "display_name", None))
-
-        if not valid:
-            return AppCommandPreview(
-                input_text=input_text,
-                normalized_text=normalized_text,
-                registry_match_id=None,
-                title_ru=None,
-                category="planner",
-                risk_level="read_only",
-                read_only=True,
-                voice_auto_allowed=False,
-                requires_confirmation=False,
-                requires_network=False,
-                requires_ai_key=False,
-                requires_privacy_check=False,
-                app_ready=False,
-                known_command=False,
-                safe_summary_ru=(
-                    "Planner preview rejected the text safely"
-                    + (f": {error_code}" if error_code else ".")
-                    + " No plan was created, replaced, executed, cancelled, or persisted."
-                ),
-            )
-
-        summary_parts = [
-            f"Planner command preview: {kind.value}.",
-            "Preview is read-only and does not create, replace, execute, or cancel a plan.",
-        ]
-        if active is None and kind in {PlanParseStatus.SHOW, PlanParseStatus.EXECUTE, PlanParseStatus.CANCEL}:
-            summary_parts.append("Active plan: none.")
-        elif status:
-            summary_parts.append(f"Plan status: {status}.")
-        if step_count is not None:
-            summary_parts.append(f"Plan steps: {step_count}.")
-        if requires_confirmation:
-            summary_parts.append("Effective next step requires confirmation.")
-        if kind == PlanParseStatus.EXECUTE and active_plan_id:
-            summary_parts.append(f"Active plan id: {active_plan_id}.")
-            summary_parts.append(f"Active plan status: {active_plan_status or 'none'}.")
-            summary_parts.append(f"Operation id: none before execution.")
-            if active_step_id:
-                summary_parts.append(f"Active step: {active_step_id} {active_step_capability_id or 'unknown'}.")
-
-        return AppCommandPreview(
-            input_text=input_text,
-            normalized_text=normalized_text,
-            registry_match_id="planner.general_multi_step",
-            title_ru="General multi-step planner",
-            category="planner",
-            risk_level=risk_level,
-            read_only=read_only,
-            voice_auto_allowed=False,
-            requires_confirmation=requires_confirmation,
-            requires_network=False,
-            requires_ai_key=False,
-            requires_privacy_check=False,
-            app_ready=True,
-            known_command=True,
-            safe_summary_ru=" ".join(summary_parts),
-            active_plan_id=active_plan_id,
-            active_plan_status=active_plan_status,
-            active_step_id=active_step_id,
-            active_step_capability_id=active_step_capability_id,
-            active_step_name=active_step_name,
-            operation_id=operation_id,
-        )
-
-    @staticmethod
-    def _planner_next_effective_step(snapshot):
-        if snapshot is None or getattr(snapshot, "status", None) in TERMINAL_PLAN_STATUSES:
-            return None
-        steps = tuple(getattr(snapshot, "steps", ()) or ())
-        current_step_id = getattr(snapshot, "current_step_id", None)
-        if current_step_id:
-            for step in steps:
-                if step.step_id == current_step_id:
-                    return step
-            return None
-        for step in steps:
-            status_value = getattr(getattr(step, "status", None), "value", None)
-            if status_value in {"succeeded", "cancelled", "skipped"}:
-                continue
-            return step
-        return None
-
-    @staticmethod
-    def _safe_optional_preview_text(value) -> str | None:
-        if value is None:
-            return None
-        text = JarvisAppService._safe_text_preview(str(value))
-        return None if text == "<empty>" else text
+        return self.planner_service.preview_command(input_text, normalized_text)
 
     def preview_text_ru(self, text: str) -> str:
         preview = self.preview_command(text)
@@ -1390,173 +1194,11 @@ class JarvisAppService:
         *,
         idempotency_key: str | None,
     ) -> AppCommandResult | None:
-        language_code = self.language_manager.get_preference().language_code
-        kind = self.multi_step_planner.command_kind(input_text, language_code=language_code)
-        normalized = self._normalize_memory_text(input_text)
-        active = self.multi_step_planner.snapshot()
-        if (
-            active is not None
-            and active.status == PlanStatus.AWAITING_CONFIRMATION
-            and normalized in {"да", "подтверждаю", "подтвердить", "yes"}
-        ):
-            execution = self.plan_executor.resume(active)
-            if execution.snapshot is not None:
-                self.multi_step_planner.set_status(
-                    execution.status,
-                    operation_id=execution.operation_id,
-                    step_statuses={step.step_id: step.status for step in execution.snapshot.steps},
-                    step_messages={step.step_id: step.safe_message for step in execution.snapshot.steps},
-                    step_errors={step.step_id: step.error_code for step in execution.snapshot.steps},
-                    current_step_id=execution.snapshot.current_step_id,
-                    safe_message=execution.safe_message,
-                )
-            snapshot = self.multi_step_planner.snapshot() or execution.snapshot
-            return self._planner_app_result(input_text, source, snapshot, executed=True, message=execution.safe_message)
-
-        if (
-            active is not None
-            and active.status == PlanStatus.AWAITING_CONFIRMATION
-            and normalized in {"отмена", "отмени", "нет", "cancel", "no"}
-        ):
-            execution = self.plan_executor.cancel(active)
-            snapshot = execution.snapshot
-            self.multi_step_planner.set_status(
-                PlanStatus.CANCELLED,
-                operation_id=execution.operation_id,
-                current_step_id=None,
-                safe_message=self._language_text("План отменён.", "Plan cancelled."),
-            )
-            snapshot = self.multi_step_planner.snapshot() or snapshot
-            return self._planner_app_result(input_text, source, snapshot, executed=False, message=self._language_text("План отменён.", "Plan cancelled."))
-
-        if kind == PlanParseStatus.NOT_PLANNER_COMMAND:
-            return None
-        if kind == PlanParseStatus.CREATED:
-            parsed = self.multi_step_planner.create_from_text(input_text, language_code=language_code)
-            return self._planner_app_result(
-                input_text,
-                source,
-                parsed.snapshot,
-                executed=False,
-                ok=parsed.status == PlanParseStatus.CREATED,
-                message=parsed.safe_message,
-                error=parsed.safe_error_code,
-            )
-        if kind == PlanParseStatus.SHOW:
-            snapshot = self.multi_step_planner.snapshot()
-            message = self._language_text("Активного плана нет.", "There is no active plan.") if snapshot is None else snapshot.safe_message
-            return self._planner_app_result(input_text, source, snapshot, executed=False, message=message)
-        if kind == PlanParseStatus.CANCEL:
-            snapshot = self.multi_step_planner.snapshot()
-            if snapshot is None:
-                return self._planner_app_result(input_text, source, None, executed=False, message=self._language_text("Активного плана нет.", "There is no active plan."))
-            execution = self.plan_executor.cancel(snapshot)
-            updated = self.multi_step_planner.set_status(
-                PlanStatus.CANCELLED,
-                operation_id=execution.operation_id,
-                current_step_id=None,
-                safe_message=self._language_text("План отменён.", "Plan cancelled."),
-            )
-            return self._planner_app_result(input_text, source, updated, executed=False, message=self._language_text("План отменён.", "Plan cancelled."))
-        if kind == PlanParseStatus.EXECUTE:
-            snapshot = self.multi_step_planner.snapshot()
-            if snapshot is None:
-                return self._planner_app_result(input_text, source, None, executed=False, ok=False, message=self._language_text("Активного плана нет.", "There is no active plan."), error="no_active_plan")
-            if snapshot.status in TERMINAL_PLAN_STATUSES:
-                return self._planner_app_result(input_text, source, snapshot, executed=False, message=self._language_text("Терминальный план не выполняется повторно.", "A terminal plan is not executed again."), error="terminal_plan_not_reexecuted")
-            if snapshot.status == PlanStatus.AWAITING_CONFIRMATION:
-                return self._planner_app_result(
-                    input_text,
-                    source,
-                    snapshot,
-                    executed=False,
-                    message=self._language_text(
-                        "Требуется явное подтверждение или отмена. Повтор execute plan не является подтверждением.",
-                        "Explicit confirmation or cancellation is required. Repeating execute plan is not confirmation.",
-                    ),
-                    error="explicit_confirmation_required",
-                )
-            execution = self.plan_executor.start(
-                snapshot,
-                self.multi_step_planner.steps(),
-                source=source.value,
-                idempotency_key=idempotency_key,
-            )
-            if execution.snapshot is not None:
-                updated = self.multi_step_planner.set_status(
-                    execution.status,
-                    operation_id=execution.operation_id,
-                    step_statuses={step.step_id: step.status for step in execution.snapshot.steps},
-                    step_messages={step.step_id: step.safe_message for step in execution.snapshot.steps},
-                    step_errors={step.step_id: step.error_code for step in execution.snapshot.steps},
-                    current_step_id=execution.snapshot.current_step_id,
-                    safe_message=execution.safe_message,
-                )
-            else:
-                updated = snapshot
-            return self._planner_app_result(input_text, source, updated, executed=True, message=execution.safe_message, error=execution.safe_error_code)
-        return None
-
-    def _planner_app_result(
-        self,
-        input_text: str,
-        source: AppCommandSource,
-        snapshot,
-        *,
-        executed: bool,
-        ok: bool = True,
-        message: str | None = None,
-        error: str | None = None,
-    ) -> AppCommandResult:
-        output = self._planner_snapshot_text(snapshot, message=message)
-        return AppCommandResult(
-            ok=ok and error is None,
-            input_text=input_text,
-            output_text=output,
-            source=source,
-            registry_match_id="planner.general_multi_step",
-            category="planner",
-            risk_level="read_only" if not executed else "planner_controlled",
-            executed=executed,
-            requires_confirmation=bool(getattr(snapshot, "awaiting_confirmation", False)),
-            network_may_be_used=False,
-            response_executed_as_command=False,
-            error=error,
-            operation_id=getattr(snapshot, "operation_id", None),
-            operation_status=getattr(getattr(snapshot, "status", None), "value", None),
-            workflow_id="general_multi_step_plan" if getattr(snapshot, "operation_id", None) else None,
-            workflow_status=getattr(getattr(snapshot, "status", None), "value", None),
-            current_step_id=getattr(snapshot, "current_step_id", None),
-            current_step_name=None,
-            completed_steps=tuple(step.step_id for step in getattr(snapshot, "steps", ()) if step.status.value == "succeeded"),
-            total_steps=getattr(snapshot, "total_steps", None),
-            progress_percent=getattr(snapshot, "progress_percent", None),
-            awaiting_confirmation=bool(getattr(snapshot, "awaiting_confirmation", False)),
-            user_message=message,
-            plan_id=getattr(snapshot, "plan_id", None),
-            plan_status=getattr(getattr(snapshot, "status", None), "value", None),
-            plan_step_count=getattr(snapshot, "total_steps", None),
+        return self.planner_service.handle_command(
+            input_text,
+            source,
+            idempotency_key=idempotency_key,
         )
-
-    def _planner_snapshot_text(self, snapshot, *, message: str | None = None) -> str:
-        if snapshot is None:
-            return message or self._language_text("Активного плана нет.", "There is no active plan.")
-        lines = [
-            message or snapshot.safe_message,
-            f"plan_id: {snapshot.plan_id}",
-            f"status: {snapshot.status.value}",
-            f"operation_id: {snapshot.operation_id or 'none'}",
-            f"steps: {snapshot.total_steps}",
-            f"current_step: {snapshot.current_step_id or 'none'}",
-            f"progress: {snapshot.progress_percent}",
-            f"awaiting_confirmation: {'yes' if snapshot.awaiting_confirmation else 'no'}",
-        ]
-        for step in snapshot.steps:
-            lines.append(
-                f"{step.position}. {step.display_name} [{step.capability_id}] "
-                f"{step.status.value}: {step.safe_message}"
-            )
-        return "\n".join(lines)
 
     def _execute_command_uncoordinated(
         self,
@@ -3395,9 +3037,7 @@ class JarvisAppService:
 
     @staticmethod
     def _normalize_memory_text(text: str) -> str:
-        normalized = str(text or "").strip().lower().replace("ё", "е")
-        normalized = re.sub(r"[,:;]+", " ", normalized)
-        return " ".join(normalized.split())
+        return normalize_control_text(text)
 
     def _handle_language_preference_command(
         self,
