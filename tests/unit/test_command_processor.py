@@ -5283,3 +5283,379 @@ def test_plain_unknown_natural_text_routes_safely_but_existing_status_still_work
     assert processor.process("статус app service")["intent"] == "app_service.status"
     assert processor.process("статус audio lifecycle")["intent"] == "audio_lifecycle.status"
     assert processor.process("статус ai")["intent"] == "ai.status"
+
+
+TASK094_EXTRACTED_ATTRIBUTE_GROUPS = {
+    "system_status": "SYSTEM_STATUS_COMMANDS",
+    "command_registry_status": "COMMAND_REGISTRY_STATUS_COMMANDS",
+    "command_registry_list": "COMMAND_REGISTRY_LIST_COMMANDS",
+    "command_registry_categories": "COMMAND_REGISTRY_CATEGORIES_COMMANDS",
+    "command_registry_search": "COMMAND_REGISTRY_SEARCH_PREFIXES",
+    "command_registry_category": "COMMAND_REGISTRY_CATEGORY_COMMANDS",
+    "desktop_shell_status": "DESKTOP_SHELL_STATUS_COMMANDS",
+    "desktop_shell_capabilities": "DESKTOP_SHELL_CAPABILITIES_COMMANDS",
+    "app_service_status": "APP_SERVICE_STATUS_COMMANDS",
+    "app_service_capabilities": "APP_SERVICE_CAPABILITIES_COMMANDS",
+    "app_service_commands": "APP_SERVICE_COMMANDS_COMMANDS",
+    "app_service_preview": "APP_SERVICE_PREVIEW_PREFIXES",
+    "conversation_status": "CONVERSATIONAL_STATUS_COMMANDS",
+    "conversation_capabilities": "CONVERSATIONAL_CAPABILITIES_COMMANDS",
+    "conversation_preview": "CONVERSATIONAL_PREVIEW_PREFIXES",
+    "vertical_integration_status": "VERTICAL_INTEGRATION_STATUS_COMMANDS",
+    "vertical_integration_checklist": "VERTICAL_INTEGRATION_CHECKLIST_COMMANDS",
+    "vertical_integration_summary": "VERTICAL_INTEGRATION_SUMMARY_COMMANDS",
+    "audio_lifecycle_status": "AUDIO_LIFECYCLE_STATUS_COMMANDS",
+    "audio_lifecycle_capabilities": "AUDIO_LIFECYCLE_CAPABILITIES_COMMANDS",
+    "audio_lifecycle_reset": "AUDIO_LIFECYCLE_RESET_COMMANDS",
+    "app_contracts_status": "APP_CONTRACTS_STATUS_COMMANDS",
+    "app_contracts_manifest": "APP_CONTRACTS_MANIFEST_COMMANDS",
+    "app_contracts_status_cards": "APP_CONTRACTS_STATUS_CARDS_COMMANDS",
+    "app_contracts_command_cards": "APP_CONTRACTS_COMMAND_CARDS_COMMANDS",
+    "provider_runtime_provider": "PROVIDER_RUNTIME_PROVIDER_COMMANDS",
+    "idea_add": "IDEA_ADD_PREFIXES",
+    "idea_list": "IDEA_LIST_COMMANDS",
+    "idea_count": "IDEA_COUNT_COMMANDS",
+    "memory_add": "MEMORY_ADD_PREFIXES",
+    "memory_delete": "MEMORY_DELETE_COMMANDS",
+    "memory_count": "MEMORY_COUNT_COMMANDS",
+    "memory_recent": "MEMORY_RECENT_COMMANDS",
+    "memory_about_user": "MEMORY_ABOUT_USER_COMMANDS",
+    "memory_list": "MEMORY_LIST_COMMANDS",
+    "memory_search": "MEMORY_SEARCH_PREFIXES",
+}
+
+
+def test_task094_extracted_attributes_do_not_overlap_generated_legacy_catalogs():
+    from core.command_resolution_service import (
+        CommandResolutionService,
+        CommandResolutionStatus,
+    )
+
+    processor = CommandProcessor(sample_profile())
+    groups = processor._command_resolution_groups()
+    legacy_exact = set(groups["legacy_passthrough_exact"])
+    legacy_mapping = set(groups["legacy_passthrough_mapping"])
+    legacy_prefix = set(groups["legacy_passthrough_prefix"])
+    extracted_exact_overlap = set()
+    extracted_mapping_overlap = set()
+    extracted_prefix_overlap = set()
+
+    for attribute_name in TASK094_EXTRACTED_ATTRIBUTE_GROUPS.values():
+        extracted_group = getattr(processor, attribute_name)
+        if attribute_name.endswith("_PREFIXES"):
+            extracted_prefix_overlap.update(set(extracted_group) & legacy_prefix)
+        elif isinstance(extracted_group, dict):
+            extracted_mapping_overlap.update(set(extracted_group) & legacy_mapping)
+        elif isinstance(extracted_group, (set, frozenset, tuple, list)):
+            extracted_exact_overlap.update(set(extracted_group) & legacy_exact)
+
+    assert extracted_exact_overlap == set()
+    assert extracted_mapping_overlap == set()
+    assert extracted_prefix_overlap == set()
+
+    system_status_alias = next(iter(processor.SYSTEM_STATUS_COMMANDS))
+    command_registry_search_prefix = processor.COMMAND_REGISTRY_SEARCH_PREFIXES[-1]
+    memory_add_prefix = processor.MEMORY_ADD_PREFIXES[0]
+    memory_search_prefix = processor.MEMORY_SEARCH_PREFIXES[0]
+    provider_status_alias = "runtime groq status"
+    assert system_status_alias not in legacy_exact
+    assert command_registry_search_prefix not in legacy_prefix
+    assert memory_add_prefix not in legacy_prefix
+    assert memory_search_prefix not in legacy_prefix
+    assert provider_status_alias not in legacy_mapping
+
+    service = CommandResolutionService(
+        command_registry=processor.command_registry,
+        command_groups=groups,
+    )
+    status_resolution = service.resolve(system_status_alias)
+    memory_resolution = service.resolve(f"{memory_add_prefix} task094 marker north")
+    provider_resolution = service.resolve(provider_status_alias)
+    greeting_resolution = service.resolve(next(iter(processor.GREETING_COMMANDS)))
+    unknown_resolution = service.resolve("task094 genuinely unknown route")
+
+    assert status_resolution.resolution_status == CommandResolutionStatus.RESOLVED
+    assert status_resolution.command_id == "system.status"
+    assert memory_resolution.resolution_status == CommandResolutionStatus.RESOLVED
+    assert memory_resolution.command_id == "memory.add"
+    assert memory_resolution.safe_args == {"content": "task094 marker north"}
+    assert provider_resolution.resolution_status == CommandResolutionStatus.RESOLVED
+    assert provider_resolution.command_id == "ai.provider_runtime.provider_status"
+    assert provider_resolution.safe_args == {"provider": "groq"}
+    assert (
+        greeting_resolution.resolution_status
+        == CommandResolutionStatus.LEGACY_PASSTHROUGH
+    )
+    assert unknown_resolution.resolution_status == CommandResolutionStatus.UNKNOWN
+
+
+class SpyCommandResolutionService:
+    def __init__(self, resolution):
+        self.resolution = resolution
+        self.calls = []
+
+    def normalize(self, command_text):
+        if command_text is None:
+            return ""
+        return " ".join(str(command_text).strip().lower().split())
+
+    def resolve(self, command_text, *, pending_clarification=None):
+        self.calls.append((command_text, pending_clarification))
+        return self.resolution
+
+
+def make_resolution(
+    *,
+    text,
+    command_id,
+    status=None,
+    match_source="registry_alias",
+    safe_args=None,
+    candidates=(),
+    prompt=None,
+    unknown=False,
+    normalized_text=None,
+):
+    from core.command_resolution_service import CommandResolution, CommandResolutionStatus
+
+    return CommandResolution(
+        original_text=text,
+        normalized_text=(
+            normalized_text
+            if normalized_text is not None
+            else " ".join(str(text).strip().lower().split())
+        ),
+        resolution_status=status or CommandResolutionStatus.RESOLVED,
+        command_id=command_id,
+        category=None,
+        safe_args=safe_args or {},
+        clarification_required=status == CommandResolutionStatus.REQUIRES_CLARIFICATION,
+        clarification_prompt=prompt,
+        clarification_candidates=tuple(candidates),
+        confidence="high",
+        match_source=match_source,
+        safe_reason_code=None,
+        unknown=unknown,
+        command_text=text,
+        metadata=None,
+    )
+
+
+def test_command_processor_calls_resolution_service_once_and_executes_exact_resolution():
+    calls = []
+
+    def status_provider():
+        calls.append("status")
+        return {"version": "test", "services": ["core"]}
+
+    resolution = make_resolution(text="статус системы", command_id="system.status")
+    resolver = SpyCommandResolutionService(resolution)
+    processor = CommandProcessor(
+        sample_profile(),
+        system_status_provider=status_provider,
+        command_resolution_service=resolver,
+    )
+
+    result = processor.process("статус системы")
+
+    assert resolver.calls == [("статус системы", None)]
+    assert result["intent"] == "system.status"
+    assert calls == ["status"]
+
+
+def test_command_processor_dispatches_system_status_by_command_id_not_text():
+    calls = []
+    resolution = make_resolution(
+        text="статус системы",
+        normalized_text="совсем не системный статус",
+        command_id="system.status",
+    )
+    resolver = SpyCommandResolutionService(resolution)
+    processor = CommandProcessor(
+        sample_profile(),
+        system_status_provider=lambda: calls.append("status") or {"version": "test", "services": []},
+        command_resolution_service=resolver,
+    )
+
+    result = processor.process("статус системы")
+
+    assert result["intent"] == "system.status"
+    assert calls == ["status"]
+
+
+def test_command_processor_dispatches_argument_route_by_command_id_not_text():
+    resolution = make_resolution(
+        text="memory delegated",
+        normalized_text="not a memory search alias",
+        command_id="memory.search",
+        safe_args={"query": "task094 missing marker"},
+    )
+    resolver = SpyCommandResolutionService(resolution)
+    processor = CommandProcessor(sample_profile(), command_resolution_service=resolver)
+
+    result = processor.process("memory delegated")
+
+    assert result["intent"] == "memory.search"
+    assert resolver.calls == [("memory delegated", None)]
+
+
+def test_command_processor_legacy_passthrough_continues_old_text_dispatch():
+    from core.command_resolution_service import CommandResolutionStatus
+
+    resolution = make_resolution(
+        text="привет",
+        command_id=None,
+        status=CommandResolutionStatus.LEGACY_PASSTHROUGH,
+        match_source="legacy_command_group",
+    )
+    resolver = SpyCommandResolutionService(resolution)
+    processor = CommandProcessor(sample_profile(), command_resolution_service=resolver)
+
+    result = processor.process("привет")
+
+    assert result["intent"] == "assistant.greeting"
+    assert resolver.calls == [("привет", None)]
+
+
+def test_provider_runtime_provider_status_uses_extracted_dispatch_once():
+    class Runtime:
+        def __init__(self):
+            self.providers = []
+
+        def provider_status_text_ru(self, provider):
+            self.providers.append(provider)
+            return f"provider={provider}"
+
+    runtime = Runtime()
+    resolution = make_resolution(
+        text="runtime",
+        normalized_text="not runtime provider text",
+        command_id="ai.provider_runtime.provider_status",
+        safe_args={"provider": "groq"},
+    )
+    processor = CommandProcessor(
+        sample_profile(),
+        secure_provider_runtime=runtime,
+        command_resolution_service=SpyCommandResolutionService(resolution),
+    )
+
+    result = processor.process("runtime")
+
+    assert result["intent"] == "ai.provider_runtime.provider_status"
+    assert result["response"] == "provider=groq"
+    assert runtime.providers == ["groq"]
+
+
+def test_command_processor_returns_clarification_without_executing_handler():
+    from app.app_contracts import AppClarificationOption
+    from core.command_resolution_service import CommandResolutionStatus
+
+    option = AppClarificationOption(
+        option_id="system",
+        label_ru="системы",
+        command_text="статус системы",
+        command_id="system.status",
+    )
+    resolver = SpyCommandResolutionService(
+        make_resolution(
+            text="покажи статус",
+            command_id=None,
+            status=CommandResolutionStatus.REQUIRES_CLARIFICATION,
+            candidates=(option,),
+            prompt="Какой статус проверить?",
+        )
+    )
+    processor = CommandProcessor(
+        sample_profile(),
+        system_status_provider=lambda: (_ for _ in ()).throw(AssertionError("not executed")),
+        command_resolution_service=resolver,
+    )
+
+    result = processor.process("покажи статус")
+
+    assert resolver.calls == [("покажи статус", None)]
+    assert result["intent"] == "command.clarification.required"
+    assert "Требуется уточнение" in result["response"]
+
+
+def test_command_processor_clarification_selection_executes_and_clears_state():
+    processor = CommandProcessor(sample_profile())
+
+    first = processor.process("покажи статус")
+    selected = processor.process("системы")
+    stale = processor.process("системы")
+
+    assert first["intent"] == "command.clarification.required"
+    assert selected["intent"] == "system.status"
+    assert stale["intent"] != "system.status"
+
+
+def test_command_processor_unrelated_command_clears_stale_clarification():
+    processor = CommandProcessor(sample_profile())
+
+    first = processor.process("покажи статус")
+    unrelated = processor.process("привет")
+    stale = processor.process("системы")
+
+    assert first["intent"] == "command.clarification.required"
+    assert unrelated["intent"] == "assistant.greeting"
+    assert stale["intent"] != "system.status"
+
+
+def test_command_processor_invalid_clarification_answer_keeps_pending_without_handler():
+    calls = []
+    processor = CommandProcessor(
+        sample_profile(),
+        system_status_provider=lambda: calls.append("status") or {"version": "test", "services": []},
+    )
+
+    first = processor.process("покажи статус")
+    invalid = processor.process("непонятно")
+    calls_before_selection = list(calls)
+    selected = processor.process("системы")
+
+    assert first["intent"] == "command.clarification.required"
+    assert invalid["intent"] == "command.clarification.required"
+    assert calls_before_selection == []
+    assert selected["intent"] == "system.status"
+    assert calls == ["status"]
+
+
+def test_command_processor_unknown_fallback_stays_execution_owned_by_processor():
+    resolution = make_resolution(
+        text="запусти космический режим",
+        command_id=None,
+        status=__import__(
+            "core.command_resolution_service",
+            fromlist=["CommandResolutionStatus"],
+        ).CommandResolutionStatus.UNKNOWN,
+        match_source="action_router_fallback",
+        unknown=True,
+    )
+    resolver = SpyCommandResolutionService(resolution)
+    processor = CommandProcessor(sample_profile(), command_resolution_service=resolver)
+
+    result = processor.process("запусти космический режим")
+
+    assert resolver.calls == [("запусти космический режим", None)]
+    assert result["intent"] == "unknown"
+    assert result["category"] == "idea"
+
+
+def test_command_processor_execution_errors_remain_processor_owned():
+    resolution = make_resolution(text="статус системы", command_id="system.status")
+    resolver = SpyCommandResolutionService(resolution)
+    processor = CommandProcessor(
+        sample_profile(),
+        system_status_provider=lambda: (_ for _ in ()).throw(RuntimeError("boom")),
+        command_resolution_service=resolver,
+    )
+
+    try:
+        processor.process("статус системы")
+    except RuntimeError as exc:
+        assert str(exc) == "boom"
+    else:
+        raise AssertionError("CommandProcessor must still own execution errors")
+
+    assert resolver.calls == [("статус системы", None)]

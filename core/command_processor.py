@@ -22,12 +22,17 @@ from ai import (
 )
 from core.action_router import SafeActionRouter
 from core.command_registry import CommandCategory, DEFAULT_COMMAND_REGISTRY
+from core.command_resolution_service import (
+    CommandResolutionService,
+    CommandResolutionStatus,
+)
 from core.policy_boundary import (
     PolicyDecisionBoundary,
     PolicyDecisionType,
     policy_request_from_metadata,
 )
 from core.lazy_component import LazyComponent
+from app.intent_resolver import ClarificationState
 from language.language_manager import ApplicationLanguageManager
 from dialogue import (
     AssistantResponseHistory,
@@ -1444,6 +1449,7 @@ class CommandProcessor:
         api_key_manager=None,
         secure_provider_runtime=None,
         language_manager=None,
+        command_resolution_service=None,
     ):
         self.user_profile = user_profile or {}
         self.language_manager = language_manager or ApplicationLanguageManager.from_profile(
@@ -1655,6 +1661,11 @@ class CommandProcessor:
             )
         self.audio_lifecycle_controller = audio_lifecycle_controller
         self.command_registry = command_registry or DEFAULT_COMMAND_REGISTRY
+        self.command_resolution_service = command_resolution_service or CommandResolutionService(
+            command_registry=self.command_registry,
+            command_groups=self._command_resolution_groups(),
+        )
+        self._pending_command_resolution_clarification = None
         self.policy_boundary = PolicyDecisionBoundary()
         self._policy_confirmation_for_command = None
 
@@ -1674,11 +1685,102 @@ class CommandProcessor:
         if hasattr(self, "audio_lifecycle_controller"):
             self.audio_lifecycle_controller.voice_output_manager = voice_output_manager
 
+    def _command_resolution_groups(self):
+        extracted_attribute_groups = {
+            "system_status": "SYSTEM_STATUS_COMMANDS",
+            "command_registry_status": "COMMAND_REGISTRY_STATUS_COMMANDS",
+            "command_registry_list": "COMMAND_REGISTRY_LIST_COMMANDS",
+            "command_registry_categories": "COMMAND_REGISTRY_CATEGORIES_COMMANDS",
+            "command_registry_search": "COMMAND_REGISTRY_SEARCH_PREFIXES",
+            "command_registry_category": "COMMAND_REGISTRY_CATEGORY_COMMANDS",
+            "desktop_shell_status": "DESKTOP_SHELL_STATUS_COMMANDS",
+            "desktop_shell_capabilities": "DESKTOP_SHELL_CAPABILITIES_COMMANDS",
+            "app_service_status": "APP_SERVICE_STATUS_COMMANDS",
+            "app_service_capabilities": "APP_SERVICE_CAPABILITIES_COMMANDS",
+            "app_service_commands": "APP_SERVICE_COMMANDS_COMMANDS",
+            "app_service_preview": "APP_SERVICE_PREVIEW_PREFIXES",
+            "conversation_status": "CONVERSATIONAL_STATUS_COMMANDS",
+            "conversation_capabilities": "CONVERSATIONAL_CAPABILITIES_COMMANDS",
+            "conversation_preview": "CONVERSATIONAL_PREVIEW_PREFIXES",
+            "vertical_integration_status": "VERTICAL_INTEGRATION_STATUS_COMMANDS",
+            "vertical_integration_checklist": "VERTICAL_INTEGRATION_CHECKLIST_COMMANDS",
+            "vertical_integration_summary": "VERTICAL_INTEGRATION_SUMMARY_COMMANDS",
+            "audio_lifecycle_status": "AUDIO_LIFECYCLE_STATUS_COMMANDS",
+            "audio_lifecycle_capabilities": "AUDIO_LIFECYCLE_CAPABILITIES_COMMANDS",
+            "audio_lifecycle_reset": "AUDIO_LIFECYCLE_RESET_COMMANDS",
+            "app_contracts_status": "APP_CONTRACTS_STATUS_COMMANDS",
+            "app_contracts_manifest": "APP_CONTRACTS_MANIFEST_COMMANDS",
+            "app_contracts_status_cards": "APP_CONTRACTS_STATUS_CARDS_COMMANDS",
+            "app_contracts_command_cards": "APP_CONTRACTS_COMMAND_CARDS_COMMANDS",
+            "provider_runtime_provider": "PROVIDER_RUNTIME_PROVIDER_COMMANDS",
+            "idea_add": "IDEA_ADD_PREFIXES",
+            "idea_list": "IDEA_LIST_COMMANDS",
+            "idea_count": "IDEA_COUNT_COMMANDS",
+            "memory_add": "MEMORY_ADD_PREFIXES",
+            "memory_delete": "MEMORY_DELETE_COMMANDS",
+            "memory_count": "MEMORY_COUNT_COMMANDS",
+            "memory_recent": "MEMORY_RECENT_COMMANDS",
+            "memory_about_user": "MEMORY_ABOUT_USER_COMMANDS",
+            "memory_list": "MEMORY_LIST_COMMANDS",
+            "memory_search": "MEMORY_SEARCH_PREFIXES",
+        }
+        groups = {
+            group_name: getattr(self, attribute_name)
+            for group_name, attribute_name in extracted_attribute_groups.items()
+        }
+        groups.update({
+            "language_status": (
+                "какой язык",
+                "текущий язык",
+                "покажи язык",
+                "current language",
+                "show language",
+            ),
+            "language_reset": ("сбросить язык", "reset language"),
+            "language_set": {
+                "язык русский": "русский",
+                "установить русский язык": "русский",
+                "переключить язык на русский": "русский",
+                "язык английский": "английский",
+                "установить английский язык": "английский",
+                "переключить язык на английский": "английский",
+                "language russian": "russian",
+                "set language to russian": "russian",
+                "language english": "english",
+                "set language to english": "english",
+            },
+        })
+        extracted_attribute_names = frozenset(extracted_attribute_groups.values())
+        legacy_exact = set()
+        legacy_mapping = {}
+        legacy_prefix = []
+        for name in dir(self):
+            if name.startswith("_"):
+                continue
+            value = getattr(self, name)
+            if name in extracted_attribute_names:
+                continue
+            if name.endswith("_PREFIXES") and isinstance(value, tuple):
+                legacy_prefix.extend(item for item in value if isinstance(item, str))
+            elif name.endswith("_COMMANDS"):
+                if isinstance(value, dict):
+                    legacy_mapping.update(value)
+                elif isinstance(value, (set, frozenset, tuple, list)):
+                    legacy_exact.update(value)
+        groups["legacy_passthrough_exact"] = frozenset(legacy_exact)
+        groups["legacy_passthrough_mapping"] = dict(legacy_mapping)
+        groups["legacy_passthrough_prefix"] = tuple(legacy_prefix)
+        return groups
+
     def process(self, command_text):
         self._current_source_command = str(command_text or "").strip()
-        command = self._normalize(command_text)
+        resolution = self.command_resolution_service.resolve(
+            command_text,
+            pending_clarification=self._pending_command_resolution_clarification,
+        )
+        command = resolution.normalized_text
 
-        if not command:
+        if resolution.resolution_status == CommandResolutionStatus.EMPTY:
             return self._result(
                 "empty",
                 self.dialogue_manager.empty_command_response(),
@@ -1686,9 +1788,49 @@ class CommandProcessor:
                 allow_manual_dialogue=False,
             )
 
-        registry_result = self._command_registry_result(command)
-        if registry_result is not None:
-            return registry_result
+        if resolution.resolution_status == CommandResolutionStatus.REQUIRES_CLARIFICATION:
+            if (
+                resolution.match_source == "invalid_clarification_answer"
+                and self._pending_command_resolution_clarification is not None
+            ):
+                clarification_state = self._pending_command_resolution_clarification
+            else:
+                clarification_state = ClarificationState(
+                    question_ru=resolution.clarification_prompt or "",
+                    options=resolution.clarification_candidates,
+                    original_text=resolution.original_text,
+                    source="command_processor",
+                )
+            self._pending_command_resolution_clarification = ClarificationState(
+                question_ru=clarification_state.question_ru,
+                options=clarification_state.options,
+                original_text=clarification_state.original_text,
+                source=clarification_state.source,
+            )
+            return self._result(
+                "command.clarification.required",
+                self._command_resolution_clarification_text(resolution),
+                speakable=False,
+            )
+
+        if self._pending_command_resolution_clarification is not None:
+            self._pending_command_resolution_clarification = None
+        if resolution.match_source == "clarification_selection":
+            command = self._normalize(resolution.command_text)
+
+        if (
+            self.has_pending_voice_command()
+            and self._voice_pending_confirmation_gate_applies(command)
+        ):
+            return self._process_pending_voice_command_confirmation(command)
+
+        if resolution.resolution_status == CommandResolutionStatus.RESOLVED:
+            resolved_result = self._command_resolution_result(resolution)
+            if resolved_result is None:
+                raise RuntimeError(
+                    f"Resolved command has no command-id dispatch path: {resolution.command_id}"
+                )
+            return resolved_result
 
         if command in self.SPEECH_BACKEND_STATUS_COMMANDS:
             status = (
@@ -2719,14 +2861,6 @@ class CommandProcessor:
                 self.dialogue_manager.version_response(status["version"]),
             )
 
-        if command in self.SYSTEM_STATUS_COMMANDS:
-            return self._result(
-                "system.status",
-                self.dialogue_manager.system_status_response(
-                    self.system_status_provider()
-                ),
-            )
-
         if command in self.SYSTEM_SERVICES_COMMANDS:
             status = self.system_status_provider()
             return self._result(
@@ -2918,16 +3052,6 @@ class CommandProcessor:
                 speakable=False,
             )
 
-        provider_runtime_provider = self.PROVIDER_RUNTIME_PROVIDER_COMMANDS.get(command)
-        if provider_runtime_provider is not None:
-            return self._result(
-                "ai.provider_runtime.provider_status",
-                self.secure_provider_runtime.provider_status_text_ru(
-                    provider_runtime_provider
-                ),
-                speakable=False,
-            )
-
         if command in self.SECURE_KEY_HELP_COMMANDS:
             return self._result(
                 "secure_keys.help",
@@ -3008,39 +3132,6 @@ class CommandProcessor:
                 self._help_response(),
             )
 
-        if command in self.MEMORY_DELETE_COMMANDS:
-            return self._result(
-                "memory.delete.requested",
-                self.dialogue_manager.memory_delete_requires_future_confirmation_response(),
-            )
-
-        if self._is_idea_add_command(command):
-            return self._add_idea(command)
-
-        if self._is_memory_add_command(command):
-            return self._add_memory(command)
-
-        if command in self.MEMORY_COUNT_COMMANDS:
-            return self._count_memories()
-
-        if command in self.MEMORY_RECENT_COMMANDS:
-            return self._recent_memories()
-
-        if command in self.MEMORY_ABOUT_USER_COMMANDS:
-            return self._about_user_memories()
-
-        if command in self.MEMORY_LIST_COMMANDS:
-            return self._list_memories()
-
-        if self._is_memory_search_command(command):
-            return self._search_memories(command)
-
-        if command in self.IDEA_LIST_COMMANDS:
-            return self._list_ideas()
-
-        if command in self.IDEA_COUNT_COMMANDS:
-            return self._count_ideas()
-
         policy_decision = self._policy_decision_for_command(command_text, command)
         policy_block = self._policy_block_result(policy_decision)
         if policy_block is not None:
@@ -3056,11 +3147,151 @@ class CommandProcessor:
 
         return self._route_result(route)
 
-    def _normalize(self, command_text):
-        if command_text is None:
-            return ""
+    def _command_resolution_clarification_text(self, resolution):
+        lines = [
+            "Требуется уточнение:",
+            resolution.clarification_prompt or "Уточните вариант.",
+            "",
+            "Варианты:",
+        ]
+        lines.extend(f"- {option.label_ru}" for option in resolution.clarification_candidates)
+        return "\n".join(lines)
 
-        return " ".join(str(command_text).strip().lower().split())
+    def _command_resolution_result(self, resolution):
+        command_id = resolution.command_id
+        args = resolution.safe_args
+        if command_id == "system.status":
+            return self._result(
+                "system.status",
+                self.dialogue_manager.system_status_response(
+                    self.system_status_provider()
+                ),
+            )
+        read_only_handlers = {
+            "command_registry.status": lambda: self.command_registry.status_text_ru(),
+            "command_registry.list": lambda: self.command_registry.list_text_ru(),
+            "command_registry.categories": lambda: self.command_registry.categories_text_ru(),
+            "desktop_shell.status": self._desktop_shell_status_text,
+            "desktop_shell.capabilities": self._desktop_shell_capabilities_text,
+            "app_service.status": lambda: self._get_app_service().status_text_ru(),
+            "app_service.capabilities": lambda: self._get_app_service().capabilities_text_ru(),
+            "app_service.commands": lambda: self._get_app_service().list_commands(
+                CommandCategory.APP.value
+            ),
+            "conversation.status": lambda: self._get_app_service().conversational_status_text_ru(),
+            "conversation.capabilities": lambda: self._get_app_service().conversational_capabilities_text_ru(),
+            "vertical_integration.status": lambda: self._get_app_service().vertical_integration_report_text_ru(),
+            "vertical_integration.checklist": lambda: self._get_app_service().vertical_integration_checklist_text_ru(),
+            "vertical_integration.summary": lambda: self._get_app_service().vertical_integration_summary_text_ru(),
+            "audio_lifecycle.status": self.audio_lifecycle_controller.status_text_ru,
+            "audio_lifecycle.capabilities": self.audio_lifecycle_controller.capabilities_text_ru,
+            "app_contracts.status": lambda: self._get_app_service().contract_status_text_ru(),
+            "app_contracts.manifest": lambda: self._get_app_service().contract_manifest_text_ru(),
+            "app_contracts.status_cards": lambda: self._get_app_service().status_cards_text_ru(),
+            "app_contracts.command_cards": lambda: self._get_app_service().command_cards_text_ru(),
+        }
+        if command_id in read_only_handlers:
+            return self._result(command_id, read_only_handlers[command_id](), speakable=False)
+        if command_id == "command_registry.category":
+            return self._result(
+                "command_registry.category",
+                self.command_registry.list_text_ru(args["category"]),
+                speakable=False,
+            )
+        if command_id == "command_registry.search":
+            return self._result(
+                "command_registry.search",
+                self.command_registry.search_text_ru(args["query"]),
+                speakable=False,
+            )
+        if command_id == "app_service.preview":
+            return self._result(
+                "app_service.preview",
+                self._get_app_service().preview_text_ru(args["preview_text"]),
+                speakable=False,
+            )
+        if command_id == "conversation.preview":
+            return self._result(
+                "conversation.preview",
+                self._get_app_service().conversational_preview_text_ru(
+                    args["conversation_text"]
+                ),
+                speakable=False,
+            )
+        if command_id == "audio_lifecycle.reset_metadata_only":
+            event = self.audio_lifecycle_controller.reset_to_idle()
+            return self._result(
+                "audio_lifecycle.reset_metadata_only",
+                "\n".join(
+                    [
+                        "Audio lifecycle metadata reset:",
+                        f"- event: {event.event_type}",
+                        f"- previous state: {event.previous_state}",
+                        f"- next state: {event.next_state}",
+                        f"- safe: {'yes' if event.safe else 'no'}",
+                        f"- network used: {'yes' if event.network_used else 'no'}",
+                        f"- audio saved: {'yes' if event.audio_saved else 'no'}",
+                        "- microphone called: no",
+                        "- tts called: no",
+                        "- no command executed",
+                        f"- message: {event.message_ru}",
+                    ]
+                ),
+                speakable=False,
+            )
+        if command_id == "ai.provider_runtime.provider_status":
+            return self._result(
+                "ai.provider_runtime.provider_status",
+                self.secure_provider_runtime.provider_status_text_ru(args["provider"]),
+                speakable=False,
+            )
+        if command_id == "profile.language.status":
+            return self._result(
+                "profile.language.status",
+                self.language_manager.get_preference().safe_message,
+                speakable=False,
+            )
+        if command_id == "profile.language.set":
+            change = self.language_manager.set_preference(args["language"])
+            return self._result(
+                "profile.language.set",
+                change.safe_message,
+                speakable=False,
+            )
+        if command_id == "profile.language.reset":
+            change = self.language_manager.reset_to_default()
+            return self._result(
+                "profile.language.reset",
+                change.safe_message,
+                speakable=False,
+            )
+        if command_id == "memory.delete.requested":
+            return self._result(
+                "memory.delete.requested",
+                self.dialogue_manager.memory_delete_requires_future_confirmation_response(),
+            )
+        if command_id == "memory.add":
+            return self._add_memory_content(args["content"])
+        if command_id == "memory.count":
+            return self._count_memories()
+        if command_id == "memory.recent":
+            return self._recent_memories()
+        if command_id == "memory.about_user":
+            return self._about_user_memories()
+        if command_id == "memory.list":
+            return self._list_memories()
+        if command_id == "memory.search":
+            return self._search_memories_query(args["query"])
+        if command_id == "idea.add":
+            return self._add_idea_content(args["content"])
+        if command_id == "idea.list":
+            return self._list_ideas()
+        if command_id == "idea.count":
+            return self._count_ideas()
+        return None
+
+    def _normalize(self, command_text):
+        return self.command_resolution_service.normalize(command_text)
 
     def _policy_decision_for_command(
         self,
@@ -3127,211 +3358,6 @@ class CommandProcessor:
                 "reason": ", ".join(decision.reason_codes),
                 "policy_decision": decision.to_dict(),
             }
-        return None
-
-    def _command_registry_result(self, command):
-        app_service_result = self._app_service_result(command)
-        if app_service_result is not None:
-            return app_service_result
-
-        if command in self.COMMAND_REGISTRY_STATUS_COMMANDS:
-            return self._result(
-                "command_registry.status",
-                self.command_registry.status_text_ru(),
-                speakable=False,
-            )
-
-        if command in self.COMMAND_REGISTRY_LIST_COMMANDS:
-            return self._result(
-                "command_registry.list",
-                self.command_registry.list_text_ru(),
-                speakable=False,
-            )
-
-        if command in self.COMMAND_REGISTRY_CATEGORIES_COMMANDS:
-            return self._result(
-                "command_registry.categories",
-                self.command_registry.categories_text_ru(),
-                speakable=False,
-            )
-
-        category = self.COMMAND_REGISTRY_CATEGORY_COMMANDS.get(command)
-        if category is not None:
-            return self._result(
-                "command_registry.category",
-                self.command_registry.list_text_ru(category),
-                speakable=False,
-            )
-
-        for prefix in self.COMMAND_REGISTRY_SEARCH_PREFIXES:
-            if command.startswith(prefix):
-                query = command[len(prefix) :].strip()
-                return self._result(
-                    "command_registry.search",
-                    self.command_registry.search_text_ru(query),
-                    speakable=False,
-                )
-
-        return None
-
-    def _app_service_result(self, command):
-        if command in self.DESKTOP_SHELL_STATUS_COMMANDS:
-            return self._result(
-                "desktop_shell.status",
-                self._desktop_shell_status_text(),
-                speakable=False,
-            )
-
-        if command in self.DESKTOP_SHELL_CAPABILITIES_COMMANDS:
-            return self._result(
-                "desktop_shell.capabilities",
-                self._desktop_shell_capabilities_text(),
-                speakable=False,
-            )
-
-        if command in self.APP_SERVICE_STATUS_COMMANDS:
-            return self._result(
-                "app_service.status",
-                self._get_app_service().status_text_ru(),
-                speakable=False,
-            )
-
-        if command in self.APP_SERVICE_CAPABILITIES_COMMANDS:
-            return self._result(
-                "app_service.capabilities",
-                self._get_app_service().capabilities_text_ru(),
-                speakable=False,
-            )
-
-        if command in self.APP_SERVICE_COMMANDS_COMMANDS:
-            return self._result(
-                "app_service.commands",
-                self._get_app_service().list_commands(CommandCategory.APP.value),
-                speakable=False,
-            )
-
-        if command in self.CONVERSATIONAL_STATUS_COMMANDS:
-            return self._result(
-                "conversation.status",
-                self._get_app_service().conversational_status_text_ru(),
-                speakable=False,
-            )
-
-        if command in self.CONVERSATIONAL_CAPABILITIES_COMMANDS:
-            return self._result(
-                "conversation.capabilities",
-                self._get_app_service().conversational_capabilities_text_ru(),
-                speakable=False,
-            )
-
-        conversational_text = None
-        for prefix in self.CONVERSATIONAL_PREVIEW_PREFIXES:
-            if command.startswith(prefix):
-                conversational_text = command[len(prefix) :].strip()
-                break
-        if conversational_text is not None:
-            return self._result(
-                "conversation.preview",
-                self._get_app_service().conversational_preview_text_ru(
-                    conversational_text
-                ),
-                speakable=False,
-            )
-
-        if command in self.VERTICAL_INTEGRATION_STATUS_COMMANDS:
-            return self._result(
-                "vertical_integration.status",
-                self._get_app_service().vertical_integration_report_text_ru(),
-                speakable=False,
-            )
-
-        if command in self.VERTICAL_INTEGRATION_CHECKLIST_COMMANDS:
-            return self._result(
-                "vertical_integration.checklist",
-                self._get_app_service().vertical_integration_checklist_text_ru(),
-                speakable=False,
-            )
-
-        if command in self.VERTICAL_INTEGRATION_SUMMARY_COMMANDS:
-            return self._result(
-                "vertical_integration.summary",
-                self._get_app_service().vertical_integration_summary_text_ru(),
-                speakable=False,
-            )
-
-        if command in self.AUDIO_LIFECYCLE_STATUS_COMMANDS:
-            return self._result(
-                "audio_lifecycle.status",
-                self.audio_lifecycle_controller.status_text_ru(),
-                speakable=False,
-            )
-
-        if command in self.AUDIO_LIFECYCLE_CAPABILITIES_COMMANDS:
-            return self._result(
-                "audio_lifecycle.capabilities",
-                self.audio_lifecycle_controller.capabilities_text_ru(),
-                speakable=False,
-            )
-
-        if command in self.AUDIO_LIFECYCLE_RESET_COMMANDS:
-            event = self.audio_lifecycle_controller.reset_to_idle()
-            return self._result(
-                "audio_lifecycle.reset_metadata_only",
-                "\n".join(
-                    [
-                        "Audio lifecycle metadata reset:",
-                        f"- event: {event.event_type}",
-                        f"- previous state: {event.previous_state}",
-                        f"- next state: {event.next_state}",
-                        f"- safe: {'yes' if event.safe else 'no'}",
-                        f"- network used: {'yes' if event.network_used else 'no'}",
-                        f"- audio saved: {'yes' if event.audio_saved else 'no'}",
-                        "- microphone called: no",
-                        "- tts called: no",
-                        "- no command executed",
-                        f"- message: {event.message_ru}",
-                    ]
-                ),
-                speakable=False,
-            )
-
-        if command in self.APP_CONTRACTS_STATUS_COMMANDS:
-            return self._result(
-                "app_contracts.status",
-                self._get_app_service().contract_status_text_ru(),
-                speakable=False,
-            )
-
-        if command in self.APP_CONTRACTS_MANIFEST_COMMANDS:
-            return self._result(
-                "app_contracts.manifest",
-                self._get_app_service().contract_manifest_text_ru(),
-                speakable=False,
-            )
-
-        if command in self.APP_CONTRACTS_STATUS_CARDS_COMMANDS:
-            return self._result(
-                "app_contracts.status_cards",
-                self._get_app_service().status_cards_text_ru(),
-                speakable=False,
-            )
-
-        if command in self.APP_CONTRACTS_COMMAND_CARDS_COMMANDS:
-            return self._result(
-                "app_contracts.command_cards",
-                self._get_app_service().command_cards_text_ru(),
-                speakable=False,
-            )
-
-        for prefix in self.APP_SERVICE_PREVIEW_PREFIXES:
-            if command.startswith(prefix):
-                preview_text = command[len(prefix) :].strip()
-                return self._result(
-                    "app_service.preview",
-                    self._get_app_service().preview_text_ru(preview_text),
-                    speakable=False,
-                )
-
         return None
 
     @staticmethod
@@ -3834,6 +3860,26 @@ class CommandProcessor:
             command in self.PENDING_VOICE_COMMAND_POSITIVE_CONFIRMATIONS
             or command in self.PENDING_VOICE_COMMAND_NEGATIVE_CONFIRMATIONS
         )
+
+    def _voice_pending_confirmation_gate_applies(self, command):
+        bypass_groups = (
+            self.PENDING_VOICE_COMMAND_STATUS_COMMANDS,
+            self.SAFE_VOICE_COMMAND_ALLOWLIST_COMMANDS,
+            self.LAST_VOICE_RECOGNITION_COMMANDS,
+            self.REPEAT_LAST_VOICE_COMMAND_COMMANDS,
+            self.VOICE_COMMAND_HISTORY_COMMANDS,
+            self.VOICE_COMMAND_HISTORY_COUNT_COMMANDS,
+            self.VOICE_COMMAND_HISTORY_CLEAR_COMMANDS,
+            self.VOICE_RECOGNITION_CORRECTION_LIST_COMMANDS,
+            self.VOICE_RECOGNITION_CORRECTION_COUNT_COMMANDS,
+            self.VOICE_RECOGNITION_CORRECTION_CLEAR_COMMANDS,
+            self.PENDING_VOICE_COMMAND_CLEAR_COMMANDS,
+            self.EXIT_COMMANDS,
+            self.VOSK_RECOGNITION_DRY_RUN_COMMANDS,
+            self.ONE_SHOT_VOSK_BRIDGE_COMMANDS,
+            self.ONE_SHOT_VOSK_REAL_RECOGNITION_COMMANDS,
+        )
+        return not any(command in group for group in bypass_groups)
 
     @staticmethod
     def _pending_voice_command_none_response():
@@ -5350,6 +5396,9 @@ class CommandProcessor:
 
     def _add_idea(self, command):
         title = self._extract_idea_title(command)
+        return self._add_idea_content(title)
+
+    def _add_idea_content(self, title):
         idea = self.idea_manager.add_idea(title)
         return self._result(
             "idea.add",
@@ -5389,6 +5438,9 @@ class CommandProcessor:
 
     def _add_memory(self, command):
         content = self._extract_prefixed_text(command, self.MEMORY_ADD_PREFIXES)
+        return self._add_memory_content(content)
+
+    def _add_memory_content(self, content):
         memory = self.memory_manager.add_memory(content)
         return self._result(
             "memory.add",
@@ -5433,6 +5485,9 @@ class CommandProcessor:
 
     def _search_memories(self, command):
         query = self._extract_prefixed_text(command, self.MEMORY_SEARCH_PREFIXES)
+        return self._search_memories_query(query)
+
+    def _search_memories_query(self, query):
         memories = self.memory_manager.search_memories(query)
         return self._result(
             "memory.search",
