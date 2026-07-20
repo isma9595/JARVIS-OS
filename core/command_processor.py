@@ -1723,6 +1723,105 @@ class CommandProcessor:
             "memory_about_user": "MEMORY_ABOUT_USER_COMMANDS",
             "memory_list": "MEMORY_LIST_COMMANDS",
             "memory_search": "MEMORY_SEARCH_PREFIXES",
+            "voice_status": "VOICE_STATUS_COMMANDS",
+            "voice_cycle_status": "VOICE_CYCLE_STATUS_COMMANDS",
+            "voice_command_map": "VOICE_COMMAND_MAP_COMMANDS",
+            "voice_output_status": "VOICE_OUTPUT_STATUS_COMMANDS",
+            "voice_output_dry_run_enable": "VOICE_OUTPUT_DRY_RUN_ENABLE_COMMANDS",
+            "voice_output_local_status": "VOICE_OUTPUT_LOCAL_STATUS_COMMANDS",
+            "voice_output_local_enable": "VOICE_OUTPUT_LOCAL_ENABLE_COMMANDS",
+            "voice_output_disable": "VOICE_OUTPUT_DISABLE_COMMANDS",
+            "voice_output_mute": "VOICE_OUTPUT_MUTE_COMMANDS",
+            "voice_output_unmute": "VOICE_OUTPUT_UNMUTE_COMMANDS",
+            "voice_output_skip_next": "VOICE_OUTPUT_SKIP_NEXT_COMMANDS",
+            "voice_output_safety_status": "VOICE_OUTPUT_SAFETY_STATUS_COMMANDS",
+            "voice_output_capabilities": "VOICE_OUTPUT_CAPABILITIES_COMMANDS",
+            "speech_backend_status": "SPEECH_BACKEND_STATUS_COMMANDS",
+            "speech_backend_explain": "SPEECH_BACKEND_EXPLAIN_COMMANDS",
+            "speech_backend_options": "SPEECH_BACKEND_OPTIONS_COMMANDS",
+            "audio_dependency_readiness": "AUDIO_DEPENDENCY_READINESS_COMMANDS",
+            "vosk_backend_status": "VOSK_BACKEND_STATUS_COMMANDS",
+            "vosk_backend_plan": "VOSK_BACKEND_PLAN_COMMANDS",
+            "vosk_recognition_status": "VOSK_RECOGNITION_STATUS_COMMANDS",
+            "vosk_recognition_dry_run": "VOSK_RECOGNITION_DRY_RUN_COMMANDS",
+            "vosk_runtime_status": "VOSK_RUNTIME_STATUS_COMMANDS",
+            "vosk_runtime_blockers": "VOSK_RUNTIME_BLOCKERS_COMMANDS",
+            "vosk_runtime_safety": "VOSK_RUNTIME_SAFETY_COMMANDS",
+            "vosk_runtime_prepare": "VOSK_RUNTIME_PREPARE_COMMANDS",
+            "vosk_runtime_recognize": "VOSK_RUNTIME_RECOGNIZE_COMMANDS",
+            "vosk_installation_guide": "VOSK_INSTALLATION_GUIDE_COMMANDS",
+            "vosk_model_installation_guide": "VOSK_MODEL_INSTALLATION_GUIDE_COMMANDS",
+            "vosk_python_compatibility": "VOSK_PYTHON_COMPATIBILITY_COMMANDS",
+            "vosk_model_guide": "VOSK_MODEL_GUIDE_COMMANDS",
+            "vosk_safe_enablement": "VOSK_SAFE_ENABLEMENT_COMMANDS",
+            "vosk_risks": "VOSK_RISKS_COMMANDS",
+            "vosk_preflight": "VOSK_PREFLIGHT_COMMANDS",
+            "vosk_missing_requirements": "VOSK_MISSING_REQUIREMENTS_COMMANDS",
+            "vosk_model_status": "VOSK_MODEL_STATUS_COMMANDS",
+            "vosk_model_path_status": "VOSK_MODEL_PATH_STATUS_COMMANDS",
+            "vosk_settings": "VOSK_SETTINGS_COMMANDS",
+            "vosk_language_status": "VOSK_LANGUAGE_STATUS_COMMANDS",
+            "one_shot_vosk_bridge": "ONE_SHOT_VOSK_BRIDGE_COMMANDS",
+            "one_shot_vosk_real_recognition": "ONE_SHOT_VOSK_REAL_RECOGNITION_COMMANDS",
+            "microphone_status": "MICROPHONE_STATUS_COMMANDS",
+            "microphone_adapter_status": "MICROPHONE_ADAPTER_STATUS_COMMANDS",
+            "microphone_mode_off": "MICROPHONE_MODE_OFF_COMMANDS",
+            "microphone_mode_partial": "MICROPHONE_MODE_PARTIAL_COMMANDS",
+            "microphone_mode_continuous": "MICROPHONE_MODE_CONTINUOUS_COMMANDS",
+            "microphone_mode_disable_continuous": "MICROPHONE_MODE_DISABLE_CONTINUOUS_COMMANDS",
+            "microphone_listen_once": "MICROPHONE_LISTEN_ONCE_COMMANDS",
+            "assistant_identity": "ASSISTANT_IDENTITY_COMMANDS",
+            "assistant_name_reset": "ASSISTANT_NAME_RESET_COMMANDS",
+            "assistant_name_change": "ASSISTANT_NAME_CHANGE_PREFIXES",
+            "profile_status": "PROFILE_COMMANDS",
+            "system_version": "VERSION_COMMANDS",
+            "system_services": "SYSTEM_SERVICES_COMMANDS",
+            "ai_status": "AI_STATUS_COMMANDS",
+            "ai_language_policy_status": "AI_LANGUAGE_POLICY_STATUS_COMMANDS",
+            "ai_consensus_status": "AI_CONSENSUS_STATUS_COMMANDS",
+            "ai_selection_policy_status": "AI_SELECTION_POLICY_STATUS_COMMANDS",
+            "ai_selection_policy_matrix": "AI_SELECTION_POLICY_MATRIX_COMMANDS",
+            "ai_fallback_execution_status": "AI_FALLBACK_EXECUTION_STATUS_COMMANDS",
+            "ai_live_verification_status": "AI_LIVE_VERIFICATION_STATUS_COMMANDS",
+            "ai_live_verification_checklist": "AI_LIVE_VERIFICATION_CHECKLIST_COMMANDS",
+            "ai_live_verification_no_key": "AI_LIVE_VERIFICATION_NO_KEY_COMMANDS",
+            "ai_live_verification_privacy": "AI_LIVE_VERIFICATION_PRIVACY_COMMANDS",
+            "ai_live_verification_local": "AI_LIVE_VERIFICATION_LOCAL_COMMANDS",
+            "ai_live_verification_readiness": "AI_LIVE_VERIFICATION_READINESS_COMMANDS",
+            "ai_context_privacy_status": "AI_CONTEXT_PRIVACY_STATUS_COMMANDS",
+            "ai_context_privacy_matrix": "AI_CONTEXT_PRIVACY_MATRIX_COMMANDS",
+            "ai_session_status": "AI_SESSION_STATUS_COMMANDS",
+            "ai_session_model_list": "AI_SESSION_MODEL_LIST_COMMANDS",
+            "openai_status": "OPENAI_STATUS_COMMANDS",
+            "openai_one_shot_status": "OPENAI_ONE_SHOT_STATUS_COMMANDS",
+            "openai_guard_status": "OPENAI_GUARD_STATUS_COMMANDS",
+            "openai_model": "OPENAI_MODEL_COMMANDS",
+            "gemini_status": "GEMINI_STATUS_COMMANDS",
+            "gemini_guard_status": "GEMINI_GUARD_STATUS_COMMANDS",
+            "gemini_model": "GEMINI_MODEL_COMMANDS",
+            "groq_status": "GROQ_STATUS_COMMANDS",
+            "groq_request_shape": "GROQ_REQUEST_SHAPE_COMMANDS",
+            "groq_guard_status": "GROQ_GUARD_STATUS_COMMANDS",
+            "groq_model": "GROQ_MODEL_COMMANDS",
+            "gigachat_status": "GIGACHAT_STATUS_COMMANDS",
+            "gigachat_request_shape": "GIGACHAT_REQUEST_SHAPE_COMMANDS",
+            "gigachat_guard_status": "GIGACHAT_GUARD_STATUS_COMMANDS",
+            "gigachat_token_status": "GIGACHAT_TOKEN_STATUS_COMMANDS",
+            "gigachat_model": "GIGACHAT_MODEL_COMMANDS",
+            "ollama_status": "OLLAMA_STATUS_COMMANDS",
+            "ollama_runtime": "OLLAMA_RUNTIME_COMMANDS",
+            "ollama_model_list": "OLLAMA_MODEL_LIST_COMMANDS",
+            "ollama_model": "OLLAMA_MODEL_COMMANDS",
+            "ai_provider_list": "AI_PROVIDER_LIST_COMMANDS",
+            "ai_config_status": "AI_CONFIG_STATUS_COMMANDS",
+            "ai_provider_config_list": "AI_PROVIDER_CONFIG_LIST_COMMANDS",
+            "ai_key_safety_help": "AI_KEY_SAFETY_HELP_COMMANDS",
+            "ai_provider_key_check": "AI_PROVIDER_KEY_CHECK_COMMANDS",
+            "provider_runtime_status": "PROVIDER_RUNTIME_STATUS_COMMANDS",
+            "provider_runtime_list": "PROVIDER_RUNTIME_LIST_COMMANDS",
+            "secure_key_status": "SECURE_KEY_STATUS_COMMANDS",
+            "secure_key_list": "SECURE_KEY_LIST_COMMANDS",
+            "secure_key_help": "SECURE_KEY_HELP_COMMANDS",
         }
         groups = {
             group_name: getattr(self, attribute_name)
@@ -1767,6 +1866,14 @@ class CommandProcessor:
                     legacy_mapping.update(value)
                 elif isinstance(value, (set, frozenset, tuple, list)):
                     legacy_exact.update(value)
+        for value in groups.values():
+            if isinstance(value, dict):
+                for key in value:
+                    legacy_mapping.pop(key, None)
+            elif isinstance(value, tuple):
+                legacy_prefix = [item for item in legacy_prefix if item not in value]
+            elif isinstance(value, (set, frozenset, list)):
+                legacy_exact.difference_update(value)
         groups["legacy_passthrough_exact"] = frozenset(legacy_exact)
         groups["legacy_passthrough_mapping"] = dict(legacy_mapping)
         groups["legacy_passthrough_prefix"] = tuple(legacy_prefix)
@@ -1832,49 +1939,10 @@ class CommandProcessor:
                 )
             return resolved_result
 
-        if command in self.SPEECH_BACKEND_STATUS_COMMANDS:
-            status = (
-                self.voice_input_manager.get_speech_backend_status()
-                if self.voice_input_manager is not None
-                else {
-                    "name": "none",
-                    "available": False,
-                    "requires_permission": False,
-                    "requires_installation": False,
-                    "supports_streaming": False,
-                    "supports_offline": False,
-                }
-            )
-            return self._result(
-                "speech.backend.status",
-                self.dialogue_manager.speech_backend_status_response(status),
-            )
 
-        if command in self.AUDIO_DEPENDENCY_READINESS_COMMANDS:
-            readiness = self._get_audio_dependency_readiness_checker().check()
-            return self._result(
-                "voice.audio_dependencies.status",
-                self._audio_dependency_readiness_response(readiness),
-            )
 
-        if command in self.SPEECH_BACKEND_EXPLAIN_COMMANDS:
-            return self._result(
-                "speech.backend.explain",
-                self.dialogue_manager.speech_backend_explain_response(),
-            )
 
-        if command in self.SPEECH_BACKEND_OPTIONS_COMMANDS:
-            return self._result(
-                "speech.backend.options",
-                self.dialogue_manager.speech_backend_options_response(),
-            )
 
-        if command in self.VOSK_RECOGNITION_STATUS_COMMANDS:
-            gate_result = self._get_vosk_recognition_gate_result()
-            return self._result(
-                "speech.backend.vosk.recognition.status",
-                self._vosk_recognition_status_response(gate_result),
-            )
 
         typed_simulation_text = self._extract_typed_voice_recognition_simulation_text(
             command_text,
@@ -1889,103 +1957,16 @@ class CommandProcessor:
         if voice_output_text is not None:
             return self._voice_output_speak_result(voice_output_text)
 
-        if command in self.VOICE_OUTPUT_STATUS_COMMANDS:
-            return self._result(
-                "voice.output.status",
-                self.voice_output_manager.status_message(),
-            )
 
-        if command in self.VOICE_OUTPUT_MUTE_COMMANDS:
-            self.voice_output_manager.safety_controller.request_stop()
-            self.voice_dialogue_mode_manager.disable()
-            return self._result(
-                "voice.output.safety.muted",
-                (
-                    "Голосовая озвучка остановлена для следующих ответов.\n"
-                    "Тихий режим: включён.\n"
-                    "Голосовой диалог отключён.\n"
-                    "Примечание: уже запущенная синхронная речь Windows может завершиться сама; "
-                    "мгновенное прерывание будет отдельным этапом."
-                ),
-                speakable=False,
-                allow_manual_dialogue=False,
-            )
 
-        if command in self.VOICE_OUTPUT_UNMUTE_COMMANDS:
-            self.voice_output_manager.safety_controller.unmute()
-            return self._result(
-                "voice.output.safety.unmuted",
-                (
-                    "Тихий режим отключён.\n"
-                    "Голосовая озвучка снова разрешена.\n"
-                    "Чтобы JARVIS озвучивал текущие ответы, включите голосовой диалог отдельно."
-                ),
-                speakable=False,
-            )
 
-        if command in self.VOICE_OUTPUT_SKIP_NEXT_COMMANDS:
-            self.voice_output_manager.safety_controller.skip_next_speech()
-            return self._result(
-                "voice.output.safety.skip_next",
-                (
-                    "Следующая голосовая озвучка будет пропущена.\n"
-                    "После этого обычные настройки голоса сохранятся."
-                ),
-                speakable=False,
-            )
 
-        if command in self.VOICE_OUTPUT_SAFETY_STATUS_COMMANDS:
-            return self._result(
-                "voice.output.safety.status",
-                self._voice_output_safety_status_response(),
-                speakable=False,
-            )
 
-        if command in self.VOICE_CYCLE_STATUS_COMMANDS:
-            from voice.voice_command_index import VoiceCommandIndex
 
-            return self._result(
-                "voice.cycle.status",
-                VoiceCommandIndex.get_voice_cycle_summary(),
-                speakable=False,
-            )
 
-        if command in self.VOICE_COMMAND_MAP_COMMANDS:
-            from voice.voice_command_index import VoiceCommandIndex
 
-            return self._result(
-                "voice.cycle.command_map",
-                VoiceCommandIndex.get_voice_command_map(),
-                speakable=False,
-            )
 
-        if command in self.VOICE_OUTPUT_DRY_RUN_ENABLE_COMMANDS:
-            result = self.voice_output_manager.enable_dry_run()
-            return self._result("voice.output.dry_run.enabled", result["message"])
 
-        if command in self.VOICE_OUTPUT_LOCAL_STATUS_COMMANDS:
-            result = self.voice_output_manager.local_tts_status()
-            return self._result("voice.output.local.status", result["message"])
-
-        if command in self.VOICE_OUTPUT_LOCAL_ENABLE_COMMANDS:
-            result = self.voice_output_manager.enable_windows_local()
-            intent = (
-                "voice.output.windows_local.enabled"
-                if result["enabled"]
-                else "voice.output.windows_local.unavailable"
-            )
-            return self._result(intent, result["message"])
-
-        if command in self.VOICE_OUTPUT_DISABLE_COMMANDS:
-            result = self.voice_output_manager.disable()
-            response = result["message"]
-            if self.voice_dialogue_mode_manager.is_manual_enabled():
-                self.voice_dialogue_mode_manager.disable()
-                response = (
-                    "Голосовой ответ отключён.\n"
-                    "Голосовой диалог также отключён."
-                )
-            return self._result("voice.output.disabled", response)
 
         if command in self.VOICE_OUTPUT_LOCAL_TEST_COMMANDS:
             return self._voice_output_local_test_result()
@@ -1993,12 +1974,6 @@ class CommandProcessor:
         if command in self.VOICE_OUTPUT_TEST_COMMANDS:
             return self._voice_output_test_result()
 
-        if command in self.VOICE_OUTPUT_CAPABILITIES_COMMANDS:
-            return self._result(
-                "voice.output.capabilities",
-                self.voice_output_manager.capabilities_message(),
-                speakable=False,
-            )
 
         if command in self.ASSISTANT_LAST_RESPONSE_COMMANDS:
             return self._last_assistant_response_result()
@@ -2047,35 +2022,8 @@ class CommandProcessor:
                 speakable=False,
             )
 
-        if command in self.VOSK_RECOGNITION_DRY_RUN_COMMANDS:
-            dry_run_result = self._get_vosk_recognition_dry_run().run()
-            return self._result(
-                "speech.backend.vosk.recognition.dry_run",
-                self._vosk_recognition_dry_run_response(dry_run_result),
-            )
 
-        if command in self.ONE_SHOT_VOSK_BRIDGE_COMMANDS:
-            bridge_result = self._get_one_shot_vosk_recognition_bridge().run_once(
-                explicit_one_shot_requested=True
-            )
-            return self._result(
-                "speech.backend.vosk.one_shot_bridge",
-                self._one_shot_vosk_bridge_response(bridge_result),
-            )
 
-        if command in self.ONE_SHOT_VOSK_REAL_RECOGNITION_COMMANDS:
-            recognition_result = self._get_one_shot_vosk_real_recognition().run_once(
-                explicit_one_shot_requested=True
-            )
-            one_shot_result = self._one_shot_vosk_real_recognition_response(
-                recognition_result
-            )
-            if isinstance(one_shot_result, dict):
-                return one_shot_result
-            return self._result(
-                "speech.backend.vosk.one_shot_real_recognition",
-                one_shot_result,
-            )
 
         if command in self.PENDING_VOICE_COMMAND_STATUS_COMMANDS:
             return self._result(
@@ -2183,20 +2131,6 @@ class CommandProcessor:
         if self.has_pending_voice_command():
             return self._process_pending_voice_command_confirmation(command)
 
-        if command in self.VOSK_BACKEND_STATUS_COMMANDS:
-            status = (
-                self.voice_input_manager.get_vosk_backend_status()
-                if self.voice_input_manager is not None
-                else {
-                    "name": "vosk_local",
-                    "available": False,
-                    "supports_offline": True,
-                }
-            )
-            return self._result(
-                "speech.backend.vosk.status",
-                self.dialogue_manager.speech_backend_status_response(status),
-            )
 
         if command in self.VOSK_BACKEND_SELECT_COMMANDS:
             if self.voice_input_manager is None:
@@ -2210,138 +2144,21 @@ class CommandProcessor:
                 self.dialogue_manager.speech_backend_selected_response(status),
             )
 
-        if command in self.VOSK_BACKEND_PLAN_COMMANDS:
-            return self._result(
-                "speech.backend.vosk.plan",
-                self.dialogue_manager.vosk_backend_plan_response(),
-            )
 
-        if command in self.VOSK_RUNTIME_STATUS_COMMANDS:
-            loader = self._get_vosk_runtime_loader()
-            return self._result(
-                "speech.backend.vosk.runtime.status",
-                self.dialogue_manager.vosk_runtime_status_response(
-                    loader.get_runtime_status()
-                ),
-            )
 
-        if command in self.VOSK_RUNTIME_BLOCKERS_COMMANDS:
-            loader = self._get_vosk_runtime_loader()
-            return self._result(
-                "speech.backend.vosk.runtime.blockers",
-                self.dialogue_manager.vosk_runtime_blockers_response(
-                    loader.get_blockers()
-                ),
-            )
 
-        if command in self.VOSK_RUNTIME_SAFETY_COMMANDS:
-            loader = self._get_vosk_runtime_loader()
-            return self._result(
-                "speech.backend.vosk.runtime.safety",
-                self.dialogue_manager.vosk_runtime_safety_response(
-                    loader.get_safety_summary()
-                ),
-            )
 
-        if command in self.VOSK_RUNTIME_PREPARE_COMMANDS:
-            loader = self._get_vosk_runtime_loader()
-            return self._result(
-                "speech.backend.vosk.runtime.prepare.stub",
-                self.dialogue_manager.vosk_runtime_prepare_response(
-                    loader.prepare_runtime_stub()
-                ),
-            )
 
-        if command in self.VOSK_RUNTIME_RECOGNIZE_COMMANDS:
-            loader = self._get_vosk_runtime_loader()
-            return self._result(
-                "speech.backend.vosk.runtime.recognition.disabled",
-                self.dialogue_manager.vosk_runtime_recognition_disabled_response(
-                    loader.recognize_text_stub()
-                ),
-            )
 
-        if command in self.VOSK_INSTALLATION_GUIDE_COMMANDS:
-            guide = self._get_vosk_installation_guide()
-            return self._result(
-                "speech.backend.vosk.installation.guide",
-                self.dialogue_manager.vosk_installation_guide_response(
-                    guide.get_installation_summary()
-                ),
-            )
 
-        if command in self.VOSK_MODEL_INSTALLATION_GUIDE_COMMANDS:
-            return self._result(
-                "speech.backend.vosk.model.installation.guide",
-                self._vosk_model_installation_guidance_response(),
-            )
 
-        if command in self.VOSK_PYTHON_COMPATIBILITY_COMMANDS:
-            guide = self._get_vosk_installation_guide()
-            return self._result(
-                "speech.backend.vosk.compatibility",
-                self.dialogue_manager.vosk_python_compatibility_response(
-                    guide.get_python_version_status()
-                ),
-            )
 
-        if command in self.VOSK_MODEL_GUIDE_COMMANDS:
-            guide = self._get_vosk_installation_guide()
-            return self._result(
-                "speech.backend.vosk.model.guide",
-                self.dialogue_manager.vosk_model_download_guidance_response(
-                    guide.get_recommended_model(),
-                    guide.get_model_download_guidance(),
-                ),
-            )
 
-        if command in self.VOSK_SAFE_ENABLEMENT_COMMANDS:
-            guide = self._get_vosk_installation_guide()
-            return self._result(
-                "speech.backend.vosk.enablement.plan",
-                self.dialogue_manager.vosk_safe_enablement_response(
-                    guide.get_safe_enablement_steps()
-                ),
-            )
 
-        if command in self.VOSK_RISKS_COMMANDS:
-            guide = self._get_vosk_installation_guide()
-            return self._result(
-                "speech.backend.vosk.risks",
-                self.dialogue_manager.vosk_runtime_risks_response(
-                    guide.get_runtime_risks()
-                ),
-            )
 
-        if command in self.VOSK_PREFLIGHT_COMMANDS:
-            preflight = self._get_vosk_preflight()
-            return self._result(
-                "speech.backend.vosk.preflight",
-                self.dialogue_manager.vosk_preflight_response(preflight),
-            )
 
-        if command in self.VOSK_MISSING_REQUIREMENTS_COMMANDS:
-            preflight = self._get_vosk_preflight()
-            return self._result(
-                "speech.backend.vosk.requirements",
-                self.dialogue_manager.vosk_missing_requirements_response(
-                    preflight["missing_requirements"]
-                ),
-            )
 
-        if command in self.VOSK_MODEL_STATUS_COMMANDS:
-            readiness = self._get_vosk_model_readiness()
-            return self._result(
-                "speech.backend.vosk.model.status",
-                self._vosk_model_readiness_response(readiness),
-            )
 
-        if command in self.VOSK_MODEL_PATH_STATUS_COMMANDS:
-            status = self._get_vosk_model_status()
-            return self._result(
-                "speech.backend.vosk.model.path.status",
-                self._vosk_model_path_status_response(status),
-            )
 
         if command in self.VOSK_MODEL_PATH_CLEAR_COMMANDS:
             if self.voice_input_manager is None:
@@ -2355,21 +2172,7 @@ class CommandProcessor:
                 self._vosk_model_path_cleared_response(preflight),
             )
 
-        if command in self.VOSK_SETTINGS_COMMANDS:
-            status = self._get_vosk_model_status()
-            return self._result(
-                "speech.backend.vosk.settings",
-                self.dialogue_manager.vosk_settings_response(status),
-            )
 
-        if command in self.VOSK_LANGUAGE_STATUS_COMMANDS:
-            status = self._get_vosk_model_status()
-            return self._result(
-                "speech.backend.vosk.language.status",
-                self.dialogue_manager.vosk_language_status_response(
-                    status.get("language", "ru")
-                ),
-            )
 
         language = self._extract_prefixed_value(
             command_text, command, self.VOSK_LANGUAGE_PREFIXES
@@ -2411,38 +2214,11 @@ class CommandProcessor:
                 self._vosk_model_path_configured_response(model_path, preflight),
             )
 
-        if command in self.MICROPHONE_STATUS_COMMANDS:
-            return self._microphone_mode_status_result()
 
-        if command in self.MICROPHONE_MODE_OFF_COMMANDS:
-            return self._set_microphone_mode_result(
-                "microphone.mode.off",
-                "off",
-            )
 
-        if command in self.MICROPHONE_MODE_PARTIAL_COMMANDS:
-            return self._set_microphone_mode_result(
-                "microphone.mode.partial",
-                "partial",
-            )
 
-        if command in self.MICROPHONE_MODE_CONTINUOUS_COMMANDS:
-            return self._set_microphone_mode_result(
-                "microphone.mode.continuous",
-                "continuous",
-            )
 
-        if command in self.MICROPHONE_MODE_DISABLE_CONTINUOUS_COMMANDS:
-            return self._set_microphone_mode_result(
-                "microphone.mode.off",
-                "off",
-            )
 
-        if command in self.MICROPHONE_ADAPTER_STATUS_COMMANDS:
-            return self._microphone_result(
-                "microphone.status",
-                "microphone_status",
-            )
 
         if command in self.MICROPHONE_PERMISSION_REQUEST_COMMANDS:
             return self._microphone_result(
@@ -2474,107 +2250,22 @@ class CommandProcessor:
                 "stop_microphone_input",
             )
 
-        if command in self.MICROPHONE_LISTEN_ONCE_COMMANDS:
-            return self._microphone_result(
-                "microphone.listen.once",
-                "listen_once_from_microphone",
-            )
 
-        if command in self.AI_SESSION_STATUS_COMMANDS:
-            return self._result(
-                "ai.session.status",
-                self.ai_provider_session_state.status_text_ru(),
-            )
 
-        if command in self.AI_CONSENSUS_STATUS_COMMANDS:
-            return self._result(
-                "ai.consensus.status",
-                self.ai_provider_consensus_manager.status_text_ru(),
-            )
 
-        if command in self.AI_FALLBACK_EXECUTION_STATUS_COMMANDS:
-            return self._result(
-                "ai.fallback_execution.status",
-                self.ai_provider_fallback_executor.status_text_ru(),
-            )
 
-        if command in self.AI_LIVE_VERIFICATION_STATUS_COMMANDS:
-            return self._result(
-                "ai.live_verification.status",
-                self.ai_provider_live_verification.status_text_ru(),
-            )
 
-        if command in self.AI_LIVE_VERIFICATION_CHECKLIST_COMMANDS:
-            return self._result(
-                "ai.live_verification.checklist",
-                self.ai_provider_live_verification.checklist_text_ru(),
-            )
 
-        if command in self.AI_LIVE_VERIFICATION_NO_KEY_COMMANDS:
-            return self._result(
-                "ai.live_verification.no_key",
-                self.ai_provider_live_verification.no_key_check_text_ru(),
-            )
 
-        if command in self.AI_LIVE_VERIFICATION_PRIVACY_COMMANDS:
-            return self._result(
-                "ai.live_verification.privacy",
-                self.ai_provider_live_verification.privacy_check_text_ru(),
-            )
 
-        if command in self.AI_LIVE_VERIFICATION_LOCAL_COMMANDS:
-            return self._result(
-                "ai.live_verification.ollama_local",
-                self.ai_provider_live_verification.local_check_text_ru(),
-            )
 
-        if command in self.AI_LIVE_VERIFICATION_READINESS_COMMANDS:
-            return self._result(
-                "ai.live_verification.readiness",
-                self.ai_provider_live_verification.live_readiness_text_ru(),
-            )
 
-        if command in self.AI_SELECTION_POLICY_STATUS_COMMANDS:
-            return self._result(
-                "ai.selection_policy.status",
-                self.ai_provider_selection_policy.status_text_ru(),
-            )
 
-        if command in self.AI_SELECTION_POLICY_MATRIX_COMMANDS:
-            return self._result(
-                "ai.selection_policy.matrix",
-                self.ai_provider_selection_policy.matrix_text_ru(),
-            )
 
-        if command in self.OLLAMA_STATUS_COMMANDS:
-            return self._result(
-                "ai.ollama.status",
-                self.ollama_request_gate.status_text(),
-            )
 
-        if command in self.OLLAMA_MODEL_COMMANDS:
-            return self._result(
-                "ai.ollama.model",
-                self.ollama_request_gate.model_text(),
-            )
 
-        if command in self.OLLAMA_RUNTIME_COMMANDS:
-            return self._result(
-                "ai.ollama.runtime",
-                self.ollama_request_gate.runtime_status_text(),
-            )
 
-        if command in self.OLLAMA_MODEL_LIST_COMMANDS:
-            return self._result(
-                "ai.ollama.models",
-                self.ollama_request_gate.list_models_text(),
-            )
 
-        if command in self.AI_SESSION_MODEL_LIST_COMMANDS:
-            return self._result(
-                "ai.session.models",
-                self._ai_session_models_text(),
-            )
 
         if command in self.AI_SESSION_RESET_COMMANDS:
             self.ai_provider_session_state.reset_selection()
@@ -2835,62 +2526,18 @@ class CommandProcessor:
                 self.dialogue_manager.identity_response(),
             )
 
-        if command in self.ASSISTANT_IDENTITY_COMMANDS:
-            return self._result(
-                "assistant.identity",
-                self._assistant_name_response(),
-            )
 
         assistant_name = self._extract_assistant_name(command_text, command)
         if assistant_name is not None:
             return self._change_assistant_name(assistant_name)
 
-        if command in self.ASSISTANT_NAME_RESET_COMMANDS:
-            return self._reset_assistant_name()
 
-        if command in self.PROFILE_COMMANDS:
-            return self._result(
-                "user.profile",
-                self.dialogue_manager.profile_response(),
-            )
 
-        if command in self.VERSION_COMMANDS:
-            status = self.system_status_provider()
-            return self._result(
-                "system.version",
-                self.dialogue_manager.version_response(status["version"]),
-            )
 
-        if command in self.SYSTEM_SERVICES_COMMANDS:
-            status = self.system_status_provider()
-            return self._result(
-                "system.services",
-                self.dialogue_manager.services_response(status["services"]),
-            )
 
-        if command in self.AI_STATUS_COMMANDS:
-            return self._result(
-                "ai.status",
-                self.ai_provider_router.status_text_ru(),
-            )
 
-        if command in self.AI_LANGUAGE_POLICY_STATUS_COMMANDS:
-            return self._result(
-                "ai.language_policy.status",
-                self.ai_provider_language_policy.status_text_ru(),
-            )
 
-        if command in self.AI_CONTEXT_PRIVACY_STATUS_COMMANDS:
-            return self._result(
-                "ai.context_privacy.status",
-                self.ai_context_privacy_policy.status_text_ru(),
-            )
 
-        if command in self.AI_CONTEXT_PRIVACY_MATRIX_COMMANDS:
-            return self._result(
-                "ai.context_privacy.matrix",
-                self.ai_context_privacy_policy.matrix_text_ru(),
-            )
 
         ai_context_check_text = self._extract_ai_prefixed_text(
             command_text,
@@ -2922,142 +2569,27 @@ class CommandProcessor:
                 AIContextTarget.LOCAL_OLLAMA,
             )
 
-        if command in self.OPENAI_STATUS_COMMANDS:
-            return self._result(
-                "ai.openai.status",
-                self._openai_status_text(),
-            )
 
-        if command in self.OPENAI_ONE_SHOT_STATUS_COMMANDS:
-            return self._result(
-                "ai.openai.one_shot.status",
-                self.openai_request_gate.status_text_ru(),
-            )
 
-        if command in self.OPENAI_GUARD_STATUS_COMMANDS:
-            return self._result(
-                "ai.openai.guard.status",
-                self.openai_request_gate.guard_status_text_ru(),
-            )
 
-        if command in self.OPENAI_MODEL_COMMANDS:
-            return self._result(
-                "ai.openai.model",
-                self.openai_request_gate.model_text_ru(),
-            )
 
-        if command in self.GEMINI_STATUS_COMMANDS:
-            return self._result(
-                "ai.gemini.status",
-                self._gemini_status_text(),
-            )
 
-        if command in self.GEMINI_GUARD_STATUS_COMMANDS:
-            return self._result(
-                "ai.gemini.guard.status",
-                self.gemini_request_gate.guard_status_text_ru(),
-            )
 
-        if command in self.GEMINI_MODEL_COMMANDS:
-            return self._result(
-                "ai.gemini.model",
-                self.gemini_request_gate.model_text_ru(),
-            )
 
-        if command in self.GROQ_STATUS_COMMANDS:
-            return self._result(
-                "ai.groq.status",
-                self._groq_status_text(),
-            )
 
-        if command in self.GROQ_REQUEST_SHAPE_COMMANDS:
-            return self._result(
-                "ai.groq.request_shape",
-                self.groq_request_gate.request_shape_text_ru(),
-            )
 
-        if command in self.GROQ_GUARD_STATUS_COMMANDS:
-            return self._result(
-                "ai.groq.guard.status",
-                self.groq_request_gate.guard_status_text_ru(),
-            )
 
-        if command in self.GROQ_MODEL_COMMANDS:
-            return self._result(
-                "ai.groq.model",
-                self.groq_request_gate.model_text_ru(),
-            )
 
-        if command in self.GIGACHAT_STATUS_COMMANDS:
-            return self._result(
-                "ai.gigachat.status",
-                self.gigachat_request_gate.status_text_ru(),
-            )
 
-        if command in self.GIGACHAT_REQUEST_SHAPE_COMMANDS:
-            return self._result(
-                "ai.gigachat.request_shape",
-                self.gigachat_request_gate.request_shape_text_ru(),
-            )
 
-        if command in self.GIGACHAT_GUARD_STATUS_COMMANDS:
-            return self._result(
-                "ai.gigachat.guard.status",
-                self.gigachat_request_gate.guard_status_text_ru(),
-            )
 
-        if command in self.GIGACHAT_TOKEN_STATUS_COMMANDS:
-            return self._result(
-                "ai.gigachat.token.status",
-                self.gigachat_request_gate.token_status_text_ru(),
-            )
 
-        if command in self.GIGACHAT_MODEL_COMMANDS:
-            return self._result(
-                "ai.gigachat.model",
-                self.gigachat_request_gate.model_text_ru(),
-            )
 
-        if command in self.AI_PROVIDER_LIST_COMMANDS:
-            return self._result(
-                "ai.providers",
-                self.ai_provider_router.providers_text_ru(),
-            )
 
-        if command in self.SECURE_KEY_STATUS_COMMANDS:
-            return self._result(
-                "secure_keys.status",
-                self.api_key_manager.status_text_ru(),
-                speakable=False,
-            )
 
-        if command in self.SECURE_KEY_LIST_COMMANDS:
-            return self._result(
-                "secure_keys.list",
-                self.api_key_manager.list_text_ru(),
-                speakable=False,
-            )
 
-        if command in self.PROVIDER_RUNTIME_STATUS_COMMANDS:
-            return self._result(
-                "ai.provider_runtime.status",
-                self.secure_provider_runtime.status_text_ru(),
-                speakable=False,
-            )
 
-        if command in self.PROVIDER_RUNTIME_LIST_COMMANDS:
-            return self._result(
-                "ai.provider_runtime.credentials",
-                self.secure_provider_runtime.status_text_ru(),
-                speakable=False,
-            )
 
-        if command in self.SECURE_KEY_HELP_COMMANDS:
-            return self._result(
-                "secure_keys.help",
-                self.api_key_manager.safe_help_text_ru(),
-                speakable=False,
-            )
 
         provider_to_import = self.SECURE_KEY_IMPORT_COMMANDS.get(command)
         if provider_to_import is not None:
@@ -3075,38 +2607,10 @@ class CommandProcessor:
                 speakable=False,
             )
 
-        if command in self.AI_CONFIG_STATUS_COMMANDS:
-            return self._result(
-                "ai.config.status",
-                self.ai_provider_config_manager.format_status_ru(),
-            )
 
-        if command in self.AI_PROVIDER_CONFIG_LIST_COMMANDS:
-            return self._result(
-                "ai.config.providers",
-                self.ai_provider_config_manager.format_provider_list_ru(),
-            )
 
-        if command in self.AI_KEY_SAFETY_HELP_COMMANDS:
-            return self._result(
-                "ai.key_safety",
-                self.ai_provider_config_manager.format_key_safety_help_ru(),
-            )
 
-        if command in self.AI_PROVIDER_KEY_CHECK_COMMANDS:
-            provider_name = self.AI_PROVIDER_KEY_CHECK_COMMANDS[command]
-            return self._result(
-                "ai.key_check",
-                self.ai_provider_config_manager.check_provider_key_text_ru(
-                    provider_name
-                ),
-            )
 
-        if command in self.VOICE_STATUS_COMMANDS:
-            return self._result(
-                "voice.status",
-                self.dialogue_manager.voice_not_real_microphone_response(),
-            )
 
         if command in self.VOICE_ENABLE_COMMANDS:
             return self._result(
@@ -3192,6 +2696,418 @@ class CommandProcessor:
         }
         if command_id in read_only_handlers:
             return self._result(command_id, read_only_handlers[command_id](), speakable=False)
+        voice_read_only_handlers = {
+            "voice.output.status": self.voice_output_manager.status_message,
+            "voice.output.local.status": lambda: self.voice_output_manager.local_tts_status()["message"],
+            "voice.output.safety.status": self._voice_output_safety_status_response,
+            "voice.output.capabilities": self.voice_output_manager.capabilities_message,
+            "speech.backend.explain": self.dialogue_manager.speech_backend_explain_response,
+            "speech.backend.options": self.dialogue_manager.speech_backend_options_response,
+            "speech.backend.vosk.plan": self.dialogue_manager.vosk_backend_plan_response,
+            "voice.pending_command.status": self._pending_voice_command_status_response,
+            "voice.safe_allowlist.status": self._safe_voice_command_allowlist_response,
+        }
+        if command_id in voice_read_only_handlers:
+            return self._result(command_id, voice_read_only_handlers[command_id](), speakable=False)
+        ai_read_only_handlers = {
+            "ai.status": lambda: self.ai_provider_router.status_text_ru(),
+            "ai.language_policy.status": lambda: self.ai_provider_language_policy.status_text_ru(),
+            "ai.consensus.status": lambda: self.ai_provider_consensus_manager.status_text_ru(),
+            "ai.selection_policy.status": lambda: self.ai_provider_selection_policy.status_text_ru(),
+            "ai.selection_policy.matrix": lambda: self.ai_provider_selection_policy.matrix_text_ru(),
+            "ai.fallback_execution.status": lambda: self.ai_provider_fallback_executor.status_text_ru(),
+            "ai.live_verification.status": lambda: self.ai_provider_live_verification.status_text_ru(),
+            "ai.live_verification.checklist": lambda: self.ai_provider_live_verification.checklist_text_ru(),
+            "ai.live_verification.no_key": lambda: self.ai_provider_live_verification.no_key_check_text_ru(),
+            "ai.live_verification.privacy": lambda: self.ai_provider_live_verification.privacy_check_text_ru(),
+            "ai.live_verification.ollama_local": lambda: self.ai_provider_live_verification.local_check_text_ru(),
+            "ai.live_verification.readiness": lambda: self.ai_provider_live_verification.live_readiness_text_ru(),
+            "ai.context_privacy.status": lambda: self.ai_context_privacy_policy.status_text_ru(),
+            "ai.context_privacy.matrix": lambda: self.ai_context_privacy_policy.matrix_text_ru(),
+            "ai.openai.status": self._openai_status_text,
+            "ai.openai.one_shot.status": lambda: self.openai_request_gate.status_text_ru(),
+            "ai.openai.guard.status": lambda: self.openai_request_gate.guard_status_text_ru(),
+            "ai.openai.model": lambda: self.openai_request_gate.model_text_ru(),
+            "ai.gemini.status": self._gemini_status_text,
+            "ai.gemini.guard.status": lambda: self.gemini_request_gate.guard_status_text_ru(),
+            "ai.gemini.model": lambda: self.gemini_request_gate.model_text_ru(),
+            "ai.groq.status": self._groq_status_text,
+            "ai.groq.request_shape": lambda: self.groq_request_gate.request_shape_text_ru(),
+            "ai.groq.guard.status": lambda: self.groq_request_gate.guard_status_text_ru(),
+            "ai.groq.model": lambda: self.groq_request_gate.model_text_ru(),
+            "ai.gigachat.status": lambda: self.gigachat_request_gate.status_text_ru(),
+            "ai.gigachat.request_shape": lambda: self.gigachat_request_gate.request_shape_text_ru(),
+            "ai.gigachat.guard.status": lambda: self.gigachat_request_gate.guard_status_text_ru(),
+            "ai.gigachat.token.status": lambda: self.gigachat_request_gate.token_status_text_ru(),
+            "ai.gigachat.model": lambda: self.gigachat_request_gate.model_text_ru(),
+            "ai.ollama.status": lambda: self.ollama_request_gate.status_text(),
+            "ai.ollama.runtime": lambda: self.ollama_request_gate.runtime_status_text(),
+            "ai.ollama.models": lambda: self.ollama_request_gate.list_models_text(),
+            "ai.ollama.model": lambda: self.ollama_request_gate.model_text(),
+            "ai.providers": lambda: self.ai_provider_router.providers_text_ru(),
+            "ai.config.status": lambda: self.ai_provider_config_manager.format_status_ru(),
+            "ai.config.providers": lambda: self.ai_provider_config_manager.format_provider_list_ru(),
+            "ai.key_safety": lambda: self.ai_provider_config_manager.format_key_safety_help_ru(),
+            "ai.session.status": lambda: self.ai_provider_session_state.status_text_ru(),
+            "ai.session.models": self._ai_session_models_text,
+        }
+        if command_id in ai_read_only_handlers:
+            return self._result(command_id, ai_read_only_handlers[command_id]())
+        if command_id == "speech.backend.status":
+            status = (
+                self.voice_input_manager.get_speech_backend_status()
+                if self.voice_input_manager is not None
+                else {
+                    "name": "none",
+                    "available": False,
+                    "requires_permission": False,
+                    "requires_installation": False,
+                    "supports_streaming": False,
+                    "supports_offline": False,
+                }
+            )
+            return self._result(
+                "speech.backend.status",
+                self.dialogue_manager.speech_backend_status_response(status),
+            )
+        if command_id == "voice.audio_dependencies.status":
+            readiness = self._get_audio_dependency_readiness_checker().check()
+            return self._result(
+                "voice.audio_dependencies.status",
+                self._audio_dependency_readiness_response(readiness),
+            )
+        if command_id == "speech.backend.vosk.recognition.status":
+            gate_result = self._get_vosk_recognition_gate_result()
+            return self._result(
+                "speech.backend.vosk.recognition.status",
+                self._vosk_recognition_status_response(gate_result),
+            )
+        if command_id == "speech.backend.vosk.recognition.dry_run":
+            dry_run_result = self._get_vosk_recognition_dry_run().run()
+            return self._result(
+                "speech.backend.vosk.recognition.dry_run",
+                self._vosk_recognition_dry_run_response(dry_run_result),
+            )
+        if command_id == "speech.backend.vosk.one_shot_bridge":
+            bridge_result = self._get_one_shot_vosk_recognition_bridge().run_once(
+                explicit_one_shot_requested=True
+            )
+            return self._result(
+                "speech.backend.vosk.one_shot_bridge",
+                self._one_shot_vosk_bridge_response(bridge_result),
+            )
+        if command_id == "speech.backend.vosk.one_shot_real_recognition":
+            recognition_result = self._get_one_shot_vosk_real_recognition().run_once(
+                explicit_one_shot_requested=True
+            )
+            one_shot_result = self._one_shot_vosk_real_recognition_response(
+                recognition_result
+            )
+            if isinstance(one_shot_result, dict):
+                return one_shot_result
+            return self._result(
+                "speech.backend.vosk.one_shot_real_recognition",
+                one_shot_result,
+            )
+        if command_id == "speech.backend.vosk.status":
+            status = (
+                self.voice_input_manager.get_vosk_backend_status()
+                if self.voice_input_manager is not None
+                else {
+                    "name": "vosk_local",
+                    "available": False,
+                    "supports_offline": True,
+                }
+            )
+            return self._result(
+                "speech.backend.vosk.status",
+                self.dialogue_manager.speech_backend_status_response(status),
+            )
+        if command_id == "speech.backend.vosk.runtime.status":
+            loader = self._get_vosk_runtime_loader()
+            return self._result(
+                "speech.backend.vosk.runtime.status",
+                self.dialogue_manager.vosk_runtime_status_response(
+                    loader.get_runtime_status()
+                ),
+            )
+        if command_id == "speech.backend.vosk.runtime.blockers":
+            loader = self._get_vosk_runtime_loader()
+            return self._result(
+                "speech.backend.vosk.runtime.blockers",
+                self.dialogue_manager.vosk_runtime_blockers_response(
+                    loader.get_blockers()
+                ),
+            )
+        if command_id == "speech.backend.vosk.runtime.safety":
+            loader = self._get_vosk_runtime_loader()
+            return self._result(
+                "speech.backend.vosk.runtime.safety",
+                self.dialogue_manager.vosk_runtime_safety_response(
+                    loader.get_safety_summary()
+                ),
+            )
+        if command_id == "speech.backend.vosk.runtime.prepare.stub":
+            loader = self._get_vosk_runtime_loader()
+            return self._result(
+                "speech.backend.vosk.runtime.prepare.stub",
+                self.dialogue_manager.vosk_runtime_prepare_response(
+                    loader.prepare_runtime_stub()
+                ),
+            )
+        if command_id == "speech.backend.vosk.runtime.recognition.disabled":
+            loader = self._get_vosk_runtime_loader()
+            return self._result(
+                "speech.backend.vosk.runtime.recognition.disabled",
+                self.dialogue_manager.vosk_runtime_recognition_disabled_response(
+                    loader.recognize_text_stub()
+                ),
+            )
+        if command_id == "speech.backend.vosk.installation.guide":
+            guide = self._get_vosk_installation_guide()
+            return self._result(
+                "speech.backend.vosk.installation.guide",
+                self.dialogue_manager.vosk_installation_guide_response(
+                    guide.get_installation_summary()
+                ),
+            )
+        if command_id == "speech.backend.vosk.model.installation.guide":
+            return self._result(
+                "speech.backend.vosk.model.installation.guide",
+                self._vosk_model_installation_guidance_response(),
+            )
+        if command_id == "speech.backend.vosk.compatibility":
+            guide = self._get_vosk_installation_guide()
+            return self._result(
+                "speech.backend.vosk.compatibility",
+                self.dialogue_manager.vosk_python_compatibility_response(
+                    guide.get_python_version_status()
+                ),
+            )
+        if command_id == "speech.backend.vosk.model.guide":
+            guide = self._get_vosk_installation_guide()
+            return self._result(
+                "speech.backend.vosk.model.guide",
+                self.dialogue_manager.vosk_model_download_guidance_response(
+                    guide.get_recommended_model(),
+                    guide.get_model_download_guidance(),
+                ),
+            )
+        if command_id == "speech.backend.vosk.enablement.plan":
+            guide = self._get_vosk_installation_guide()
+            return self._result(
+                "speech.backend.vosk.enablement.plan",
+                self.dialogue_manager.vosk_safe_enablement_response(
+                    guide.get_safe_enablement_steps()
+                ),
+            )
+        if command_id == "speech.backend.vosk.risks":
+            guide = self._get_vosk_installation_guide()
+            return self._result(
+                "speech.backend.vosk.risks",
+                self.dialogue_manager.vosk_runtime_risks_response(
+                    guide.get_runtime_risks()
+                ),
+            )
+        if command_id == "speech.backend.vosk.preflight":
+            preflight = self._get_vosk_preflight()
+            return self._result(
+                "speech.backend.vosk.preflight",
+                self.dialogue_manager.vosk_preflight_response(preflight),
+            )
+        if command_id == "speech.backend.vosk.requirements":
+            preflight = self._get_vosk_preflight()
+            return self._result(
+                "speech.backend.vosk.requirements",
+                self.dialogue_manager.vosk_missing_requirements_response(
+                    preflight["missing_requirements"]
+                ),
+            )
+        if command_id == "speech.backend.vosk.model.status":
+            readiness = self._get_vosk_model_readiness()
+            return self._result(
+                "speech.backend.vosk.model.status",
+                self._vosk_model_readiness_response(readiness),
+            )
+        if command_id == "speech.backend.vosk.model.path.status":
+            status = self._get_vosk_model_status()
+            return self._result(
+                "speech.backend.vosk.model.path.status",
+                self._vosk_model_path_status_response(status),
+            )
+        if command_id == "speech.backend.vosk.settings":
+            status = self._get_vosk_model_status()
+            return self._result(
+                "speech.backend.vosk.settings",
+                self.dialogue_manager.vosk_settings_response(status),
+            )
+        if command_id == "speech.backend.vosk.language.status":
+            status = self._get_vosk_model_status()
+            return self._result(
+                "speech.backend.vosk.language.status",
+                self.dialogue_manager.vosk_language_status_response(
+                    status.get("language", "ru")
+                ),
+            )
+        if command_id == "voice.output.dry_run.enabled":
+            result = self.voice_output_manager.enable_dry_run()
+            return self._result("voice.output.dry_run.enabled", result["message"])
+        if command_id == "voice.output.windows_local.enable":
+            result = self.voice_output_manager.enable_windows_local()
+            intent = (
+                "voice.output.windows_local.enabled"
+                if result["enabled"]
+                else "voice.output.windows_local.unavailable"
+            )
+            return self._result(intent, result["message"])
+        if command_id == "voice.output.disable":
+            result = self.voice_output_manager.disable()
+            response = result["message"]
+            if self.voice_dialogue_mode_manager.is_manual_enabled():
+                self.voice_dialogue_mode_manager.disable()
+                response = (
+                    "Голосовой ответ отключён.\n"
+                    "Голосовой диалог также отключён."
+                )
+            return self._result("voice.output.disabled", response)
+        if command_id == "voice.output.safety.mute":
+            self.voice_output_manager.safety_controller.request_stop()
+            self.voice_dialogue_mode_manager.disable()
+            return self._result(
+                "voice.output.safety.muted",
+                (
+                    "Голосовая озвучка остановлена для следующих ответов.\n"
+                    "Тихий режим: включён.\n"
+                    "Голосовой диалог отключён.\n"
+                    "Примечание: уже запущенная синхронная речь Windows может завершиться сама; "
+                    "мгновенное прерывание будет отдельным этапом."
+                ),
+                speakable=False,
+                allow_manual_dialogue=False,
+            )
+        if command_id == "voice.output.safety.unmute":
+            self.voice_output_manager.safety_controller.unmute()
+            return self._result(
+                "voice.output.safety.unmuted",
+                (
+                    "Тихий режим отключён.\n"
+                    "Голосовая озвучка снова разрешена.\n"
+                    "Чтобы JARVIS озвучивал текущие ответы, включите голосовой диалог отдельно."
+                ),
+                speakable=False,
+            )
+        if command_id == "voice.output.safety.skip_next":
+            self.voice_output_manager.safety_controller.skip_next_speech()
+            return self._result(
+                "voice.output.safety.skip_next",
+                (
+                    "Следующая голосовая озвучка будет пропущена.\n"
+                    "После этого обычные настройки голоса сохранятся."
+                ),
+                speakable=False,
+            )
+        if command_id == "voice.status":
+            return self._result(
+                "voice.status",
+                self.dialogue_manager.voice_not_real_microphone_response(),
+            )
+        if command_id == "voice.cycle.status":
+            from voice.voice_command_index import VoiceCommandIndex
+
+            return self._result(
+                "voice.cycle.status",
+                VoiceCommandIndex.get_voice_cycle_summary(),
+                speakable=False,
+            )
+        if command_id == "voice.cycle.command_map":
+            from voice.voice_command_index import VoiceCommandIndex
+
+            return self._result(
+                "voice.cycle.command_map",
+                VoiceCommandIndex.get_voice_command_map(),
+                speakable=False,
+            )
+        if command_id == "microphone.mode.status":
+            return self._microphone_mode_status_result()
+        if command_id in {
+            "microphone.mode.off",
+            "microphone.mode.partial",
+            "microphone.mode.continuous",
+        }:
+            return self._set_microphone_mode_result(command_id, args["mode"])
+        if command_id == "microphone.status":
+            return self._microphone_result(
+                "microphone.status",
+                "microphone_status",
+            )
+        if command_id == "microphone.listen.once":
+            return self._microphone_result(
+                "microphone.listen.once",
+                "listen_once_from_microphone",
+            )
+        if command_id == "assistant.identity":
+            return self._result(
+                "assistant.identity",
+                self._assistant_name_response(),
+            )
+        if command_id == "assistant.name.set":
+            return self._change_assistant_name(args["assistant_name"])
+        if command_id == "assistant.name.reset":
+            return self._reset_assistant_name()
+        if command_id == "user.profile":
+            return self._result(
+                "user.profile",
+                self.dialogue_manager.profile_response(),
+            )
+        if command_id == "system.version":
+            status = self.system_status_provider()
+            return self._result(
+                "system.version",
+                self.dialogue_manager.version_response(status["version"]),
+            )
+        if command_id == "system.services":
+            status = self.system_status_provider()
+            return self._result(
+                "system.services",
+                self.dialogue_manager.services_response(status["services"]),
+            )
+        if command_id == "secure_keys.status":
+            return self._result(
+                "secure_keys.status",
+                self.api_key_manager.status_text_ru(),
+                speakable=False,
+            )
+        if command_id == "secure_keys.list":
+            return self._result(
+                "secure_keys.list",
+                self.api_key_manager.list_text_ru(),
+                speakable=False,
+            )
+        if command_id == "secure_keys.help":
+            return self._result(
+                "secure_keys.help",
+                self.api_key_manager.safe_help_text_ru(),
+                speakable=False,
+            )
+        if command_id == "ai.provider_runtime.status":
+            return self._result(
+                "ai.provider_runtime.status",
+                self.secure_provider_runtime.status_text_ru(),
+                speakable=False,
+            )
+        if command_id == "ai.provider_runtime.credentials":
+            return self._result(
+                "ai.provider_runtime.credentials",
+                self.secure_provider_runtime.status_text_ru(),
+                speakable=False,
+            )
+        if command_id == "ai.key_check":
+            return self._result(
+                "ai.key_check",
+                self.ai_provider_config_manager.check_provider_key_text_ru(
+                    args["provider"]
+                ),
+            )
         if command_id == "command_registry.category":
             return self._result(
                 "command_registry.category",

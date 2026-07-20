@@ -289,7 +289,155 @@ class CommandResolutionService:
             "idea.count": ("idea_count", "ideas"),
             "profile.language.status": ("language_status", "profile"),
             "profile.language.reset": ("language_reset", "profile"),
+            "voice.status": ("voice_status", "voice"),
+            "voice.cycle.status": ("voice_cycle_status", "voice"),
+            "voice.cycle.command_map": ("voice_command_map", "voice"),
+            "voice.output.status": ("voice_output_status", "voice"),
+            "voice.output.dry_run.enabled": ("voice_output_dry_run_enable", "voice"),
+            "voice.output.local.status": ("voice_output_local_status", "voice"),
+            "voice.output.windows_local.enable": ("voice_output_local_enable", "voice"),
+            "voice.output.disable": ("voice_output_disable", "voice"),
+            "voice.output.safety.mute": ("voice_output_mute", "voice"),
+            "voice.output.safety.unmute": ("voice_output_unmute", "voice"),
+            "voice.output.safety.skip_next": ("voice_output_skip_next", "voice"),
+            "voice.output.safety.status": ("voice_output_safety_status", "voice"),
+            "voice.output.capabilities": ("voice_output_capabilities", "voice"),
+            "speech.backend.status": ("speech_backend_status", "voice"),
+            "speech.backend.explain": ("speech_backend_explain", "voice"),
+            "speech.backend.options": ("speech_backend_options", "voice"),
+            "voice.audio_dependencies.status": ("audio_dependency_readiness", "voice"),
+            "speech.backend.vosk.status": ("vosk_backend_status", "voice"),
+            "speech.backend.vosk.plan": ("vosk_backend_plan", "voice"),
+            "speech.backend.vosk.recognition.status": ("vosk_recognition_status", "voice"),
+            "speech.backend.vosk.recognition.dry_run": (
+                "vosk_recognition_dry_run",
+                "voice",
+            ),
+            "speech.backend.vosk.runtime.status": ("vosk_runtime_status", "voice"),
+            "speech.backend.vosk.runtime.blockers": ("vosk_runtime_blockers", "voice"),
+            "speech.backend.vosk.runtime.safety": ("vosk_runtime_safety", "voice"),
+            "speech.backend.vosk.runtime.prepare.stub": (
+                "vosk_runtime_prepare",
+                "voice",
+            ),
+            "speech.backend.vosk.runtime.recognition.disabled": (
+                "vosk_runtime_recognize",
+                "voice",
+            ),
+            "speech.backend.vosk.installation.guide": (
+                "vosk_installation_guide",
+                "voice",
+            ),
+            "speech.backend.vosk.model.installation.guide": (
+                "vosk_model_installation_guide",
+                "voice",
+            ),
+            "speech.backend.vosk.compatibility": (
+                "vosk_python_compatibility",
+                "voice",
+            ),
+            "speech.backend.vosk.model.guide": ("vosk_model_guide", "voice"),
+            "speech.backend.vosk.enablement.plan": ("vosk_safe_enablement", "voice"),
+            "speech.backend.vosk.risks": ("vosk_risks", "voice"),
+            "speech.backend.vosk.preflight": ("vosk_preflight", "voice"),
+            "speech.backend.vosk.requirements": (
+                "vosk_missing_requirements",
+                "voice",
+            ),
+            "speech.backend.vosk.model.status": ("vosk_model_status", "voice"),
+            "speech.backend.vosk.model.path.status": (
+                "vosk_model_path_status",
+                "voice",
+            ),
+            "speech.backend.vosk.settings": ("vosk_settings", "voice"),
+            "speech.backend.vosk.language.status": ("vosk_language_status", "voice"),
+            "speech.backend.vosk.one_shot_bridge": ("one_shot_vosk_bridge", "voice"),
+            "speech.backend.vosk.one_shot_real_recognition": (
+                "one_shot_vosk_real_recognition",
+                "voice",
+            ),
+            "microphone.status": ("microphone_adapter_status", "voice"),
+            "microphone.mode.status": ("microphone_status", "voice"),
+            "microphone.listen.once": ("microphone_listen_once", "voice"),
+            "assistant.identity": ("assistant_identity", "assistant"),
+            "assistant.name.reset": ("assistant_name_reset", "assistant"),
+            "user.profile": ("profile_status", "profile"),
+            "system.version": ("system_version", "system"),
+            "system.services": ("system_services", "system"),
+            "ai.status": ("ai_status", "ai"),
+            "ai.language_policy.status": ("ai_language_policy_status", "ai"),
+            "ai.consensus.status": ("ai_consensus_status", "ai"),
+            "ai.selection_policy.status": ("ai_selection_policy_status", "ai"),
+            "ai.selection_policy.matrix": ("ai_selection_policy_matrix", "ai"),
+            "ai.fallback_execution.status": ("ai_fallback_execution_status", "ai"),
+            "ai.live_verification.status": ("ai_live_verification_status", "ai"),
+            "ai.live_verification.checklist": (
+                "ai_live_verification_checklist",
+                "ai",
+            ),
+            "ai.live_verification.no_key": ("ai_live_verification_no_key", "ai"),
+            "ai.live_verification.privacy": ("ai_live_verification_privacy", "ai"),
+            "ai.live_verification.ollama_local": (
+                "ai_live_verification_local",
+                "ai",
+            ),
+            "ai.live_verification.readiness": (
+                "ai_live_verification_readiness",
+                "ai",
+            ),
+            "ai.context_privacy.status": ("ai_context_privacy_status", "ai"),
+            "ai.context_privacy.matrix": ("ai_context_privacy_matrix", "ai"),
+            "ai.session.status": ("ai_session_status", "ai"),
+            "ai.session.models": ("ai_session_model_list", "ai"),
+            "ai.openai.status": ("openai_status", "ai"),
+            "ai.openai.one_shot.status": ("openai_one_shot_status", "ai"),
+            "ai.openai.guard.status": ("openai_guard_status", "ai"),
+            "ai.openai.model": ("openai_model", "ai"),
+            "ai.gemini.status": ("gemini_status", "ai"),
+            "ai.gemini.guard.status": ("gemini_guard_status", "ai"),
+            "ai.gemini.model": ("gemini_model", "ai"),
+            "ai.groq.status": ("groq_status", "ai"),
+            "ai.groq.request_shape": ("groq_request_shape", "ai"),
+            "ai.groq.guard.status": ("groq_guard_status", "ai"),
+            "ai.groq.model": ("groq_model", "ai"),
+            "ai.gigachat.status": ("gigachat_status", "ai"),
+            "ai.gigachat.request_shape": ("gigachat_request_shape", "ai"),
+            "ai.gigachat.guard.status": ("gigachat_guard_status", "ai"),
+            "ai.gigachat.token.status": ("gigachat_token_status", "ai"),
+            "ai.gigachat.model": ("gigachat_model", "ai"),
+            "ai.ollama.status": ("ollama_status", "ai"),
+            "ai.ollama.runtime": ("ollama_runtime", "ai"),
+            "ai.ollama.models": ("ollama_model_list", "ai"),
+            "ai.ollama.model": ("ollama_model", "ai"),
+            "ai.providers": ("ai_provider_list", "ai"),
+            "ai.config.status": ("ai_config_status", "ai"),
+            "ai.config.providers": ("ai_provider_config_list", "ai"),
+            "ai.key_safety": ("ai_key_safety_help", "ai"),
+            "ai.provider_runtime.status": ("provider_runtime_status", "provider_runtime"),
+            "ai.provider_runtime.credentials": (
+                "provider_runtime_list",
+                "provider_runtime",
+            ),
+            "secure_keys.status": ("secure_key_status", "secure_keys"),
+            "secure_keys.list": ("secure_key_list", "secure_keys"),
+            "secure_keys.help": ("secure_key_help", "secure_keys"),
         }
+        for command_id, group_name, category in (
+            ("secure_keys.status", "secure_key_status", "secure_keys"),
+            ("secure_keys.list", "secure_key_list", "secure_keys"),
+            ("secure_keys.help", "secure_key_help", "secure_keys"),
+            ("voice.output.status", "voice_output_status", "voice"),
+        ):
+            if normalized in self._set(group_name):
+                return self._resolved(
+                    original,
+                    normalized,
+                    command_id,
+                    category,
+                    "exact_command_group",
+                    {},
+                )
+
         for command_id, (group_name, category) in exact_groups.items():
             if normalized in self._set(group_name):
                 return self._resolved(
@@ -332,6 +480,49 @@ class CommandResolutionService:
                 "profile",
                 "exact_command_group",
                 {"language": language},
+            )
+
+        microphone_mode_groups = (
+            ("microphone_mode_off", "off"),
+            ("microphone_mode_partial", "partial"),
+            ("microphone_mode_continuous", "continuous"),
+            ("microphone_mode_disable_continuous", "off"),
+        )
+        for group_name, mode in microphone_mode_groups:
+            if normalized in self._set(group_name):
+                return self._resolved(
+                    original,
+                    normalized,
+                    f"microphone.mode.{mode}",
+                    "voice",
+                    "exact_command_group",
+                    {"mode": mode},
+                )
+
+        provider_name = self._dict("ai_provider_key_check").get(normalized)
+        if provider_name is not None:
+            return self._resolved(
+                original,
+                normalized,
+                "ai.key_check",
+                "ai",
+                "exact_command_group",
+                {"provider": provider_name},
+            )
+
+        assistant_name = self._extract_prefixed_text_from_original(
+            original,
+            normalized,
+            self._tuple("assistant_name_change"),
+        )
+        if assistant_name is not None:
+            return self._resolved(
+                original,
+                normalized,
+                "assistant.name.set",
+                "assistant",
+                "prefix_command_group",
+                {"assistant_name": assistant_name},
             )
 
         prefixed = (
@@ -521,6 +712,20 @@ class CommandResolutionService:
                 return command[len(prefix) :].strip()
             if command.startswith(prefix + " "):
                 return command[len(prefix) :].strip()
+        return None
+
+    @staticmethod
+    def _extract_prefixed_text_from_original(
+        original: str,
+        normalized: str,
+        prefixes: tuple[str, ...],
+    ) -> str | None:
+        original_text = str(original).strip()
+        for prefix in prefixes:
+            if normalized == prefix:
+                return ""
+            if normalized.startswith(prefix + " "):
+                return original_text[len(prefix) :].strip()
         return None
 
     @staticmethod

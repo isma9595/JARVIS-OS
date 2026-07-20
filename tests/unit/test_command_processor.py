@@ -5324,6 +5324,174 @@ TASK094_EXTRACTED_ATTRIBUTE_GROUPS = {
     "memory_search": "MEMORY_SEARCH_PREFIXES",
 }
 
+TASK095_EXTRACTED_ATTRIBUTE_GROUPS = {
+    "voice_status": "VOICE_STATUS_COMMANDS",
+    "voice_cycle_status": "VOICE_CYCLE_STATUS_COMMANDS",
+    "voice_command_map": "VOICE_COMMAND_MAP_COMMANDS",
+    "voice_output_status": "VOICE_OUTPUT_STATUS_COMMANDS",
+    "voice_output_dry_run_enable": "VOICE_OUTPUT_DRY_RUN_ENABLE_COMMANDS",
+    "voice_output_local_status": "VOICE_OUTPUT_LOCAL_STATUS_COMMANDS",
+    "voice_output_local_enable": "VOICE_OUTPUT_LOCAL_ENABLE_COMMANDS",
+    "voice_output_disable": "VOICE_OUTPUT_DISABLE_COMMANDS",
+    "voice_output_mute": "VOICE_OUTPUT_MUTE_COMMANDS",
+    "voice_output_unmute": "VOICE_OUTPUT_UNMUTE_COMMANDS",
+    "voice_output_skip_next": "VOICE_OUTPUT_SKIP_NEXT_COMMANDS",
+    "voice_output_safety_status": "VOICE_OUTPUT_SAFETY_STATUS_COMMANDS",
+    "voice_output_capabilities": "VOICE_OUTPUT_CAPABILITIES_COMMANDS",
+    "speech_backend_status": "SPEECH_BACKEND_STATUS_COMMANDS",
+    "speech_backend_explain": "SPEECH_BACKEND_EXPLAIN_COMMANDS",
+    "speech_backend_options": "SPEECH_BACKEND_OPTIONS_COMMANDS",
+    "audio_dependency_readiness": "AUDIO_DEPENDENCY_READINESS_COMMANDS",
+    "vosk_backend_status": "VOSK_BACKEND_STATUS_COMMANDS",
+    "vosk_backend_plan": "VOSK_BACKEND_PLAN_COMMANDS",
+    "vosk_recognition_status": "VOSK_RECOGNITION_STATUS_COMMANDS",
+    "vosk_recognition_dry_run": "VOSK_RECOGNITION_DRY_RUN_COMMANDS",
+    "vosk_runtime_status": "VOSK_RUNTIME_STATUS_COMMANDS",
+    "vosk_runtime_blockers": "VOSK_RUNTIME_BLOCKERS_COMMANDS",
+    "vosk_runtime_safety": "VOSK_RUNTIME_SAFETY_COMMANDS",
+    "vosk_runtime_prepare": "VOSK_RUNTIME_PREPARE_COMMANDS",
+    "vosk_runtime_recognize": "VOSK_RUNTIME_RECOGNIZE_COMMANDS",
+    "vosk_installation_guide": "VOSK_INSTALLATION_GUIDE_COMMANDS",
+    "vosk_model_installation_guide": "VOSK_MODEL_INSTALLATION_GUIDE_COMMANDS",
+    "vosk_python_compatibility": "VOSK_PYTHON_COMPATIBILITY_COMMANDS",
+    "vosk_model_guide": "VOSK_MODEL_GUIDE_COMMANDS",
+    "vosk_safe_enablement": "VOSK_SAFE_ENABLEMENT_COMMANDS",
+    "vosk_risks": "VOSK_RISKS_COMMANDS",
+    "vosk_preflight": "VOSK_PREFLIGHT_COMMANDS",
+    "vosk_missing_requirements": "VOSK_MISSING_REQUIREMENTS_COMMANDS",
+    "vosk_model_status": "VOSK_MODEL_STATUS_COMMANDS",
+    "vosk_model_path_status": "VOSK_MODEL_PATH_STATUS_COMMANDS",
+    "vosk_settings": "VOSK_SETTINGS_COMMANDS",
+    "vosk_language_status": "VOSK_LANGUAGE_STATUS_COMMANDS",
+    "one_shot_vosk_bridge": "ONE_SHOT_VOSK_BRIDGE_COMMANDS",
+    "one_shot_vosk_real_recognition": "ONE_SHOT_VOSK_REAL_RECOGNITION_COMMANDS",
+    "microphone_status": "MICROPHONE_STATUS_COMMANDS",
+    "microphone_adapter_status": "MICROPHONE_ADAPTER_STATUS_COMMANDS",
+    "microphone_mode_off": "MICROPHONE_MODE_OFF_COMMANDS",
+    "microphone_mode_partial": "MICROPHONE_MODE_PARTIAL_COMMANDS",
+    "microphone_mode_continuous": "MICROPHONE_MODE_CONTINUOUS_COMMANDS",
+    "microphone_mode_disable_continuous": "MICROPHONE_MODE_DISABLE_CONTINUOUS_COMMANDS",
+    "microphone_listen_once": "MICROPHONE_LISTEN_ONCE_COMMANDS",
+    "assistant_identity": "ASSISTANT_IDENTITY_COMMANDS",
+    "assistant_name_reset": "ASSISTANT_NAME_RESET_COMMANDS",
+    "assistant_name_change": "ASSISTANT_NAME_CHANGE_PREFIXES",
+    "profile_status": "PROFILE_COMMANDS",
+    "system_version": "VERSION_COMMANDS",
+    "system_services": "SYSTEM_SERVICES_COMMANDS",
+    "ai_status": "AI_STATUS_COMMANDS",
+    "ai_language_policy_status": "AI_LANGUAGE_POLICY_STATUS_COMMANDS",
+    "ai_consensus_status": "AI_CONSENSUS_STATUS_COMMANDS",
+    "ai_selection_policy_status": "AI_SELECTION_POLICY_STATUS_COMMANDS",
+    "ai_selection_policy_matrix": "AI_SELECTION_POLICY_MATRIX_COMMANDS",
+    "ai_fallback_execution_status": "AI_FALLBACK_EXECUTION_STATUS_COMMANDS",
+    "ai_live_verification_status": "AI_LIVE_VERIFICATION_STATUS_COMMANDS",
+    "ai_live_verification_checklist": "AI_LIVE_VERIFICATION_CHECKLIST_COMMANDS",
+    "ai_live_verification_no_key": "AI_LIVE_VERIFICATION_NO_KEY_COMMANDS",
+    "ai_live_verification_privacy": "AI_LIVE_VERIFICATION_PRIVACY_COMMANDS",
+    "ai_live_verification_local": "AI_LIVE_VERIFICATION_LOCAL_COMMANDS",
+    "ai_live_verification_readiness": "AI_LIVE_VERIFICATION_READINESS_COMMANDS",
+    "ai_context_privacy_status": "AI_CONTEXT_PRIVACY_STATUS_COMMANDS",
+    "ai_context_privacy_matrix": "AI_CONTEXT_PRIVACY_MATRIX_COMMANDS",
+    "ai_session_status": "AI_SESSION_STATUS_COMMANDS",
+    "ai_session_model_list": "AI_SESSION_MODEL_LIST_COMMANDS",
+    "openai_status": "OPENAI_STATUS_COMMANDS",
+    "openai_one_shot_status": "OPENAI_ONE_SHOT_STATUS_COMMANDS",
+    "openai_guard_status": "OPENAI_GUARD_STATUS_COMMANDS",
+    "openai_model": "OPENAI_MODEL_COMMANDS",
+    "gemini_status": "GEMINI_STATUS_COMMANDS",
+    "gemini_guard_status": "GEMINI_GUARD_STATUS_COMMANDS",
+    "gemini_model": "GEMINI_MODEL_COMMANDS",
+    "groq_status": "GROQ_STATUS_COMMANDS",
+    "groq_request_shape": "GROQ_REQUEST_SHAPE_COMMANDS",
+    "groq_guard_status": "GROQ_GUARD_STATUS_COMMANDS",
+    "groq_model": "GROQ_MODEL_COMMANDS",
+    "gigachat_status": "GIGACHAT_STATUS_COMMANDS",
+    "gigachat_request_shape": "GIGACHAT_REQUEST_SHAPE_COMMANDS",
+    "gigachat_guard_status": "GIGACHAT_GUARD_STATUS_COMMANDS",
+    "gigachat_token_status": "GIGACHAT_TOKEN_STATUS_COMMANDS",
+    "gigachat_model": "GIGACHAT_MODEL_COMMANDS",
+    "ollama_status": "OLLAMA_STATUS_COMMANDS",
+    "ollama_runtime": "OLLAMA_RUNTIME_COMMANDS",
+    "ollama_model_list": "OLLAMA_MODEL_LIST_COMMANDS",
+    "ollama_model": "OLLAMA_MODEL_COMMANDS",
+    "ai_provider_list": "AI_PROVIDER_LIST_COMMANDS",
+    "ai_config_status": "AI_CONFIG_STATUS_COMMANDS",
+    "ai_provider_config_list": "AI_PROVIDER_CONFIG_LIST_COMMANDS",
+    "ai_key_safety_help": "AI_KEY_SAFETY_HELP_COMMANDS",
+    "ai_provider_key_check": "AI_PROVIDER_KEY_CHECK_COMMANDS",
+    "provider_runtime_status": "PROVIDER_RUNTIME_STATUS_COMMANDS",
+    "provider_runtime_list": "PROVIDER_RUNTIME_LIST_COMMANDS",
+    "secure_key_status": "SECURE_KEY_STATUS_COMMANDS",
+    "secure_key_list": "SECURE_KEY_LIST_COMMANDS",
+    "secure_key_help": "SECURE_KEY_HELP_COMMANDS",
+}
+
+
+def test_task095_process_has_no_extracted_source_attribute_references():
+    import ast
+    import inspect
+
+    source = inspect.getsource(CommandProcessor)
+    module = ast.parse(source)
+    processor_class = module.body[0]
+    process = next(
+        node
+        for node in processor_class.body
+        if isinstance(node, ast.FunctionDef) and node.name == "process"
+    )
+    extracted_attributes = set(TASK095_EXTRACTED_ATTRIBUTE_GROUPS.values())
+
+    found = sorted(
+        {
+            node.attr
+            for node in ast.walk(process)
+            if isinstance(node, ast.Attribute)
+            and isinstance(node.value, ast.Name)
+            and node.value.id == "self"
+            and node.attr in extracted_attributes
+        }
+    )
+
+    assert found == []
+
+
+def test_task095_process_keeps_explicit_legacy_processing_families():
+    import ast
+    import inspect
+
+    source = inspect.getsource(CommandProcessor)
+    module = ast.parse(source)
+    processor_class = module.body[0]
+    process = next(
+        node
+        for node in processor_class.body
+        if isinstance(node, ast.FunctionDef) and node.name == "process"
+    )
+    referenced_attributes = {
+        node.attr
+        for node in ast.walk(process)
+        if isinstance(node, ast.Attribute)
+        and isinstance(node.value, ast.Name)
+        and node.value.id == "self"
+    }
+    called_methods = {
+        node.func.attr
+        for node in ast.walk(process)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and isinstance(node.func.value, ast.Name)
+        and node.func.value.id == "self"
+    }
+
+    assert "VOICE_CONFIRMATION_COMMANDS" in referenced_attributes
+    assert "VOICE_CANCELLATION_COMMANDS" in referenced_attributes
+    assert "GREETING_COMMANDS" in referenced_attributes
+    assert "VOSK_BACKEND_SELECT_COMMANDS" in referenced_attributes
+    assert "MICROPHONE_LISTEN_STOP_COMMANDS" in referenced_attributes
+    assert "AI_SESSION_SELECT_PREFIXES" in referenced_attributes
+    assert "SECURE_KEY_IMPORT_COMMANDS" in referenced_attributes
+    assert "_route_result" in called_methods
+
 
 def test_task094_extracted_attributes_do_not_overlap_generated_legacy_catalogs():
     from core.command_resolution_service import (
@@ -5387,6 +5555,71 @@ def test_task094_extracted_attributes_do_not_overlap_generated_legacy_catalogs()
         == CommandResolutionStatus.LEGACY_PASSTHROUGH
     )
     assert unknown_resolution.resolution_status == CommandResolutionStatus.UNKNOWN
+
+
+def test_task095_extracted_attributes_do_not_overlap_generated_legacy_catalogs():
+    from core.command_resolution_service import CommandResolutionService, CommandResolutionStatus
+
+    processor = CommandProcessor(sample_profile())
+    groups = processor._command_resolution_groups()
+    legacy_exact = set(groups["legacy_passthrough_exact"])
+    legacy_mapping = set(groups["legacy_passthrough_mapping"])
+    legacy_prefix = set(groups["legacy_passthrough_prefix"])
+    extracted_exact_overlap = set()
+    extracted_mapping_overlap = set()
+    extracted_prefix_overlap = set()
+
+    for attribute_name in TASK095_EXTRACTED_ATTRIBUTE_GROUPS.values():
+        extracted_group = getattr(processor, attribute_name)
+        if attribute_name.endswith("_PREFIXES"):
+            extracted_prefix_overlap.update(set(extracted_group) & legacy_prefix)
+        elif isinstance(extracted_group, dict):
+            extracted_mapping_overlap.update(set(extracted_group) & legacy_mapping)
+        elif isinstance(extracted_group, (set, frozenset, tuple, list)):
+            extracted_exact_overlap.update(set(extracted_group) & legacy_exact)
+
+    assert extracted_exact_overlap == set()
+    assert extracted_mapping_overlap == set()
+    assert extracted_prefix_overlap == set()
+
+    vosk_alias = next(iter(processor.VOSK_RECOGNITION_STATUS_COMMANDS))
+    microphone_alias = next(iter(processor.MICROPHONE_MODE_OFF_COMMANDS))
+    tts_alias = next(iter(processor.VOICE_OUTPUT_LOCAL_STATUS_COMMANDS))
+    assistant_prefix = processor.ASSISTANT_NAME_CHANGE_PREFIXES[0]
+    profile_alias = next(iter(processor.PROFILE_COMMANDS))
+    version_alias = next(iter(processor.VERSION_COMMANDS))
+    services_alias = next(iter(processor.SYSTEM_SERVICES_COMMANDS))
+    provider_alias = next(iter(processor.AI_PROVIDER_KEY_CHECK_COMMANDS))
+    secure_key_alias = next(iter(processor.SECURE_KEY_STATUS_COMMANDS))
+
+    assert vosk_alias not in legacy_exact
+    assert microphone_alias not in legacy_exact
+    assert tts_alias not in legacy_exact
+    assert assistant_prefix not in legacy_prefix
+    assert profile_alias not in legacy_exact
+    assert version_alias not in legacy_exact
+    assert services_alias not in legacy_exact
+    assert provider_alias not in legacy_mapping
+    assert secure_key_alias not in legacy_exact
+
+    service = CommandResolutionService(
+        command_registry=processor.command_registry,
+        command_groups=groups,
+    )
+    assert service.resolve(vosk_alias).command_id == "speech.backend.vosk.recognition.status"
+    assert service.resolve(microphone_alias).safe_args == {"mode": "off"}
+    assert service.resolve(tts_alias).command_id == "voice.output.local.status"
+    assert service.resolve(f"{assistant_prefix} TASK095").safe_args == {
+        "assistant_name": "TASK095"
+    }
+    assert service.resolve(profile_alias).command_id == "user.profile"
+    assert service.resolve(version_alias).command_id == "system.version"
+    assert service.resolve(services_alias).command_id == "system.services"
+    provider_resolution = service.resolve(provider_alias)
+    assert provider_resolution.resolution_status == CommandResolutionStatus.RESOLVED
+    assert provider_resolution.command_id == "ai.key_check"
+    assert "provider" in provider_resolution.safe_args
+    assert service.resolve(secure_key_alias).command_id == "secure_keys.status"
 
 
 class SpyCommandResolutionService:
@@ -5544,6 +5777,459 @@ def test_provider_runtime_provider_status_uses_extracted_dispatch_once():
     assert result["intent"] == "ai.provider_runtime.provider_status"
     assert result["response"] == "provider=groq"
     assert runtime.providers == ["groq"]
+
+
+def test_task095_voice_vosk_status_dispatches_by_command_id_not_text():
+    class VoiceInput:
+        calls = 0
+
+        def get_vosk_backend_status(self):
+            self.calls += 1
+            return {"name": "vosk_local", "available": False, "supports_offline": True}
+
+    voice_input = VoiceInput()
+    resolution = make_resolution(
+        text="vosk status delegated",
+        normalized_text="not a vosk alias",
+        command_id="speech.backend.vosk.status",
+    )
+    resolver = SpyCommandResolutionService(resolution)
+    processor = CommandProcessor(sample_profile(), command_resolution_service=resolver)
+    processor.voice_input_manager = voice_input
+
+    result = processor.process("vosk status delegated")
+
+    assert resolver.calls == [("vosk status delegated", None)]
+    assert result["intent"] == "speech.backend.vosk.status"
+    assert voice_input.calls == 1
+
+
+def test_task095_microphone_mode_set_dispatches_with_safe_args_not_text():
+    resolution = make_resolution(
+        text="mic mode delegated",
+        normalized_text="not a microphone alias",
+        command_id="microphone.mode.partial",
+        safe_args={"mode": "partial"},
+    )
+    resolver = SpyCommandResolutionService(resolution)
+    processor = CommandProcessor(sample_profile(), command_resolution_service=resolver)
+
+    result = processor.process("mic mode delegated")
+
+    assert resolver.calls == [("mic mode delegated", None)]
+    assert result["intent"] == "microphone.mode.partial"
+    assert processor.microphone_listening_mode_manager.get_mode() == "partial"
+
+
+def test_task095_tts_status_dispatches_by_command_id_not_text():
+    resolution = make_resolution(
+        text="tts delegated",
+        normalized_text="not a voice output alias",
+        command_id="voice.output.status",
+    )
+    resolver = SpyCommandResolutionService(resolution)
+    processor = CommandProcessor(sample_profile(), command_resolution_service=resolver)
+
+    result = processor.process("tts delegated")
+
+    assert resolver.calls == [("tts delegated", None)]
+    assert result["intent"] == "voice.output.status"
+
+
+def test_task095_assistant_name_set_dispatches_with_safe_args_not_text():
+    resolution = make_resolution(
+        text="assistant name delegated",
+        normalized_text="not an assistant name alias",
+        command_id="assistant.name.set",
+        safe_args={"assistant_name": "TASK095"},
+    )
+    resolver = SpyCommandResolutionService(resolution)
+    processor = CommandProcessor(sample_profile(), command_resolution_service=resolver)
+
+    result = processor.process("assistant name delegated")
+
+    assert resolver.calls == [("assistant name delegated", None)]
+    assert result["intent"] == "assistant.name.changed"
+    assert processor.user_profile["assistant_name"] == "TASK095"
+
+
+def test_task095_profile_status_dispatches_by_command_id_not_text():
+    resolution = make_resolution(
+        text="profile delegated",
+        normalized_text="not a profile alias",
+        command_id="user.profile",
+    )
+    resolver = SpyCommandResolutionService(resolution)
+    processor = CommandProcessor(sample_profile(), command_resolution_service=resolver)
+
+    result = processor.process("profile delegated")
+
+    assert resolver.calls == [("profile delegated", None)]
+    assert result["intent"] == "user.profile"
+
+
+def test_task095_version_and_services_dispatch_by_command_id_not_text():
+    calls = []
+
+    def status_provider():
+        calls.append("status")
+        return {"version": "task095", "services": ["core"]}
+
+    version = make_resolution(
+        text="version delegated",
+        normalized_text="not a version alias",
+        command_id="system.version",
+    )
+    services = make_resolution(
+        text="services delegated",
+        normalized_text="not a services alias",
+        command_id="system.services",
+    )
+    version_resolver = SpyCommandResolutionService(version)
+    services_resolver = SpyCommandResolutionService(services)
+    processor = CommandProcessor(
+        sample_profile(),
+        system_status_provider=status_provider,
+        command_resolution_service=version_resolver,
+    )
+
+    version_result = processor.process("version delegated")
+    processor.command_resolution_service = services_resolver
+    services_result = processor.process("services delegated")
+
+    assert version_resolver.calls == [("version delegated", None)]
+    assert services_resolver.calls == [("services delegated", None)]
+    assert version_result["intent"] == "system.version"
+    assert services_result["intent"] == "system.services"
+    assert calls == ["status", "status"]
+
+
+def test_task095_provider_and_secure_key_dispatch_without_resolver_side_effects():
+    class ProviderConfig:
+        def __init__(self):
+            self.providers = []
+
+        def check_provider_key_text_ru(self, provider):
+            self.providers.append(provider)
+            return f"checked {provider}"
+
+    class ApiKeys:
+        calls = 0
+
+        def status_text_ru(self):
+            self.calls += 1
+            return "secure status"
+
+    provider_config = ProviderConfig()
+    api_keys = ApiKeys()
+    provider_resolution = make_resolution(
+        text="provider delegated",
+        normalized_text="not a provider key alias",
+        command_id="ai.key_check",
+        safe_args={"provider": "groq"},
+    )
+    secure_resolution = make_resolution(
+        text="secure delegated",
+        normalized_text="not a secure key alias",
+        command_id="secure_keys.status",
+    )
+    provider_resolver = SpyCommandResolutionService(provider_resolution)
+    secure_resolver = SpyCommandResolutionService(secure_resolution)
+    processor = CommandProcessor(
+        sample_profile(),
+        ai_provider_config_manager=provider_config,
+        api_key_manager=api_keys,
+        command_resolution_service=provider_resolver,
+    )
+
+    provider_result = processor.process("provider delegated")
+    processor.command_resolution_service = secure_resolver
+    secure_result = processor.process("secure delegated")
+
+    assert provider_resolver.calls == [("provider delegated", None)]
+    assert secure_resolver.calls == [("secure delegated", None)]
+    assert provider_result["intent"] == "ai.key_check"
+    assert secure_result["intent"] == "secure_keys.status"
+    assert provider_config.providers == ["groq"]
+    assert api_keys.calls == 1
+
+
+def test_task095_manual_smoke_routes_preserve_baseline_app_and_desktop_metadata():
+    from dataclasses import dataclass
+
+    from app.app_service import AppCommandSource, JarvisAppService
+    from app.desktop_shell import DesktopShellViewModel
+
+    @dataclass
+    class FakeDryRunResult:
+        success: bool = True
+        recognized_text: str = "safe Vosk dry-run result"
+        blockers: tuple = ()
+        warnings: tuple = ()
+        next_steps: tuple = ("manual smoke only",)
+
+    class FakeDryRun:
+        calls = 0
+
+        def run(self):
+            self.calls += 1
+            return FakeDryRunResult()
+
+    class FakeVoiceInput:
+        model_status_calls = 0
+
+        def get_vosk_model_status(self):
+            self.model_status_calls += 1
+            return {"model_path": None, "language": "ru"}
+
+        def get_vosk_backend_status(self):
+            self.model_status_calls += 1
+            return {
+                "model_path": None,
+                "language": "ru",
+                "name": "vosk_local",
+                "available": False,
+                "supports_offline": True,
+            }
+
+    class FakeMemory:
+        pass
+
+    def make_processor():
+        processor = CommandProcessor(
+            sample_profile(),
+            memory_manager=FakeMemory(),
+            system_status_provider=lambda: {
+                "version": "task095-test",
+                "state": "running",
+                "services": ["logger", "command_processor"],
+            },
+            vosk_recognition_dry_run=FakeDryRun(),
+        )
+        processor.voice_input_manager = FakeVoiceInput()
+        return processor
+
+    def desktop_fields(text):
+        service = JarvisAppService(
+            command_processor=make_processor(),
+            memory_manager=FakeMemory(),
+        )
+        output = DesktopShellViewModel(service).execute_command(text)
+        fields = {}
+        for line in output.splitlines():
+            for key in ("command id", "category", "risk"):
+                prefix = f"- {key}: "
+                if line.startswith(prefix):
+                    fields[key.replace(" ", "_")] = line[len(prefix) :]
+        return fields
+
+    cases = [
+        (
+            "тест распознавания",
+            "speech.backend.vosk.recognition.dry_run",
+            "speech.backend.vosk.recognition.dry_run",
+            None,
+            None,
+            None,
+            "none",
+            "unknown",
+            "unknown",
+        ),
+        (
+            "путь модели vosk",
+            "speech.backend.vosk.model.path.status",
+            "speech.backend.vosk.model.path.status",
+            None,
+            None,
+            None,
+            "none",
+            "unknown",
+            "unknown",
+        ),
+        (
+            "статус микрофона",
+            "microphone.mode.status",
+            "microphone.mode.status",
+            None,
+            None,
+            None,
+            "none",
+            "unknown",
+            "unknown",
+        ),
+        (
+            "профиль",
+            "user.profile",
+            "user.profile",
+            None,
+            None,
+            None,
+            "none",
+            "unknown",
+            "unknown",
+        ),
+        (
+            "версия",
+            "system.version",
+            "system.version",
+            None,
+            None,
+            None,
+            "none",
+            "unknown",
+            "unknown",
+        ),
+        (
+            "покажи сервисы",
+            "system.services",
+            "system.services",
+            None,
+            None,
+            None,
+            "none",
+            "unknown",
+            "unknown",
+        ),
+        (
+            "статус голосового ответа",
+            "voice.output.status",
+            "voice.output.status",
+            "voice.output_status",
+            "voice",
+            "read_only",
+            "voice.output_status",
+            "voice",
+            "read_only",
+        ),
+        (
+            "как тебя зовут",
+            "assistant.identity",
+            "assistant.identity",
+            "profile.assistant_name",
+            "profile",
+            "read_only",
+            "profile.assistant_name",
+            "profile",
+            "read_only",
+        ),
+    ]
+
+    for (
+        command_text,
+        resolver_command_id,
+        processor_intent,
+        app_command_id,
+        app_category,
+        app_risk,
+        desktop_command_id,
+        desktop_category,
+        desktop_risk,
+    ) in cases:
+        processor = make_processor()
+        resolution = processor.command_resolution_service.resolve(command_text)
+        processor_result = processor.process(command_text)
+        service = JarvisAppService(
+            command_processor=make_processor(),
+            memory_manager=FakeMemory(),
+        )
+        app_result = service.execute_command(command_text, AppCommandSource.TEST)
+        desktop = desktop_fields(command_text)
+
+        assert resolution.command_id == resolver_command_id
+        assert processor_result["intent"] == processor_intent
+        assert app_result.registry_match_id == app_command_id
+        assert app_result.category == app_category
+        assert app_result.risk_level == app_risk
+        assert desktop["command_id"] == desktop_command_id
+        assert desktop["category"] == desktop_category
+        assert desktop["risk"] == desktop_risk
+
+
+def test_task095_resolved_command_ids_have_processor_dispatch_paths():
+    import ast
+    import inspect
+    import textwrap
+    from core.command_resolution_service import CommandResolutionStatus
+
+    processor = CommandProcessor(sample_profile())
+    service = processor.command_resolution_service
+    command_ids = set()
+    for group_name, group_value in processor._command_resolution_groups().items():
+        if group_name.startswith("legacy_passthrough_"):
+            continue
+        if isinstance(group_value, dict):
+            samples = group_value.keys()
+        elif isinstance(group_value, tuple):
+            samples = (
+                f"{prefix} task095"
+                for prefix in group_value
+                if isinstance(prefix, str)
+            )
+        else:
+            samples = group_value
+        for sample in samples:
+            resolution = service.resolve(sample)
+            if resolution.resolution_status == CommandResolutionStatus.RESOLVED:
+                command_ids.add(resolution.command_id)
+
+    source = textwrap.dedent(inspect.getsource(CommandProcessor._command_resolution_result))
+    method = ast.parse(source).body[0]
+    dispatched = set()
+    for node in ast.walk(method):
+        if isinstance(node, ast.Compare) and len(node.ops) == 1:
+            if (
+                isinstance(node.left, ast.Name)
+                and node.left.id == "command_id"
+                and isinstance(node.ops[0], ast.Eq)
+                and isinstance(node.comparators[0], ast.Constant)
+                and isinstance(node.comparators[0].value, str)
+            ):
+                dispatched.add(node.comparators[0].value)
+            if (
+                isinstance(node.left, ast.Name)
+                and node.left.id == "command_id"
+                and isinstance(node.ops[0], ast.In)
+                and isinstance(node.comparators[0], (ast.Set, ast.Tuple, ast.List))
+            ):
+                dispatched.update(
+                    item.value
+                    for item in node.comparators[0].elts
+                    if isinstance(item, ast.Constant) and isinstance(item.value, str)
+                )
+        if isinstance(node, ast.Dict):
+            dispatched.update(
+                key.value
+                for key in node.keys
+                if isinstance(key, ast.Constant) and isinstance(key.value, str)
+            )
+
+    assert "microphone.mode.off" in command_ids
+    assert "microphone.mode.partial" in command_ids
+    assert "microphone.mode.continuous" in command_ids
+    assert command_ids - dispatched == set()
+
+
+def test_task095_microphone_mode_grouped_dispatch_handles_all_modes_by_command_id():
+    processor = CommandProcessor(sample_profile())
+
+    for command_id, mode in (
+        ("microphone.mode.off", "off"),
+        ("microphone.mode.partial", "partial"),
+        ("microphone.mode.continuous", "continuous"),
+    ):
+        processor.command_resolution_service = SpyCommandResolutionService(
+            make_resolution(
+                text=f"{command_id} delegated",
+                normalized_text=f"not {command_id} alias",
+                command_id=command_id,
+                safe_args={"mode": mode},
+            )
+        )
+
+        result = processor.process(f"{command_id} delegated")
+
+        assert result["intent"] == command_id
+        assert processor.microphone_listening_mode_manager.get_mode() == mode
 
 
 def test_command_processor_returns_clarification_without_executing_handler():

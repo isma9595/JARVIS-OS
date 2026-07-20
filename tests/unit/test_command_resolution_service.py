@@ -65,6 +65,51 @@ def make_service():
     )
 
 
+def make_phase2_service():
+    from core.command_processor import CommandProcessor
+
+    attributes = {
+        "voice_status": "VOICE_STATUS_COMMANDS",
+        "voice_output_status": "VOICE_OUTPUT_STATUS_COMMANDS",
+        "speech_backend_status": "SPEECH_BACKEND_STATUS_COMMANDS",
+        "vosk_recognition_status": "VOSK_RECOGNITION_STATUS_COMMANDS",
+        "vosk_recognition_dry_run": "VOSK_RECOGNITION_DRY_RUN_COMMANDS",
+        "vosk_model_path_status": "VOSK_MODEL_PATH_STATUS_COMMANDS",
+        "vosk_runtime_status": "VOSK_RUNTIME_STATUS_COMMANDS",
+        "microphone_status": "MICROPHONE_STATUS_COMMANDS",
+        "microphone_mode_off": "MICROPHONE_MODE_OFF_COMMANDS",
+        "microphone_mode_partial": "MICROPHONE_MODE_PARTIAL_COMMANDS",
+        "microphone_mode_continuous": "MICROPHONE_MODE_CONTINUOUS_COMMANDS",
+        "one_shot_vosk_bridge": "ONE_SHOT_VOSK_BRIDGE_COMMANDS",
+        "voice_output_local_status": "VOICE_OUTPUT_LOCAL_STATUS_COMMANDS",
+        "assistant_identity": "ASSISTANT_IDENTITY_COMMANDS",
+        "assistant_name_change": "ASSISTANT_NAME_CHANGE_PREFIXES",
+        "profile_status": "PROFILE_COMMANDS",
+        "system_version": "VERSION_COMMANDS",
+        "system_services": "SYSTEM_SERVICES_COMMANDS",
+        "ai_status": "AI_STATUS_COMMANDS",
+        "ai_provider_key_check": "AI_PROVIDER_KEY_CHECK_COMMANDS",
+        "secure_key_status": "SECURE_KEY_STATUS_COMMANDS",
+        "voice_confirmation": "VOICE_CONFIRMATION_COMMANDS",
+        "greeting": "GREETING_COMMANDS",
+    }
+    groups = {name: getattr(CommandProcessor, attribute) for name, attribute in attributes.items()}
+    groups.update(
+        {
+            "legacy_passthrough_exact": frozenset(
+                CommandProcessor.VOICE_CONFIRMATION_COMMANDS
+                | CommandProcessor.GREETING_COMMANDS
+            ),
+            "legacy_passthrough_mapping": {},
+            "legacy_passthrough_prefix": (),
+        }
+    )
+    return CommandResolutionService(
+        command_registry=DEFAULT_COMMAND_REGISTRY,
+        command_groups=groups,
+    )
+
+
 def test_exact_system_command_resolves_without_execution():
     resolution = make_service().resolve("статус системы")
 
@@ -276,3 +321,181 @@ def test_unrelated_known_command_during_clarification_is_legacy_passthrough():
     )
 
     assert unrelated.resolution_status == CommandResolutionStatus.LEGACY_PASSTHROUGH
+
+
+def test_phase2_voice_vosk_microphone_and_one_shot_routes_resolve_without_execution():
+    from core.command_processor import CommandProcessor
+
+    service = make_phase2_service()
+
+    cases = [
+        (next(iter(CommandProcessor.VOSK_RECOGNITION_STATUS_COMMANDS)), "speech.backend.vosk.recognition.status", {}),
+        (next(iter(CommandProcessor.MICROPHONE_STATUS_COMMANDS)), "microphone.mode.status", {}),
+        (next(iter(CommandProcessor.MICROPHONE_MODE_OFF_COMMANDS)), "microphone.mode.off", {"mode": "off"}),
+        (next(iter(CommandProcessor.MICROPHONE_MODE_PARTIAL_COMMANDS)), "microphone.mode.partial", {"mode": "partial"}),
+        (next(iter(CommandProcessor.MICROPHONE_MODE_CONTINUOUS_COMMANDS)), "microphone.mode.continuous", {"mode": "continuous"}),
+        (next(iter(CommandProcessor.ONE_SHOT_VOSK_BRIDGE_COMMANDS)), "speech.backend.vosk.one_shot_bridge", {}),
+        (next(iter(CommandProcessor.VOICE_OUTPUT_LOCAL_STATUS_COMMANDS)), "voice.output.local.status", {}),
+    ]
+
+    for command, command_id, safe_args in cases:
+        resolution = service.resolve(command)
+
+        assert resolution.resolution_status == CommandResolutionStatus.RESOLVED
+        assert resolution.command_id == command_id
+        assert resolution.safe_args == safe_args
+        assert resolution.match_source == "exact_command_group"
+
+
+def test_phase2_identity_profile_version_services_provider_and_secure_routes_resolve():
+    from core.command_processor import CommandProcessor
+
+    service = make_phase2_service()
+
+    cases = [
+        (next(iter(CommandProcessor.ASSISTANT_IDENTITY_COMMANDS)), "assistant.identity", {}),
+        (next(iter(CommandProcessor.PROFILE_COMMANDS)), "user.profile", {}),
+        (next(iter(CommandProcessor.VERSION_COMMANDS)), "system.version", {}),
+        (next(iter(CommandProcessor.SYSTEM_SERVICES_COMMANDS)), "system.services", {}),
+        (next(iter(CommandProcessor.AI_STATUS_COMMANDS)), "ai.status", {}),
+        (next(iter(CommandProcessor.SECURE_KEY_STATUS_COMMANDS)), "secure_keys.status", {}),
+    ]
+
+    for command, command_id, safe_args in cases:
+        resolution = service.resolve(command)
+
+        assert resolution.resolution_status == CommandResolutionStatus.RESOLVED
+        assert resolution.command_id == command_id
+        assert resolution.safe_args == safe_args
+
+
+def test_phase2_assistant_name_and_provider_key_safe_args_are_parsed_without_mutation():
+    from core.command_processor import CommandProcessor
+
+    service = make_phase2_service()
+    name_prefix = CommandProcessor.ASSISTANT_NAME_CHANGE_PREFIXES[0]
+    provider_command, provider = next(iter(CommandProcessor.AI_PROVIDER_KEY_CHECK_COMMANDS.items()))
+
+    assistant = service.resolve(f"{name_prefix} JARVIS")
+    provider_key = service.resolve(provider_command)
+
+    assert assistant.resolution_status == CommandResolutionStatus.RESOLVED
+    assert assistant.command_id == "assistant.name.set"
+    assert assistant.safe_args == {"assistant_name": "JARVIS"}
+    assert provider_key.resolution_status == CommandResolutionStatus.RESOLVED
+    assert provider_key.command_id == "ai.key_check"
+    assert provider_key.safe_args == {"provider": provider}
+
+
+def test_task095_shared_alias_precedence_matches_existing_first_reachable_routes():
+    from core.command_processor import CommandProcessor
+
+    processor = CommandProcessor()
+    service = CommandResolutionService(
+        command_registry=processor.command_registry,
+        command_groups=processor._command_resolution_groups(),
+    )
+
+    recognition = service.resolve("тест распознавания")
+    model_path = service.resolve("путь модели vosk")
+    microphone = service.resolve("выключи микрофон")
+
+    assert recognition.resolution_status == CommandResolutionStatus.RESOLVED
+    assert recognition.command_id == "speech.backend.vosk.recognition.dry_run"
+    assert model_path.resolution_status == CommandResolutionStatus.RESOLVED
+    assert model_path.command_id == "speech.backend.vosk.model.path.status"
+    assert microphone.resolution_status == CommandResolutionStatus.RESOLVED
+    assert microphone.command_id == "microphone.mode.off"
+    assert microphone.safe_args == {"mode": "off"}
+
+
+def test_task095_overlapping_legacy_long_forms_remain_reachable():
+    from core.command_processor import CommandProcessor
+
+    processor = CommandProcessor()
+    service = CommandResolutionService(
+        command_registry=processor.command_registry,
+        command_groups=processor._command_resolution_groups(),
+    )
+
+    typed_simulation = service.resolve("тест распознавания включи свет")
+    vosk_model_set = service.resolve("путь модели vosk C:\\models\\vosk-small-ru")
+    microphone_stop = service.resolve("перестань слушать")
+
+    assert (
+        typed_simulation.resolution_status
+        == CommandResolutionStatus.LEGACY_PASSTHROUGH
+    )
+    assert vosk_model_set.resolution_status == CommandResolutionStatus.LEGACY_PASSTHROUGH
+    assert microphone_stop.resolution_status == CommandResolutionStatus.LEGACY_PASSTHROUGH
+
+
+def test_task095_manual_smoke_text_resolves_to_current_command_ids():
+    from core.command_processor import CommandProcessor
+
+    processor = CommandProcessor()
+    service = CommandResolutionService(
+        command_registry=processor.command_registry,
+        command_groups=processor._command_resolution_groups(),
+    )
+
+    cases = [
+        ("тест распознавания", "speech.backend.vosk.recognition.dry_run", "voice"),
+        ("путь модели vosk", "speech.backend.vosk.model.path.status", "voice"),
+        ("статус микрофона", "microphone.mode.status", "voice"),
+        ("профиль", "user.profile", "profile"),
+        ("версия", "system.version", "system"),
+        ("покажи сервисы", "system.services", "system"),
+        ("статус голосового ответа", "voice.output.status", "voice"),
+        ("как тебя зовут", "assistant.identity", "assistant"),
+    ]
+
+    for text, command_id, category in cases:
+        resolution = service.resolve(text)
+
+        assert resolution.resolution_status == CommandResolutionStatus.RESOLVED
+        assert resolution.command_id == command_id
+        assert resolution.category == category
+        assert resolution.match_source == "exact_command_group"
+
+
+def test_phase2_legacy_confirmation_greeting_unknown_and_determinism_invariants():
+    from core.command_processor import CommandProcessor
+
+    service = make_phase2_service()
+    confirmation = service.resolve(next(iter(CommandProcessor.VOICE_CONFIRMATION_COMMANDS)))
+    greeting = service.resolve(next(iter(CommandProcessor.GREETING_COMMANDS)))
+    unknown = service.resolve("task095 genuinely unknown route")
+    first = service.resolve(next(iter(CommandProcessor.SECURE_KEY_STATUS_COMMANDS)))
+    second = service.resolve(next(iter(CommandProcessor.SECURE_KEY_STATUS_COMMANDS)))
+
+    assert confirmation.resolution_status == CommandResolutionStatus.LEGACY_PASSTHROUGH
+    assert greeting.resolution_status == CommandResolutionStatus.LEGACY_PASSTHROUGH
+    assert unknown.resolution_status == CommandResolutionStatus.UNKNOWN
+    assert first == second
+    assert "operation" not in first.to_dict()
+
+    with pytest.raises(TypeError):
+        first.safe_args["provider"] = "changed"
+
+
+def test_phase2_resolver_source_has_no_execution_side_effect_dependencies():
+    from pathlib import Path
+
+    source = Path("core/command_resolution_service.py").read_text(encoding="utf-8")
+    forbidden = [
+        "from core.command_processor",
+        "start_listening",
+        "listen_once_from_microphone",
+        "run_once(",
+        "speak(",
+        "generate(",
+        "save_profile",
+        "import_from_env",
+        "delete_provider_key",
+        "register_operation",
+        "action_router.route",
+    ]
+
+    for token in forbidden:
+        assert token not in source
