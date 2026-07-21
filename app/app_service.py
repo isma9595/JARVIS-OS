@@ -984,6 +984,9 @@ class JarvisAppService:
         planner_preview = self._preview_planner_command(input_text, normalized_text)
         if planner_preview is not None:
             return planner_preview
+        memory_preview = self._preview_memory_command(input_text, normalized_text)
+        if memory_preview is not None:
+            return memory_preview
         metadata = self._match_registry_command(input_text)
         if metadata is None:
             return AppCommandPreview(
@@ -1032,6 +1035,52 @@ class JarvisAppService:
         normalized_text: str,
     ) -> AppCommandPreview | None:
         return self.planner_service.preview_command(input_text, normalized_text)
+
+    def _preview_memory_command(
+        self,
+        input_text: str,
+        normalized_text: str,
+    ) -> AppCommandPreview | None:
+        parsed = self._parse_memory_command(input_text)
+        if parsed is None:
+            return None
+        action, _key, _value = parsed
+        memory_metadata = {
+            "remember": ("memory.remember", "Remember fact", "local_write", False, False),
+            "recall": ("memory.recall", "Recall memory", "read_only", True, False),
+            "forget": ("memory.forget", "Forget memory", "local_write", False, False),
+            "list": ("memory.list", "List memories", "read_only", True, False),
+            "forget_all": (
+                "memory.forget_all",
+                "Forget all memory",
+                "confirmation_required",
+                False,
+                True,
+            ),
+        }.get(action)
+        if memory_metadata is None:
+            return None
+        command_id, title_ru, risk_level, read_only, requires_confirmation = memory_metadata
+        return AppCommandPreview(
+            input_text=input_text,
+            normalized_text=normalized_text,
+            registry_match_id=command_id,
+            title_ru=title_ru,
+            category="memory",
+            risk_level=risk_level,
+            read_only=read_only,
+            voice_auto_allowed=False,
+            requires_confirmation=requires_confirmation,
+            requires_network=False,
+            requires_ai_key=False,
+            requires_privacy_check=False,
+            app_ready=True,
+            known_command=True,
+            safe_summary_ru=(
+                "Memory command recognized from the AppService parser. Preview does not "
+                "read or mutate memory, create operations, or arm confirmation."
+            ),
+        )
 
     def preview_text_ru(self, text: str) -> str:
         preview = self.preview_command(text)

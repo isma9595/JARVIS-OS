@@ -435,6 +435,70 @@ def test_preview_of_status_ai_known_read_only_with_real_service():
     assert "- requires_network: no" in text
 
 
+def assert_desktop_memory_preview_fields(text, *, command_id, risk):
+    assert "- known command: yes" in text
+    assert f"- command id: {command_id}" in text
+    assert "- category: memory" in text
+    assert f"- risk: {risk}" in text
+    assert "- requires_network: no" in text
+    assert "- requires_confirmation: no" in text
+    assert "- operation id: none" in text
+    assert "- executed through AppService: yes" in text
+
+
+def test_desktop_shell_projects_memory_remember_preview_with_real_service(tmp_path):
+    service = JarvisAppService(
+        memory_manager=LocalMemoryManager(tmp_path / "desktop_preview_remember_memory.json")
+    )
+    view_model = DesktopShellViewModel(service)
+
+    text = view_model.preview_command("remember that audit091key is north")
+
+    assert_desktop_memory_preview_fields(
+        text,
+        command_id="memory.remember",
+        risk="local_write",
+    )
+    assert service.memory_manager.recall_user_fact("audit091key").found is False
+    assert service.recent_execution_operations(None) == ()
+
+
+def test_desktop_shell_projects_memory_recall_preview_with_real_service(tmp_path):
+    service = JarvisAppService(
+        memory_manager=LocalMemoryManager(tmp_path / "desktop_preview_recall_memory.json")
+    )
+    service.memory_manager.remember_user_fact("audit091key", "north")
+    view_model = DesktopShellViewModel(service)
+
+    text = view_model.preview_command("what do you remember about audit091key")
+
+    assert_desktop_memory_preview_fields(
+        text,
+        command_id="memory.recall",
+        risk="read_only",
+    )
+    assert service.memory_manager.recall_user_fact("audit091key").value == "north"
+    assert service.recent_execution_operations(None) == ()
+
+
+def test_desktop_shell_projects_memory_forget_preview_with_real_service(tmp_path):
+    service = JarvisAppService(
+        memory_manager=LocalMemoryManager(tmp_path / "desktop_preview_forget_memory.json")
+    )
+    service.memory_manager.remember_user_fact("audit091key", "north")
+    view_model = DesktopShellViewModel(service)
+
+    text = view_model.preview_command("forget audit091key")
+
+    assert_desktop_memory_preview_fields(
+        text,
+        command_id="memory.forget",
+        risk="local_write",
+    )
+    assert service.memory_manager.recall_user_fact("audit091key").value == "north"
+    assert service.recent_execution_operations(None) == ()
+
+
 def test_desktop_shell_displays_planner_preview_with_real_service():
     view_model = DesktopShellViewModel(JarvisAppService())
 

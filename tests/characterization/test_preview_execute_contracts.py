@@ -43,18 +43,30 @@ def memory_entries(memory):
     return memory.list_user_facts().entries
 
 
-def assert_preview_unknown_and_non_mutating(service, memory, command):
+def assert_memory_preview_recognized_and_non_mutating(
+    service,
+    memory,
+    command,
+    *,
+    command_id,
+    risk,
+    read_only,
+):
     before_entries = memory_entries(memory)
     preview = service.preview_command(command)
     after_entries = memory_entries(memory)
 
-    assert preview.known_command is False
-    assert preview.registry_match_id is None
-    assert preview.category is None
-    assert preview.risk_level is None
-    assert preview.read_only is False
-    assert preview.requires_confirmation is True
+    assert preview.known_command is True
+    assert preview.registry_match_id == command_id
+    assert preview.category == "memory"
+    assert preview.risk_level == risk
+    assert preview.read_only is read_only
+    assert preview.requires_confirmation is False
+    assert preview.requires_network is False
+    assert preview.operation_id is None
     assert after_entries == before_entries
+    assert service.recent_execution_operations(None) == ()
+    assert service._pending_memory_forget_all is None
     return preview
 
 
@@ -79,9 +91,14 @@ def assert_desktop_fields(
 def test_characterizes_current_preview_execute_memory_remember(tmp_path):
     service, processor, memory, _language = make_service(tmp_path)
 
-    # CHARACTERIZATION OF CURRENT BEHAVIOR: Preview does not recognize this
-    # supported memory command, but it also does not mutate isolated memory.
-    assert_preview_unknown_and_non_mutating(service, memory, REMEMBER_AUDIT_KEY)
+    assert_memory_preview_recognized_and_non_mutating(
+        service,
+        memory,
+        REMEMBER_AUDIT_KEY,
+        command_id="memory.remember",
+        risk="local_write",
+        read_only=False,
+    )
 
     result = service.execute_command(REMEMBER_AUDIT_KEY, AppCommandSource.TEST)
 
@@ -107,7 +124,14 @@ def test_characterizes_current_preview_execute_memory_recall(tmp_path):
     memory.remember_user_fact("audit091key", "north")
     before_preview_entries = memory_entries(memory)
 
-    assert_preview_unknown_and_non_mutating(service, memory, RECALL_AUDIT_KEY)
+    assert_memory_preview_recognized_and_non_mutating(
+        service,
+        memory,
+        RECALL_AUDIT_KEY,
+        command_id="memory.recall",
+        risk="read_only",
+        read_only=True,
+    )
 
     result = service.execute_command(RECALL_AUDIT_KEY, AppCommandSource.TEST)
     after_execute_entries = memory_entries(memory)
@@ -131,7 +155,14 @@ def test_characterizes_current_preview_execute_memory_forget(tmp_path):
     memory.remember_user_fact("audit091key", "north")
     before_preview_entries = memory_entries(memory)
 
-    assert_preview_unknown_and_non_mutating(service, memory, FORGET_AUDIT_KEY)
+    assert_memory_preview_recognized_and_non_mutating(
+        service,
+        memory,
+        FORGET_AUDIT_KEY,
+        command_id="memory.forget",
+        risk="local_write",
+        read_only=False,
+    )
     assert memory_entries(memory) == before_preview_entries
     assert memory.recall_user_fact("audit091key").found is True
 
@@ -174,7 +205,13 @@ def test_characterizes_current_state_changing_metadata_for_memory_and_language(t
 
     # TASK-096 CONTRACT: state-changing routes preserve local-write metadata
     # and operation journal identity when they mutate isolated state.
-    assert (memory_preview.known_command, memory_preview.registry_match_id) == (False, None)
+    assert (memory_preview.known_command, memory_preview.registry_match_id) == (
+        True,
+        "memory.remember",
+    )
+    assert memory_preview.category == "memory"
+    assert memory_preview.risk_level == "local_write"
+    assert memory_preview.requires_confirmation is False
     assert (remember.registry_match_id, remember.category, remember.risk_level) == (
         "memory.remember",
         "memory",

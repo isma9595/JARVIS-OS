@@ -218,6 +218,180 @@ def test_preview_command_does_not_execute_command_processor():
     assert processor.calls == []
 
 
+def assert_memory_preview_contract(
+    service,
+    preview,
+    *,
+    command_id,
+    risk,
+    read_only,
+    requires_confirmation=False,
+):
+    assert preview.known_command is True
+    assert preview.registry_match_id == command_id
+    assert preview.category == "memory"
+    assert preview.risk_level == risk
+    assert preview.read_only is read_only
+    assert preview.requires_confirmation is requires_confirmation
+    assert preview.requires_network is False
+    assert preview.requires_ai_key is False
+    assert preview.requires_privacy_check is False
+    assert preview.operation_id is None
+    assert service.recent_execution_operations(None) == ()
+
+
+def test_preview_memory_remember_projects_metadata_without_mutation(tmp_path):
+    from memory import LocalMemoryManager
+
+    class TrackingMemoryManager(LocalMemoryManager):
+        def __init__(self, path):
+            super().__init__(path)
+            self.remember_calls = 0
+            self.recall_calls = 0
+            self.forget_calls = 0
+
+        def remember_user_fact(self, key, value, *, language_code="ru-RU"):
+            self.remember_calls += 1
+            return super().remember_user_fact(key, value, language_code=language_code)
+
+        def recall_user_fact(self, key):
+            self.recall_calls += 1
+            return super().recall_user_fact(key)
+
+        def forget_user_fact(self, key):
+            self.forget_calls += 1
+            return super().forget_user_fact(key)
+
+    memory = TrackingMemoryManager(tmp_path / "preview_memory_remember.json")
+    service = JarvisAppService(command_processor=FakeCommandProcessor(), memory_manager=memory)
+
+    preview = service.preview_command("remember that audit091key is north")
+
+    assert_memory_preview_contract(
+        service,
+        preview,
+        command_id="memory.remember",
+        risk="local_write",
+        read_only=False,
+    )
+    assert memory.remember_calls == 0
+    assert memory.recall_user_fact("audit091key").found is False
+    assert memory.recall_calls == 1
+    assert memory.forget_calls == 0
+    assert service._pending_memory_forget_all is None
+
+
+def test_preview_memory_recall_projects_metadata_without_retrieving_value(tmp_path):
+    from memory import LocalMemoryManager
+
+    class TrackingMemoryManager(LocalMemoryManager):
+        def __init__(self, path):
+            super().__init__(path)
+            self.recall_calls = 0
+            self.forget_calls = 0
+            self.remember_calls = 0
+
+        def remember_user_fact(self, key, value, *, language_code="ru-RU"):
+            self.remember_calls += 1
+            return super().remember_user_fact(key, value, language_code=language_code)
+
+        def recall_user_fact(self, key):
+            self.recall_calls += 1
+            return super().recall_user_fact(key)
+
+        def forget_user_fact(self, key):
+            self.forget_calls += 1
+            return super().forget_user_fact(key)
+
+    memory = TrackingMemoryManager(tmp_path / "preview_memory_recall.json")
+    memory.remember_user_fact("audit091key", "north")
+    memory.recall_calls = 0
+    memory.remember_calls = 0
+    service = JarvisAppService(command_processor=FakeCommandProcessor(), memory_manager=memory)
+
+    preview = service.preview_command("what do you remember about audit091key")
+
+    assert_memory_preview_contract(
+        service,
+        preview,
+        command_id="memory.recall",
+        risk="read_only",
+        read_only=True,
+    )
+    assert memory.recall_calls == 0
+    assert memory.remember_calls == 0
+    assert memory.forget_calls == 0
+    assert service._pending_memory_forget_all is None
+
+
+def test_preview_memory_forget_projects_metadata_without_deletion(tmp_path):
+    from memory import LocalMemoryManager
+
+    class TrackingMemoryManager(LocalMemoryManager):
+        def __init__(self, path):
+            super().__init__(path)
+            self.forget_calls = 0
+            self.remember_calls = 0
+
+        def remember_user_fact(self, key, value, *, language_code="ru-RU"):
+            self.remember_calls += 1
+            return super().remember_user_fact(key, value, language_code=language_code)
+
+        def forget_user_fact(self, key):
+            self.forget_calls += 1
+            return super().forget_user_fact(key)
+
+    memory = TrackingMemoryManager(tmp_path / "preview_memory_forget.json")
+    memory.remember_user_fact("audit091key", "north")
+    memory.remember_calls = 0
+    service = JarvisAppService(command_processor=FakeCommandProcessor(), memory_manager=memory)
+
+    preview = service.preview_command("forget audit091key")
+
+    assert_memory_preview_contract(
+        service,
+        preview,
+        command_id="memory.forget",
+        risk="local_write",
+        read_only=False,
+    )
+    assert memory.forget_calls == 0
+    assert memory.remember_calls == 0
+    assert memory.recall_user_fact("audit091key").value == "north"
+    assert service._pending_memory_forget_all is None
+
+
+def test_preview_memory_forget_all_remains_confirmation_required_and_non_mutating(tmp_path):
+    from memory import LocalMemoryManager
+
+    class TrackingMemoryManager(LocalMemoryManager):
+        def __init__(self, path):
+            super().__init__(path)
+            self.forget_all_calls = 0
+
+        def forget_all_user_facts(self):
+            self.forget_all_calls += 1
+            return super().forget_all_user_facts()
+
+    memory = TrackingMemoryManager(tmp_path / "preview_memory_forget_all.json")
+    memory.remember_user_fact("marker", "survives")
+    service = JarvisAppService(command_processor=FakeCommandProcessor(), memory_manager=memory)
+
+    preview = service.preview_command("forget everything you remember about me")
+
+    assert_memory_preview_contract(
+        service,
+        preview,
+        command_id="memory.forget_all",
+        risk="confirmation_required",
+        read_only=False,
+        requires_confirmation=True,
+    )
+    assert memory.forget_all_calls == 0
+    assert memory.recall_user_fact("marker").value == "survives"
+    assert service._pending_memory_forget_all is None
+
+
 def test_preview_valid_russian_create_plan_is_known_planner_without_mutation():
     processor = FakeCommandProcessor()
     service = JarvisAppService(command_processor=processor)

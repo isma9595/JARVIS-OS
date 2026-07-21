@@ -17,9 +17,9 @@ No Desktop text parsing, new public DTO fields, new registry, configuration chan
 
 ## Preview
 
-Preview must not mutate state, start hardware, call providers, use network, retrieve secrets, or create completed operations. It projects command id/category/risk/confirmation/network metadata from existing registry or planner metadata where the route is known.
+Preview must not mutate state, start hardware, call providers, use network, retrieve secrets, or create completed operations. It projects command id/category/risk/confirmation/network metadata from existing registry, planner metadata, or the existing AppService memory parser where the route is known.
 
-AUD-008 is unchanged: some supported memory text routes are still unknown in preview but safely non-mutating.
+TASK-097 corrected AUD-008 for supported AppService memory parser routes: direct Preview recognizes memory remember, recall, and bounded forget with the same public command id/category/risk metadata as Execute while remaining non-mutating and operation-free.
 
 ## Execution
 
@@ -77,9 +77,10 @@ The shell remains a rendering layer.
 
 Unchanged:
 
-- AUD-008 preview/execute memory recognition inconsistency.
 - AUD-009 Russian memory-key inflection.
 - AUD-011 Russian forget-all planner misclassification.
+- AUD-013 local TTS result metadata inconsistency.
+- AUD-016 technical microphone error presentation.
 - Existing internal/public id mappings characterized by TASK-095.
 
 ## Rollback
