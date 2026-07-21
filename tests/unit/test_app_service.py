@@ -999,6 +999,102 @@ def test_preview_execute_plan_projects_destructive_next_step_without_arming_conf
     assert after.to_dict() == before.to_dict()
 
 
+def test_russian_forget_all_plan_preview_and_create_are_non_mutating(tmp_path):
+    from memory import LocalMemoryManager
+
+    memory = LocalMemoryManager(tmp_path / "russian_forget_all_plan_memory.json")
+    memory.remember_user_fact("marker", "survives")
+    processor = FakeCommandProcessor()
+    service = JarvisAppService(
+        command_processor=processor,
+        memory_manager=memory,
+    )
+    text = "составь план: забудь всё, что ты обо мне помнишь"
+
+    preview = service.preview_command(text)
+    preview_snapshot = service.multi_step_planner.snapshot()
+    created = service.execute_command(text, AppCommandSource.TEST)
+    created_snapshot = service.multi_step_planner.snapshot()
+
+    assert preview.known_command is True
+    assert preview.registry_match_id == "planner.general_multi_step"
+    assert preview.category == "planner"
+    assert preview.risk_level == "confirmation_required"
+    assert preview.read_only is False
+    assert preview.requires_confirmation is True
+    assert preview.active_step_capability_id == "memory.forget_all"
+    assert preview.operation_id is None
+    assert preview_snapshot is None
+
+    assert created.registry_match_id == "planner.general_multi_step"
+    assert created.category == "planner"
+    assert created.risk_level == "read_only"
+    assert created.executed is False
+    assert created.requires_confirmation is False
+    assert created.operation_id is None
+    assert created.plan_status == "proposed"
+    assert created_snapshot is not None
+    assert [step.capability_id for step in created_snapshot.steps] == [
+        "memory.forget_all"
+    ]
+    assert service.multi_step_planner.steps()[0].arguments == {}
+    assert created_snapshot.steps[0].risk_level == "confirmation_required"
+    assert created_snapshot.steps[0].requires_confirmation is True
+    assert memory.recall_user_fact("marker").found is True
+    assert service.recent_execution_operations(1) == ()
+    assert processor.calls == []
+
+
+def test_russian_forget_all_plan_execution_awaits_confirmation_and_cancel_preserves_memory(tmp_path):
+    from memory import LocalMemoryManager
+
+    class TrackingMemoryManager(LocalMemoryManager):
+        def __init__(self, path):
+            super().__init__(path)
+            self.forget_all_calls = 0
+
+        def forget_all_user_facts(self):
+            self.forget_all_calls += 1
+            return super().forget_all_user_facts()
+
+    memory = TrackingMemoryManager(tmp_path / "russian_forget_all_execution_memory.json")
+    memory.remember_user_fact("marker", "survives")
+    service = JarvisAppService(
+        command_processor=FakeCommandProcessor(),
+        memory_manager=memory,
+    )
+    service.execute_command(
+        "составь план: забудь всё, что ты обо мне помнишь",
+        AppCommandSource.TEST,
+    )
+
+    first = service.execute_command("execute plan", AppCommandSource.TEST)
+    first_snapshot = service.multi_step_planner.snapshot()
+    cancelled = service.execute_command("cancel plan", AppCommandSource.TEST)
+    cancelled_snapshot = service.multi_step_planner.snapshot()
+
+    assert first.plan_status == "awaiting_confirmation"
+    assert first.operation_status == "awaiting_confirmation"
+    assert first.requires_confirmation is True
+    assert first.awaiting_confirmation is True
+    assert first.operation_id
+    assert first_snapshot.operation_id == first.operation_id
+    assert first_snapshot.awaiting_confirmation is True
+    assert first_snapshot.steps[0].capability_id == "memory.forget_all"
+    assert first_snapshot.steps[0].safe_message == "awaiting_confirmation"
+    assert memory.recall_user_fact("marker").found is True
+    assert memory.forget_all_calls == 0
+
+    assert cancelled.plan_status == "cancelled"
+    assert cancelled.operation_status == "cancelled"
+    assert cancelled.operation_id == first.operation_id
+    assert cancelled.awaiting_confirmation is False
+    assert cancelled_snapshot.operation_id == first.operation_id
+    assert cancelled_snapshot.awaiting_confirmation is False
+    assert memory.recall_user_fact("marker").found is True
+    assert memory.forget_all_calls == 0
+
+
 def test_repeated_execute_plan_while_awaiting_confirmation_is_rejected_without_forgetting_memory(tmp_path):
     from memory import LocalMemoryManager
 

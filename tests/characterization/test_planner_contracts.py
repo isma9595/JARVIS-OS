@@ -45,16 +45,30 @@ def make_service(tmp_path: Path):
     )
 
 
-def test_characterizes_current_russian_forget_all_plan_misclassification(tmp_path):
+def test_characterizes_russian_forget_all_plan_classification(tmp_path):
     service, processor, memory = make_service(tmp_path)
     memory.remember_user_fact("one", "1")
 
+    preview = service.preview_command(RU_PLAN_FORGET_ALL_NATURAL)
+    snapshot_after_preview = service.multi_step_planner.snapshot()
     created = service.execute_command(RU_PLAN_FORGET_ALL_NATURAL, AppCommandSource.TEST)
     snapshot = service.multi_step_planner.snapshot()
     steps = service.multi_step_planner.steps()
 
-    # CHARACTERIZATION OF CURRENT BEHAVIOR: this natural Russian phrase creates
-    # a bounded single-key memory.forget step instead of memory.forget_all.
+    # TASK-099 CONTRACT: this natural Russian phrase now selects the real
+    # destructive forget-all capability while plan creation remains read-only.
+    assert preview.known_command is True
+    assert preview.registry_match_id == "planner.general_multi_step"
+    assert preview.category == "planner"
+    assert preview.risk_level == "confirmation_required"
+    assert preview.read_only is False
+    assert preview.requires_confirmation is True
+    assert preview.active_step_id == "step-1"
+    assert preview.active_step_capability_id == "memory.forget_all"
+    assert preview.operation_id is None
+    assert snapshot_after_preview is None
+    assert len(memory.list_user_facts().entries) == 1
+
     assert created.registry_match_id == "planner.general_multi_step"
     assert created.category == "planner"
     assert created.risk_level == "read_only"
@@ -62,11 +76,10 @@ def test_characterizes_current_russian_forget_all_plan_misclassification(tmp_pat
     assert created.plan_status == "proposed"
     assert created.plan_step_count == 1
     assert snapshot is not None
-    assert [step.capability_id for step in snapshot.steps] == ["memory.forget"]
-    assert steps[0].arguments == {
-        "key": "\u0432\u0441\u0451, \u0447\u0442\u043e \u0442\u044b \u043e\u0431\u043e \u043c\u043d\u0435 \u043f\u043e\u043c\u043d\u0438\u0448\u044c"
-    }
-    assert steps[0].requires_confirmation is False
+    assert [step.capability_id for step in snapshot.steps] == ["memory.forget_all"]
+    assert steps[0].arguments == {}
+    assert steps[0].risk_level == "confirmation_required"
+    assert steps[0].requires_confirmation is True
     assert len(memory.list_user_facts().entries) == 1
     assert processor.calls == []
 

@@ -79,6 +79,25 @@ class PlannerCommandService:
             error_code = parsed.safe_error_code
             step_count = getattr(parsed.snapshot, "total_steps", None)
             status = getattr(getattr(parsed.snapshot, "status", None), "value", None)
+            projected_step = self._next_effective_step(parsed.snapshot)
+            if projected_step is not None:
+                risk_level = getattr(projected_step, "risk_level", None) or "read_only"
+                requires_confirmation = bool(
+                    getattr(projected_step, "requires_confirmation", False)
+                )
+                read_only = (
+                    getattr(projected_step, "side_effect", None)
+                    == PlanSideEffect.READ_ONLY.value
+                )
+                active_step_id = self._safe_optional_preview_text(
+                    getattr(projected_step, "step_id", None)
+                )
+                active_step_capability_id = self._safe_optional_preview_text(
+                    getattr(projected_step, "capability_id", None)
+                )
+                active_step_name = self._safe_optional_preview_text(
+                    getattr(projected_step, "display_name", None)
+                )
         elif kind == PlanParseStatus.EXECUTE:
             projected_step = self._next_effective_step(active)
             active_plan_id = self._safe_optional_preview_text(getattr(active, "plan_id", None))

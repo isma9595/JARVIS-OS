@@ -46,6 +46,8 @@ Read-only status/recall routes do not get artificial state-changing operation id
 
 Forget-all remains excluded from this direct-route registration path because it already has its own confirmation and pending-operation flow.
 
+TASK-099 corrected AUD-011 in planner parsing only: the exact normalized Russian natural forget-all planner phrase `забудь все что ты обо мне помнишь` now maps to the existing destructive `memory.forget_all` capability. Preview and plan creation remain non-mutating and operation-free; actual plan execution still pauses at the existing confirmation boundary before any deletion. Ordinary bounded forget phrases remain `memory.forget`.
+
 For completed execution results, `requires_confirmation` must describe the actual confirmation contract, not a preview default. If `operation_status == "succeeded"` and the route did not enter awaiting confirmation or require confirmation before execution, AppService projects `requires_confirmation=False`. This covers safe completed legacy routes such as `статус микрофона` and harmless unknown/future-idea fallback text while preserving their existing command id/category/risk projection (`none` / `unknown` in Desktop output).
 
 ## Confirmation
@@ -77,7 +79,6 @@ The shell remains a rendering layer.
 
 Unchanged:
 
-- AUD-011 Russian forget-all planner misclassification.
 - AUD-013 local TTS result metadata inconsistency.
 - AUD-016 technical microphone error presentation.
 - Existing internal/public id mappings characterized by TASK-095.

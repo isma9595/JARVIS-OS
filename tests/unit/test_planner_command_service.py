@@ -243,6 +243,62 @@ def test_direct_local_write_execute_preview_projects_without_memory_mutation(tmp
     assert after.to_dict() == before.to_dict()
 
 
+def test_create_preview_projects_russian_forget_all_without_persisting_or_mutating(tmp_path):
+    planner_service, planner, processor, memory = make_planner_service(
+        tmp_path,
+        tracking_memory=True,
+    )
+    memory.remember_user_fact("marker", "survives")
+
+    preview = planner_service.preview_command(
+        "составь план: забудь всё, что ты обо мне помнишь",
+        "составь план: забудь всё, что ты обо мне помнишь",
+    )
+
+    assert preview.known_command is True
+    assert preview.registry_match_id == "planner.general_multi_step"
+    assert preview.category == "planner"
+    assert preview.risk_level == "confirmation_required"
+    assert preview.read_only is False
+    assert preview.requires_confirmation is True
+    assert preview.active_plan_id is None
+    assert preview.active_plan_status is None
+    assert preview.active_step_id == "step-1"
+    assert preview.active_step_capability_id == "memory.forget_all"
+    assert preview.operation_id is None
+    assert planner.snapshot() is None
+    assert memory.recall_user_fact("marker").found is True
+    assert memory.forget_all_calls == 0
+    assert processor.calls == []
+
+
+def test_create_execute_persists_same_russian_forget_all_step_without_execution(tmp_path):
+    planner_service, planner, processor, memory = make_planner_service(
+        tmp_path,
+        tracking_memory=True,
+    )
+    memory.remember_user_fact("marker", "survives")
+
+    result = planner_service.handle_command(
+        "составь план: забудь всё, что ты обо мне помнишь",
+        AppCommandSource.TEST,
+        idempotency_key=None,
+    )
+    snapshot = planner.snapshot()
+
+    assert result.plan_status == "proposed"
+    assert result.executed is False
+    assert result.requires_confirmation is False
+    assert result.operation_id is None
+    assert snapshot is not None
+    assert [step.capability_id for step in snapshot.steps] == ["memory.forget_all"]
+    assert planner.steps()[0].arguments == {}
+    assert planner.steps()[0].requires_confirmation is True
+    assert memory.recall_user_fact("marker").found is True
+    assert memory.forget_all_calls == 0
+    assert processor.calls == []
+
+
 def test_direct_first_execute_enters_awaiting_confirmation_without_destructive_execution(tmp_path):
     planner_service, planner, _processor, memory = make_planner_service(
         tmp_path,

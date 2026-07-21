@@ -539,6 +539,42 @@ def test_desktop_shell_projects_execute_plan_confirmation_with_real_service(tmp_
     assert service.memory_manager.recall_user_fact("marker").found is True
 
 
+def test_desktop_shell_projects_russian_create_plan_forget_all_confirmation(tmp_path):
+    service = JarvisAppService(
+        memory_manager=LocalMemoryManager(tmp_path / "desktop_russian_forget_all_memory.json")
+    )
+    service.memory_manager.remember_user_fact("marker", "survives")
+    view_model = DesktopShellViewModel(service)
+
+    preview_text = view_model.preview_command(
+        "составь план: забудь всё, что ты обо мне помнишь"
+    )
+    create_text = view_model.execute_command(
+        "составь план: забудь всё, что ты обо мне помнишь"
+    )
+    execute_text = view_model.execute_command("execute plan")
+    cancel_text = view_model.execute_command("cancel plan")
+
+    assert "- command id: planner.general_multi_step" in preview_text
+    assert "- active step id: step-1" in preview_text
+    assert "- active step capability: memory.forget_all" in preview_text
+    assert "- operation id: none" in preview_text
+    assert "- risk: confirmation_required" in preview_text
+    assert "- requires_confirmation: yes" in preview_text
+    assert "plan status: proposed" in create_text.lower()
+    assert "- operation id: none" in create_text
+    assert "- plan status: awaiting_confirmation" in execute_text
+    assert "- awaiting confirmation: yes" in execute_text
+    assert "- operation status: awaiting_confirmation" in execute_text
+    assert "- plan status: cancelled" in cancel_text
+    assert "- awaiting confirmation: yes" not in cancel_text
+    assert "Memory cleared" not in preview_text
+    assert "Memory cleared" not in create_text
+    assert "Memory cleared" not in execute_text
+    assert "Memory cleared" not in cancel_text
+    assert service.memory_manager.recall_user_fact("marker").found is True
+
+
 def test_desktop_shell_awaiting_confirmation_plan_text_does_not_show_pending_step(tmp_path):
     service = JarvisAppService(
         memory_manager=LocalMemoryManager(tmp_path / "desktop_awaiting_message_memory.json")

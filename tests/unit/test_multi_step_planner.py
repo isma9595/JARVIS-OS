@@ -16,15 +16,16 @@ from planner import (
 
 
 def capability(capability_id):
+    is_forget_all = capability_id == "memory.forget_all"
     return PlanCapability(
         PlanCapabilityDescriptor(
             capability_id=capability_id,
             display_name_ru=capability_id,
             display_name_en=capability_id,
             category="test",
-            risk_level="read_only",
-            side_effect=PlanSideEffect.READ_ONLY,
-            requires_confirmation=False,
+            risk_level="confirmation_required" if is_forget_all else "read_only",
+            side_effect=PlanSideEffect.BOUNDED_LOCAL_STATE if is_forget_all else PlanSideEffect.READ_ONLY,
+            requires_confirmation=is_forget_all,
             argument_schema={},
             safe_description="safe",
         ),
@@ -175,6 +176,73 @@ def test_russian_and_english_plan_parsing_forms():
     assert connector.status == PlanParseStatus.CREATED
     assert en.status == PlanParseStatus.CREATED
     assert en.safe_message == "Plan created."
+
+
+def test_russian_forget_all_natural_word_order_selects_destructive_capability():
+    planner = MultiStepPlanner(registry())
+
+    parsed = planner.create_from_text(
+        "составь план: забудь всё, что ты обо мне помнишь",
+        language_code="ru-RU",
+    )
+
+    assert parsed.status == PlanParseStatus.CREATED
+    assert parsed.snapshot.total_steps == 1
+    step = parsed.snapshot.steps[0]
+    assert step.capability_id == "memory.forget_all"
+    assert planner.steps()[0].arguments == {}
+    assert step.risk_level == "confirmation_required"
+    assert step.requires_confirmation is True
+
+
+def test_russian_forget_all_existing_word_order_remains_supported():
+    planner = MultiStepPlanner(registry())
+
+    parsed = planner.create_from_text(
+        "составь план: забудь всё, что ты помнишь обо мне",
+        language_code="ru-RU",
+    )
+
+    assert parsed.status == PlanParseStatus.CREATED
+    step = parsed.snapshot.steps[0]
+    assert step.capability_id == "memory.forget_all"
+    assert planner.steps()[0].arguments == {}
+    assert step.requires_confirmation is True
+
+
+def test_russian_forget_all_uses_existing_punctuation_and_yo_normalization():
+    planner = MultiStepPlanner(registry())
+
+    parsed = planner.create_from_text(
+        "составь план: забудь все: что ты обо мне помнишь",
+        language_code="ru-RU",
+    )
+
+    assert parsed.status == PlanParseStatus.CREATED
+    assert parsed.snapshot.steps[0].capability_id == "memory.forget_all"
+
+
+@pytest.mark.parametrize(
+    ("phrase", "expected_key"),
+    (
+        ("забудь ключ", "ключ"),
+        ("забудь всё о проекте X", "всё о проекте X"),
+        ("забудь всё про работу", "всё про работу"),
+        ("забудь всё о настройках", "всё о настройках"),
+        ("забудь всё, что касается проекта X", "всё, что касается проекта X"),
+        ("забудь маркер аудита 9073", "маркер аудита 9073"),
+    ),
+)
+def test_russian_forget_all_does_not_overmatch_bounded_forget_phrases(phrase, expected_key):
+    planner = MultiStepPlanner(registry())
+
+    parsed = planner.create_from_text(f"составь план: {phrase}", language_code="ru-RU")
+
+    assert parsed.status == PlanParseStatus.CREATED
+    step = parsed.snapshot.steps[0]
+    assert step.capability_id == "memory.forget"
+    assert planner.steps()[0].arguments == {"key": expected_key}
+    assert step.requires_confirmation is False
 
 
 def test_unknown_and_ambiguous_steps_reject_full_plan_without_partial_active_plan():

@@ -42,6 +42,11 @@ class MultiStepPlanner:
     EXECUTE_EN = {"execute plan", "run plan"}
     CANCEL_RU = {"отмени план", "отменить текущий план"}
     CANCEL_EN = {"cancel plan", "cancel current plan"}
+    MEMORY_FORGET_ALL_STEPS = {
+        "забудь все что ты помнишь обо мне",
+        "забудь все что ты обо мне помнишь",
+        "forget everything you remember about me",
+    }
 
     def __init__(self, registry: PlannerCapabilityRegistry):
         self.registry = registry
@@ -223,7 +228,7 @@ class MultiStepPlanner:
             if parsed is None:
                 return self._clarify(position, language_code)
             exact = ("memory.remember", {"key": parsed[0], "value": parsed[1]}, f"{parsed[0]}={parsed[1]}")
-        elif normalized in {"забудь все что ты помнишь обо мне", "забудь все, что ты помнишь обо мне", "forget everything you remember about me"}:
+        elif normalized in self.MEMORY_FORGET_ALL_STEPS:
             exact = ("memory.forget_all", {}, text)
         elif normalized.startswith(("забудь ", "forget ")):
             key = self._strip_first_matching(text, ("забудь ", "forget "))
