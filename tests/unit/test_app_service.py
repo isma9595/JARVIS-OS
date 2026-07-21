@@ -14,6 +14,17 @@ class FakeCommandProcessor:
 
     def process(self, text):
         self.calls.append(text)
+        if text == "\u0441\u0442\u0430\u0442\u0443\u0441 \u043c\u0438\u043a\u0440\u043e\u0444\u043e\u043d\u0430":
+            return {
+                "intent": "microphone.mode.status",
+                "response": "\u041c\u0438\u043a\u0440\u043e\u0444\u043e\u043d \u0432\u044b\u043a\u043b\u044e\u0447\u0435\u043d.",
+            }
+        if text == "task096 \u043d\u0435\u0438\u0437\u0432\u0435\u0441\u0442\u043d\u0430\u044f \u0431\u0435\u0437\u043e\u043f\u0430\u0441\u043d\u0430\u044f \u043a\u043e\u043c\u0430\u043d\u0434\u0430":
+            return {
+                "intent": "unknown",
+                "requires_confirmation": False,
+                "response": "\u041f\u043e\u043b\u044c\u0437\u043e\u0432\u0430\u0442\u0435\u043b\u044c, \u044f \u043f\u043e\u043a\u0430 \u043d\u0435 \u0443\u043c\u0435\u044e \u0432\u044b\u043f\u043e\u043b\u043d\u044f\u0442\u044c \u044d\u0442\u0443 \u043a\u043e\u043c\u0430\u043d\u0434\u0443, \u043d\u043e \u043c\u043e\u0433\u0443 \u0441\u043e\u0445\u0440\u0430\u043d\u0438\u0442\u044c \u0435\u0451 \u043a\u0430\u043a \u0438\u0434\u0435\u044e \u0434\u043b\u044f \u0431\u0443\u0434\u0443\u0449\u0435\u0433\u043e.",
+            }
         return {"intent": "fake.intent", "response": f"processed: {text}"}
 
 
@@ -293,6 +304,495 @@ def test_preview_execute_plan_projects_local_write_next_step_without_memory_muta
     assert preview.operation_id is None
     assert memory.recall_user_fact("test word").found is False
     assert after.to_dict() == before.to_dict()
+
+
+def test_direct_language_set_uses_local_write_operation_metadata(tmp_path):
+    from language.language_manager import ApplicationLanguageManager
+    from users.user_profile import UserProfileManager
+
+    profile = UserProfileManager(tmp_path / "language_profile.json")
+    language = ApplicationLanguageManager.from_profile_manager(profile)
+    service = JarvisAppService(
+        command_processor=FakeCommandProcessor(),
+        language_manager=language,
+    )
+
+    preview = service.preview_command("language English")
+    result = service.execute_command("language English", AppCommandSource.TEST)
+    operation = service.recent_execution_operations(1)[0]
+
+    assert preview.registry_match_id == "profile.language.set"
+    assert preview.category == "profile"
+    assert preview.read_only is False
+    assert preview.requires_confirmation is False
+    assert result.registry_match_id == "profile.language.set"
+    assert result.category == "profile"
+    assert result.risk_level == "local_write"
+    assert result.executed is True
+    assert result.requires_confirmation is False
+    assert result.operation_id == operation["operation_id"]
+    assert result.operation_status == "succeeded"
+    assert operation["command_id"] == "profile.language.set"
+    assert operation["status"] == "succeeded"
+    assert operation["metadata"]["category"] == "profile"
+    assert operation["metadata"]["risk_level"] == "local_write"
+    assert operation["metadata"]["requires_confirmation"] == "no"
+    assert operation["metadata"]["network_may_be_used"] == "no"
+    assert language.get_preference().language_code == "en-US"
+
+
+def test_direct_memory_write_and_delete_use_local_write_operation_metadata(tmp_path):
+    from memory import LocalMemoryManager
+
+    memory = LocalMemoryManager(tmp_path / "direct_memory.json")
+    service = JarvisAppService(
+        command_processor=FakeCommandProcessor(),
+        memory_manager=memory,
+    )
+
+    remember = service.execute_command(
+        "remember that task096marker is west",
+        AppCommandSource.TEST,
+    )
+    remember_operation = service.recent_execution_operations(1)[0]
+    forget = service.execute_command("forget task096marker", AppCommandSource.TEST)
+    forget_operation = service.recent_execution_operations(1)[0]
+
+    assert remember.registry_match_id == "memory.remember"
+    assert remember.category == "memory"
+    assert remember.risk_level == "local_write"
+    assert remember.executed is True
+    assert remember.operation_id == remember_operation["operation_id"]
+    assert remember.operation_status == "succeeded"
+    assert remember_operation["command_id"] == "memory.remember"
+    assert remember_operation["metadata"]["risk_level"] == "local_write"
+    assert remember_operation["metadata"]["input_preview"] == "memory.remember [REDACTED]"
+    assert remember_operation["metadata"]["requires_confirmation"] == "no"
+    assert remember_operation["metadata"]["network_may_be_used"] == "no"
+
+    assert forget.registry_match_id == "memory.forget"
+    assert forget.category == "memory"
+    assert forget.risk_level == "local_write"
+    assert forget.executed is True
+    assert forget.operation_id == forget_operation["operation_id"]
+    assert forget.operation_status == "succeeded"
+    assert forget_operation["command_id"] == "memory.forget"
+    assert forget_operation["metadata"]["risk_level"] == "local_write"
+    assert forget_operation["metadata"]["input_preview"] == "memory.forget [REDACTED]"
+    assert memory.recall_user_fact("task096marker").found is False
+
+
+def test_completed_microphone_status_projects_no_confirmation_without_side_effects(tmp_path):
+    from memory import LocalMemoryManager
+
+    processor = FakeCommandProcessor()
+    memory = LocalMemoryManager(tmp_path / "microphone_status_memory.json")
+    service = JarvisAppService(command_processor=processor, memory_manager=memory)
+    command = "\u0441\u0442\u0430\u0442\u0443\u0441 \u043c\u0438\u043a\u0440\u043e\u0444\u043e\u043d\u0430"
+
+    preview = service.preview_command(command)
+    result = service.execute_command(command, AppCommandSource.TEST)
+    operation = service.recent_execution_operations(1)[0]
+
+    assert preview.registry_match_id is None
+    assert preview.category is None
+    assert preview.risk_level is None
+    assert result.registry_match_id is None
+    assert result.category is None
+    assert result.risk_level is None
+    assert result.executed is True
+    assert result.operation_status == "succeeded"
+    assert result.awaiting_confirmation is False
+    assert result.requires_confirmation is False
+    assert result.policy_decision.requires_confirmation is False
+    assert operation["status"] == "succeeded"
+    assert processor.calls == [command]
+    assert memory.recall_user_fact("task096marker").found is False
+
+
+def test_completed_unknown_safe_fallback_projects_no_confirmation_without_side_effects(tmp_path):
+    from memory import LocalMemoryManager
+
+    processor = FakeCommandProcessor()
+    memory = LocalMemoryManager(tmp_path / "unknown_fallback_memory.json")
+    service = JarvisAppService(command_processor=processor, memory_manager=memory)
+    command = "task096 \u043d\u0435\u0438\u0437\u0432\u0435\u0441\u0442\u043d\u0430\u044f \u0431\u0435\u0437\u043e\u043f\u0430\u0441\u043d\u0430\u044f \u043a\u043e\u043c\u0430\u043d\u0434\u0430"
+
+    preview = service.preview_command(command)
+    result = service.execute_command(command, AppCommandSource.TEST)
+    operation = service.recent_execution_operations(1)[0]
+
+    assert preview.registry_match_id is None
+    assert preview.category is None
+    assert preview.risk_level is None
+    assert result.registry_match_id is None
+    assert result.category is None
+    assert result.risk_level is None
+    assert result.executed is True
+    assert result.operation_status == "succeeded"
+    assert result.awaiting_confirmation is False
+    assert result.requires_confirmation is False
+    assert result.policy_decision.requires_confirmation is False
+    assert operation["status"] == "succeeded"
+    assert processor.calls == [command]
+    assert memory.recall_user_fact("task096marker").found is False
+
+
+def test_direct_memory_exact_duplicate_registers_before_mutation_and_suppresses_second(tmp_path):
+    from memory import LocalMemoryManager
+
+    class TrackingMemoryManager(LocalMemoryManager):
+        def __init__(self, path, events):
+            super().__init__(path)
+            self.events = events
+            self.remember_calls = 0
+
+        def remember_user_fact(self, key, value, *, language_code="ru-RU"):
+            self.events.append(("mutate", len(service.recent_execution_operations(None))))
+            self.remember_calls += 1
+            return super().remember_user_fact(key, value, language_code=language_code)
+
+    events = []
+    memory = TrackingMemoryManager(tmp_path / "duplicate_memory.json", events)
+    service = JarvisAppService(command_processor=FakeCommandProcessor(), memory_manager=memory)
+
+    first = service.execute_command(
+        "remember that task096 duplicate key is first",
+        AppCommandSource.TEST,
+        idempotency_key="task096-memory-duplicate",
+    )
+    second = service.execute_command(
+        "remember that task096 duplicate key is first",
+        AppCommandSource.TEST,
+        idempotency_key="task096-memory-duplicate",
+    )
+    operations = service.recent_execution_operations(None)
+
+    assert memory.remember_calls == 1
+    assert events == [("mutate", 1)]
+    assert first.operation_id == second.operation_id
+    assert second.duplicate_suppressed is True
+    assert len(operations) == 1
+    assert operations[0]["duplicate_suppressed"] is True
+    assert operations[0]["status"] == "succeeded"
+
+
+def test_direct_language_exact_duplicate_registers_before_mutation_and_suppresses_second(tmp_path):
+    from language.language_manager import ApplicationLanguageManager
+    from users.user_profile import UserProfileManager
+
+    class TrackingLanguageManager(ApplicationLanguageManager):
+        def __init__(self, profile_manager, events):
+            super().__init__(profile_manager=profile_manager)
+            self.events = events
+            self.set_calls = 0
+
+        def set_preference(self, language_code):
+            self.events.append(("mutate", len(service.recent_execution_operations(None))))
+            self.set_calls += 1
+            return super().set_preference(language_code)
+
+    events = []
+    profile = UserProfileManager(tmp_path / "duplicate_language.json")
+    language = TrackingLanguageManager(profile, events)
+    service = JarvisAppService(command_processor=FakeCommandProcessor(), language_manager=language)
+
+    first = service.execute_command(
+        "language English",
+        AppCommandSource.TEST,
+        idempotency_key="task096-language-duplicate",
+    )
+    second = service.execute_command(
+        "language English",
+        AppCommandSource.TEST,
+        idempotency_key="task096-language-duplicate",
+    )
+
+    assert language.set_calls == 1
+    assert events == [("mutate", 1)]
+    assert first.operation_id == second.operation_id
+    assert second.duplicate_suppressed is True
+    assert len(service.recent_execution_operations(None)) == 1
+    assert language.get_preference().language_code == "en-US"
+
+
+def test_direct_memory_idempotency_conflict_denies_without_second_mutation(tmp_path):
+    from memory import LocalMemoryManager
+
+    class TrackingMemoryManager(LocalMemoryManager):
+        def __init__(self, path):
+            super().__init__(path)
+            self.remember_calls = 0
+
+        def remember_user_fact(self, key, value, *, language_code="ru-RU"):
+            self.remember_calls += 1
+            return super().remember_user_fact(key, value, language_code=language_code)
+
+    memory = TrackingMemoryManager(tmp_path / "conflict_memory.json")
+    service = JarvisAppService(command_processor=FakeCommandProcessor(), memory_manager=memory)
+
+    first = service.execute_command(
+        "remember that task096 conflict key is first",
+        AppCommandSource.TEST,
+        idempotency_key="task096-memory-conflict",
+    )
+    second = service.execute_command(
+        "remember that task096 conflict key is second",
+        AppCommandSource.TEST,
+        idempotency_key="task096-memory-conflict",
+    )
+
+    assert first.operation_status == "succeeded"
+    assert second.operation_status == "denied"
+    assert second.error == "idempotency_conflict"
+    assert memory.remember_calls == 1
+    assert memory.recall_user_fact("task096 conflict key").value == "first"
+    assert len(service.recent_execution_operations(None)) == 2
+
+
+def test_direct_language_idempotency_conflict_denies_without_second_mutation(tmp_path):
+    from language.language_manager import ApplicationLanguageManager
+    from users.user_profile import UserProfileManager
+
+    class TrackingLanguageManager(ApplicationLanguageManager):
+        def __init__(self, profile_manager):
+            super().__init__(profile_manager=profile_manager)
+            self.set_calls = 0
+
+        def set_preference(self, language_code):
+            self.set_calls += 1
+            return super().set_preference(language_code)
+
+    profile = UserProfileManager(tmp_path / "conflict_language.json")
+    language = TrackingLanguageManager(profile)
+    service = JarvisAppService(command_processor=FakeCommandProcessor(), language_manager=language)
+
+    first = service.execute_command(
+        "language English",
+        AppCommandSource.TEST,
+        idempotency_key="task096-language-conflict",
+    )
+    second = service.execute_command(
+        "reset language",
+        AppCommandSource.TEST,
+        idempotency_key="task096-language-conflict",
+    )
+
+    assert first.operation_status == "succeeded"
+    assert second.operation_status == "denied"
+    assert second.error == "idempotency_conflict"
+    assert language.set_calls == 1
+    assert language.get_preference().language_code == "en-US"
+
+
+def test_direct_state_registration_failure_leaves_memory_and_language_unchanged(tmp_path):
+    from language.language_manager import ApplicationLanguageManager
+    from memory import LocalMemoryManager
+    from users.user_profile import UserProfileManager
+
+    class FailingCoordinator:
+        def create_request_fingerprint(self, **_kwargs):
+            return "sha256:failing"
+
+        def register(self, **_kwargs):
+            raise RuntimeError("coordinator unavailable")
+
+    memory = LocalMemoryManager(tmp_path / "registration_failure_memory.json")
+    language = ApplicationLanguageManager.from_profile_manager(
+        UserProfileManager(tmp_path / "registration_failure_language.json")
+    )
+    service = JarvisAppService(
+        command_processor=FakeCommandProcessor(),
+        memory_manager=memory,
+        language_manager=language,
+    )
+    service.execution_coordinator = FailingCoordinator()
+
+    memory_result = None
+    language_result = None
+    try:
+        memory_result = service.execute_command("remember that task096 failed key is value", AppCommandSource.TEST)
+    except RuntimeError:
+        pass
+    try:
+        language_result = service.execute_command("language English", AppCommandSource.TEST)
+    except RuntimeError:
+        pass
+
+    assert memory_result is None
+    assert language_result is None
+    assert memory.recall_user_fact("task096 failed key").found is False
+    assert language.get_preference().language_code == "ru-RU"
+
+
+def test_direct_state_noop_routes_are_coordinated_and_duplicate_checked_before_handler(tmp_path):
+    from language.language_manager import ApplicationLanguageManager
+    from memory import LocalMemoryManager
+    from users.user_profile import UserProfileManager
+
+    class TrackingMemoryManager(LocalMemoryManager):
+        def __init__(self, path):
+            super().__init__(path)
+            self.remember_calls = 0
+            self.forget_calls = 0
+
+        def remember_user_fact(self, key, value, *, language_code="ru-RU"):
+            self.remember_calls += 1
+            return super().remember_user_fact(key, value, language_code=language_code)
+
+        def forget_user_fact(self, key):
+            self.forget_calls += 1
+            return super().forget_user_fact(key)
+
+    memory = TrackingMemoryManager(tmp_path / "noop_memory.json")
+    language = ApplicationLanguageManager.from_profile_manager(
+        UserProfileManager(tmp_path / "noop_language.json")
+    )
+    service = JarvisAppService(
+        command_processor=FakeCommandProcessor(),
+        memory_manager=memory,
+        language_manager=language,
+    )
+    service.execute_command("language English", AppCommandSource.TEST)
+    active_language = service.execute_command("language English", AppCommandSource.TEST)
+    missing_forget = service.execute_command(
+        "forget task096 missing key",
+        AppCommandSource.TEST,
+        idempotency_key="task096-missing-forget",
+    )
+    repeated_missing_forget = service.execute_command(
+        "forget task096 missing key",
+        AppCommandSource.TEST,
+        idempotency_key="task096-missing-forget",
+    )
+    first_remember = service.execute_command("remember that task096 noop key is same", AppCommandSource.TEST)
+    identical_remember = service.execute_command(
+        "remember that task096 noop key is same",
+        AppCommandSource.TEST,
+        idempotency_key="task096-identical-remember",
+    )
+    repeated_identical_remember = service.execute_command(
+        "remember that task096 noop key is same",
+        AppCommandSource.TEST,
+        idempotency_key="task096-identical-remember",
+    )
+
+    assert active_language.registry_match_id == "profile.language.set"
+    assert active_language.risk_level == "read_only"
+    assert active_language.executed is False
+    assert active_language.operation_status == "succeeded"
+    assert missing_forget.risk_level == "read_only"
+    assert missing_forget.executed is False
+    assert missing_forget.operation_status == "succeeded"
+    assert repeated_missing_forget.operation_id == missing_forget.operation_id
+    assert repeated_missing_forget.duplicate_suppressed is True
+    assert first_remember.executed is True
+    assert identical_remember.risk_level == "read_only"
+    assert identical_remember.executed is False
+    assert repeated_identical_remember.operation_id == identical_remember.operation_id
+    assert repeated_identical_remember.duplicate_suppressed is True
+    assert memory.forget_calls == 1
+    assert memory.remember_calls == 2
+
+
+def test_direct_memory_journal_redacts_private_markers_from_metadata(tmp_path):
+    from memory import LocalMemoryManager
+
+    private_key = "TASK096_PRIVATE_KEY"
+    private_value = "TASK096_PRIVATE_VALUE"
+    memory = LocalMemoryManager(tmp_path / "private_memory.json")
+    service = JarvisAppService(command_processor=FakeCommandProcessor(), memory_manager=memory)
+
+    first = service.execute_command(
+        f"remember that {private_key} is {private_value}",
+        AppCommandSource.TEST,
+        idempotency_key="task096-private",
+    )
+    duplicate = service.execute_command(
+        f"remember that {private_key} is {private_value}",
+        AppCommandSource.TEST,
+        idempotency_key="task096-private",
+    )
+    conflict = service.execute_command(
+        f"remember that {private_key} is changed",
+        AppCommandSource.TEST,
+        idempotency_key="task096-private",
+    )
+    serialized = service.recent_execution_operations(None)
+    metadata_text = repr([operation["metadata"] for operation in serialized])
+    operation_text = repr(
+        [
+            {
+                "command_id": operation["command_id"],
+                "safe_error_code": operation["safe_error_code"],
+                "metadata": operation["metadata"],
+            }
+            for operation in serialized
+        ]
+    )
+    result_metadata_text = repr(
+        [
+            first.operation_id,
+            first.operation_status,
+            first.error,
+            duplicate.operation_id,
+            duplicate.operation_status,
+            duplicate.error,
+            conflict.operation_id,
+            conflict.operation_status,
+            conflict.error,
+        ]
+    )
+
+    for marker in (private_key, private_value):
+        assert marker not in metadata_text
+        assert marker not in operation_text
+        assert marker not in result_metadata_text
+    assert serialized[0]["metadata"]["input_preview"] == "memory.remember [REDACTED]"
+    assert duplicate.duplicate_suppressed is True
+    assert conflict.error == "idempotency_conflict"
+
+
+def test_direct_state_execution_failure_marks_operation_failed(tmp_path):
+    from memory import LocalMemoryManager
+
+    class FailingMemoryManager(LocalMemoryManager):
+        def remember_user_fact(self, key, value, *, language_code="ru-RU"):
+            raise RuntimeError("memory write failed")
+
+    memory = FailingMemoryManager(tmp_path / "failed_memory.json")
+    service = JarvisAppService(command_processor=FakeCommandProcessor(), memory_manager=memory)
+
+    result = service.execute_command("remember that task096 failure key is value", AppCommandSource.TEST)
+    operation = service.recent_execution_operations(1)[0]
+
+    assert result.ok is False
+    assert result.operation_status == "failed"
+    assert result.error == "memory write failed"
+    assert operation["status"] == "failed"
+    assert operation["safe_error_code"] == "memory write failed"
+
+
+def test_planner_local_write_policy_matches_capability_metadata(tmp_path):
+    from memory import LocalMemoryManager
+
+    memory = LocalMemoryManager(tmp_path / "planner_policy_memory.json")
+    service = JarvisAppService(
+        command_processor=FakeCommandProcessor(),
+        memory_manager=memory,
+    )
+
+    language = service.planner_registry.get("language.set")
+    remember = service.planner_registry.get("memory.remember")
+    forget = service.planner_registry.get("memory.forget")
+
+    for capability in (language, remember, forget):
+        assert capability.descriptor.risk_level == "local_write"
+        request = capability.policy_factory({}, False)
+        assert request.command_id == capability.descriptor.capability_id
+        assert request.risk == "local_write"
+        assert "file_write" in request.required_capabilities
+        assert request.confirmation_present is True
 
 
 def test_preview_execute_plan_projects_destructive_next_step_without_arming_confirmation(tmp_path):

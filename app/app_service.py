@@ -5,6 +5,7 @@ and delegate execution to CommandProcessor, but it does not execute commands,
 call providers, route actions, read arbitrary files, or persist prompts.
 """
 
+from collections.abc import Callable
 from dataclasses import dataclass
 import re
 from threading import Lock
@@ -131,6 +132,14 @@ class AppStatusSnapshot:
 @dataclass(frozen=True)
 class PlannerCapabilityCallResult:
     safe_message: str
+
+
+@dataclass(frozen=True)
+class DirectStateChangePreparation:
+    command_id: str
+    category: str
+    safe_preview: str
+    execute: Callable[[], AppCommandResult | None]
 
 
 class JarvisAppService:
@@ -1065,6 +1074,17 @@ class JarvisAppService:
         startup_profile_result = self._handle_startup_profile_command(input_text, source)
         if startup_profile_result is not None:
             return startup_profile_result
+        language_preparation = self._prepare_direct_language_state_change(
+            input_text,
+            source,
+        )
+        if language_preparation is not None:
+            return self._coordinate_prepared_direct_state_change(
+                input_text,
+                source,
+                language_preparation,
+                idempotency_key=idempotency_key,
+            )
         language_result = self._handle_language_preference_command(input_text, source)
         if language_result is not None:
             return language_result
@@ -1078,6 +1098,17 @@ class JarvisAppService:
         )
         if planner_result is not None:
             return planner_result
+        memory_preparation = self._prepare_direct_memory_state_change(
+            input_text,
+            source,
+        )
+        if memory_preparation is not None:
+            return self._coordinate_prepared_direct_state_change(
+                input_text,
+                source,
+                memory_preparation,
+                idempotency_key=idempotency_key,
+            )
         memory_result = self._handle_memory_command(input_text, source)
         if memory_result is not None:
             return memory_result
@@ -1199,6 +1230,178 @@ class JarvisAppService:
             source,
             idempotency_key=idempotency_key,
         )
+
+    def _coordinate_prepared_direct_state_change(
+        self,
+        input_text: str,
+        source: AppCommandSource,
+        preparation: DirectStateChangePreparation,
+        *,
+        idempotency_key: str | None,
+    ) -> AppCommandResult:
+        fingerprint = self.execution_coordinator.create_request_fingerprint(
+            source=source.value,
+            text=input_text,
+            command_id=preparation.command_id,
+        )
+        registration = self.execution_coordinator.register(
+            source=source.value,
+            idempotency_key=idempotency_key,
+            request_fingerprint=fingerprint,
+            command_id=preparation.command_id,
+            metadata={
+                "input_preview": preparation.safe_preview,
+                "category": preparation.category,
+                "risk_level": "local_write",
+                "requires_confirmation": "no",
+                "network_may_be_used": "no",
+            },
+        )
+        operation = registration.operation
+        if registration.duplicate:
+            existing = self._operation_results.get(operation.operation_id)
+            if existing is not None:
+                return self._with_operation(existing, operation, duplicate_suppressed=True)
+            return self._operation_metadata_result(
+                input_text=input_text,
+                source=source,
+                operation=operation,
+                output_text="Duplicate request suppressed: operation is already registered.",
+                category=preparation.category,
+                risk_level="local_write",
+            )
+        if registration.conflict:
+            conflict = self._operation_metadata_result(
+                input_text=input_text,
+                source=source,
+                operation=operation,
+                output_text="Request denied: idempotency key conflict. Command was not executed.",
+                category=preparation.category,
+                risk_level="local_write",
+                error="idempotency_conflict",
+            )
+            self._remember_operation_result(conflict)
+            return conflict
+        try:
+            result = preparation.execute()
+        except Exception as exc:
+            operation = self.execution_coordinator.mark_failed(
+                operation.operation_id,
+                error_code=str(exc) or "direct_state_change_failed",
+            )
+            failed = self._operation_metadata_result(
+                input_text=input_text,
+                source=source,
+                operation=operation,
+                output_text="",
+                category=preparation.category,
+                risk_level="local_write",
+                error=str(exc),
+            )
+            self._remember_operation_result(failed)
+            return failed
+        if result is None:
+            operation = self.execution_coordinator.mark_failed(
+                operation.operation_id,
+                error_code="direct_state_change_not_handled",
+            )
+            failed = self._operation_metadata_result(
+                input_text=input_text,
+                source=source,
+                operation=operation,
+                output_text="",
+                category=preparation.category,
+                risk_level="local_write",
+                error="direct_state_change_not_handled",
+            )
+            self._remember_operation_result(failed)
+            return failed
+        if result.requires_confirmation and not result.executed:
+            operation = self.execution_coordinator.mark_awaiting_confirmation(
+                operation.operation_id
+            )
+        elif result.ok:
+            operation = self.execution_coordinator.mark_succeeded(
+                operation.operation_id,
+                summary=result.output_text,
+            )
+        else:
+            operation = self.execution_coordinator.mark_failed(
+                operation.operation_id,
+                error_code=result.error or "direct_state_change_failed",
+            )
+        coordinated = self._with_operation(result, operation)
+        self._remember_operation_result(coordinated)
+        return coordinated
+
+    def _coordinate_direct_state_change_result(
+        self,
+        input_text: str,
+        source: AppCommandSource,
+        result: AppCommandResult,
+        *,
+        idempotency_key: str | None,
+    ) -> AppCommandResult:
+        if result.operation_id is not None:
+            return result
+        if not result.executed and not result.requires_confirmation:
+            return result
+        command_id = result.registry_match_id
+        fingerprint = self.execution_coordinator.create_request_fingerprint(
+            source=source.value,
+            text=input_text,
+            command_id=command_id,
+        )
+        registration = self.execution_coordinator.register(
+            source=source.value,
+            idempotency_key=idempotency_key,
+            request_fingerprint=fingerprint,
+            command_id=command_id,
+            metadata={
+                "input_preview": safe_journal_text(input_text),
+                "category": result.category,
+                "risk_level": result.risk_level,
+                "requires_confirmation": result.requires_confirmation,
+                "network_may_be_used": result.network_may_be_used,
+            },
+        )
+        operation = registration.operation
+        if registration.duplicate:
+            existing = self._operation_results.get(operation.operation_id)
+            if existing is not None:
+                return self._with_operation(existing, operation, duplicate_suppressed=True)
+            return self._operation_metadata_result(
+                input_text=input_text,
+                source=source,
+                operation=operation,
+                output_text="Повторный запрос подавлен: операция уже зарегистрирована.",
+                category=result.category or "duplicate_suppressed",
+                risk_level=result.risk_level or "safe_metadata_only",
+            )
+        if registration.conflict:
+            conflict = self._operation_metadata_result(
+                input_text=input_text,
+                source=source,
+                operation=operation,
+                output_text="Запрос отклонён: конфликт idempotency key. Команда не запускалась.",
+                category=result.category or "policy_denied",
+                risk_level=result.risk_level or "safe_metadata_only",
+                error="idempotency_conflict",
+            )
+            self._remember_operation_result(conflict)
+            return conflict
+        if result.requires_confirmation and not result.executed:
+            operation = self.execution_coordinator.mark_awaiting_confirmation(
+                operation.operation_id
+            )
+        elif result.executed:
+            operation = self.execution_coordinator.mark_succeeded(
+                operation.operation_id,
+                summary=result.output_text,
+            )
+        coordinated = self._with_operation(result, operation)
+        self._remember_operation_result(coordinated)
+        return coordinated
 
     def _execute_command_uncoordinated(
         self,
@@ -1426,6 +1629,12 @@ class JarvisAppService:
             ):
                 self.command_processor._policy_confirmation_for_command = previous_confirmation
             output_text = str(processor_result.get("response", processor_result))
+            requires_confirmation = preview.requires_confirmation
+            if not confirmation_present and (
+                processor_result.get("requires_confirmation") is False
+                or processor_result.get("intent") == "microphone.mode.status"
+            ):
+                requires_confirmation = False
             return AppCommandResult(
                 ok=True,
                 input_text=input_text,
@@ -1435,7 +1644,7 @@ class JarvisAppService:
                 category=preview.category,
                 risk_level=preview.risk_level,
                 executed=True,
-                requires_confirmation=preview.requires_confirmation,
+                requires_confirmation=requires_confirmation,
                 network_may_be_used=preview.requires_network,
                 response_executed_as_command=False,
                 error=None,
@@ -2559,12 +2768,12 @@ class JarvisAppService:
             PlanCapability(
                 descriptor("language.set", "Изменить язык", "Set language", "profile", "local_write", PlanSideEffect.BOUNDED_LOCAL_STATE, False, {"language_code": "ru-RU|en-US"}),
                 language_set,
-                lambda args, confirmed: policy("language.set", "read_only", (PolicyCapability.READ_SYSTEM_STATE.value,), "set language", True),
+                lambda args, confirmed: policy("language.set", "local_write", (PolicyCapability.FILE_WRITE.value,), "set language", True),
             ),
             PlanCapability(
                 descriptor("memory.remember", "Запомнить факт", "Remember fact", "memory", "local_write", PlanSideEffect.BOUNDED_LOCAL_STATE, False, {"key": "string", "value": "string"}),
                 memory_remember,
-                lambda args, confirmed: policy("memory.remember", "read_only", (PolicyCapability.READ_SYSTEM_STATE.value,), "memory remember", True),
+                lambda args, confirmed: policy("memory.remember", "local_write", (PolicyCapability.FILE_WRITE.value,), "memory remember", True),
             ),
             PlanCapability(
                 descriptor("memory.recall", "Показать память", "Recall memory", "memory", "read_only", PlanSideEffect.READ_ONLY, False, {"key": "string"}),
@@ -2579,7 +2788,7 @@ class JarvisAppService:
             PlanCapability(
                 descriptor("memory.forget", "Забыть факт", "Forget fact", "memory", "local_write", PlanSideEffect.BOUNDED_LOCAL_STATE, False, {"key": "string"}),
                 memory_forget,
-                lambda args, confirmed: policy("memory.forget", "read_only", (PolicyCapability.READ_SYSTEM_STATE.value,), "memory forget", True),
+                lambda args, confirmed: policy("memory.forget", "local_write", (PolicyCapability.FILE_WRITE.value,), "memory forget", True),
             ),
             PlanCapability(
                 descriptor("memory.forget_all", "Удалить всю память", "Forget all memory", "memory", "confirmation_required", PlanSideEffect.BOUNDED_LOCAL_STATE, True),
@@ -2867,6 +3076,67 @@ class JarvisAppService:
             awaiting_confirmation=operation.awaiting_confirmation,
         )
 
+    def _prepare_direct_memory_state_change(
+        self,
+        input_text: str,
+        source: AppCommandSource,
+    ) -> DirectStateChangePreparation | None:
+        parsed = self._parse_memory_command(input_text)
+        if parsed is None:
+            return None
+        action, _key, _value = parsed
+        if action == "remember":
+            return DirectStateChangePreparation(
+                command_id="memory.remember",
+                category="memory",
+                safe_preview="memory.remember [REDACTED]",
+                execute=lambda: self._handle_memory_command(input_text, source),
+            )
+        if action == "forget":
+            return DirectStateChangePreparation(
+                command_id="memory.forget",
+                category="memory",
+                safe_preview="memory.forget [REDACTED]",
+                execute=lambda: self._handle_memory_command(input_text, source),
+            )
+        return None
+
+    def _prepare_direct_language_state_change(
+        self,
+        input_text: str,
+        source: AppCommandSource,
+    ) -> DirectStateChangePreparation | None:
+        normalized = self.command_registry.normalize_alias(input_text)
+        reset_commands = {
+            "\u0441\u0431\u0440\u043e\u0441\u0438\u0442\u044c \u044f\u0437\u044b\u043a",
+            "reset language",
+        }
+        set_prefixes = (
+            "\u044f\u0437\u044b\u043a ",
+            "\u0443\u0441\u0442\u0430\u043d\u043e\u0432\u0438\u0442\u044c ",
+            "\u0443\u0441\u0442\u0430\u043d\u043e\u0432\u0438\u0442\u044c \u044f\u0437\u044b\u043a ",
+            "\u0443\u0441\u0442\u0430\u043d\u043e\u0432\u0438\u0442\u044c \u0440\u0443\u0441\u0441\u043a\u0438\u0439 \u044f\u0437\u044b\u043a",
+            "\u0443\u0441\u0442\u0430\u043d\u043e\u0432\u0438\u0442\u044c \u0430\u043d\u0433\u043b\u0438\u0439\u0441\u043a\u0438\u0439 \u044f\u0437\u044b\u043a",
+            "\u043f\u0435\u0440\u0435\u043a\u043b\u044e\u0447\u0438\u0442\u044c \u044f\u0437\u044b\u043a \u043d\u0430 ",
+            "language ",
+            "set language to ",
+        )
+        if normalized in reset_commands:
+            return DirectStateChangePreparation(
+                command_id="profile.language.reset",
+                category="profile",
+                safe_preview="profile.language.reset",
+                execute=lambda: self._handle_language_preference_command(input_text, source),
+            )
+        if self._extract_language_setting_text(normalized, set_prefixes) is not None:
+            return DirectStateChangePreparation(
+                command_id="profile.language.set",
+                category="profile",
+                safe_preview="profile.language.set",
+                execute=lambda: self._handle_language_preference_command(input_text, source),
+            )
+        return None
+
     def _memory_response_text(self, operation: MemoryOperationResult) -> str:
         english = self.language_manager.get_preference().language_code == "en-US"
         if operation.action == "remember":
@@ -3067,11 +3337,23 @@ class JarvisAppService:
 
         if normalized in status_commands:
             contract = self.get_language_preference()
-            return self._language_result(input_text, source, contract.message, changed=False)
+            return self._language_result(
+                input_text,
+                source,
+                contract.message,
+                changed=False,
+                command_id="profile.language.status",
+            )
 
         if normalized in reset_commands:
             contract = self.reset_language_preference()
-            return self._language_result(input_text, source, contract.message, changed=contract.changed)
+            return self._language_result(
+                input_text,
+                source,
+                contract.message,
+                changed=contract.changed,
+                command_id="profile.language.reset",
+            )
 
         if normalized in vague_commands:
             options = (
@@ -3127,6 +3409,7 @@ class JarvisAppService:
             source,
             contract.message,
             changed=contract.changed,
+            command_id="profile.language.set",
             ok=True,
         )
 
@@ -3137,6 +3420,7 @@ class JarvisAppService:
         output_text: str,
         *,
         changed: bool,
+        command_id: str,
         ok: bool = True,
     ) -> AppCommandResult:
         return AppCommandResult(
@@ -3144,10 +3428,10 @@ class JarvisAppService:
             input_text=input_text,
             output_text=output_text,
             source=source,
-            registry_match_id="profile.language.set" if changed else "profile.language.status",
+            registry_match_id=command_id,
             category="profile",
-            risk_level="read_only",
-            executed=False,
+            risk_level="local_write" if changed else "read_only",
+            executed=changed,
             requires_confirmation=False,
             network_may_be_used=False,
             response_executed_as_command=False,

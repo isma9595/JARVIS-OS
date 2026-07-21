@@ -13,7 +13,11 @@ class FakeExecutionResult:
     registry_match_id: str | None = "ai.status"
     category: str | None = "ai"
     risk_level: str | None = "read_only"
+    requires_confirmation: bool = False
     network_may_be_used: bool = False
+    operation_id: str | None = None
+    operation_status: str | None = None
+    awaiting_confirmation: bool = False
     error: str | None = None
     requires_clarification: bool = False
     clarification_question: str | None = None
@@ -108,6 +112,31 @@ class FakeAppService:
         return getattr(self, "voice_result", None) or FakeVoiceResult(
             text_result=FakeExecutionResult(output_text="processed voice command")
         )
+
+
+class FakeAppServiceCommandProcessor:
+    def __init__(self):
+        self.calls = []
+        self.action_router = self.FailingActionRouter()
+
+    class FailingActionRouter:
+        def route(self, command):
+            raise AssertionError("Desktop AppService test must not call ActionRouter")
+
+    def process(self, text):
+        self.calls.append(text)
+        if text == "\u0441\u0442\u0430\u0442\u0443\u0441 \u043c\u0438\u043a\u0440\u043e\u0444\u043e\u043d\u0430":
+            return {
+                "intent": "microphone.mode.status",
+                "response": "\u041c\u0438\u043a\u0440\u043e\u0444\u043e\u043d \u0432\u044b\u043a\u043b\u044e\u0447\u0435\u043d.",
+            }
+        if text == "task096 \u043d\u0435\u0438\u0437\u0432\u0435\u0441\u0442\u043d\u0430\u044f \u0431\u0435\u0437\u043e\u043f\u0430\u0441\u043d\u0430\u044f \u043a\u043e\u043c\u0430\u043d\u0434\u0430":
+            return {
+                "intent": "unknown",
+                "requires_confirmation": False,
+                "response": "\u041f\u043e\u043b\u044c\u0437\u043e\u0432\u0430\u0442\u0435\u043b\u044c, \u044f \u043f\u043e\u043a\u0430 \u043d\u0435 \u0443\u043c\u0435\u044e \u0432\u044b\u043f\u043e\u043b\u043d\u044f\u0442\u044c \u044d\u0442\u0443 \u043a\u043e\u043c\u0430\u043d\u0434\u0443, \u043d\u043e \u043c\u043e\u0433\u0443 \u0441\u043e\u0445\u0440\u0430\u043d\u0438\u0442\u044c \u0435\u0451 \u043a\u0430\u043a \u0438\u0434\u0435\u044e \u0434\u043b\u044f \u0431\u0443\u0434\u0443\u0449\u0435\u0433\u043e.",
+            }
+        return {"intent": "fake.intent", "response": f"processed: {text}"}
 
 
 class FakeRoot:
@@ -487,6 +516,92 @@ def test_desktop_shell_projects_local_write_execute_plan_with_real_service(tmp_p
     assert service.memory_manager.recall_user_fact("test word").found is False
 
 
+def test_desktop_shell_projects_state_changing_execution_confirmation_and_operation(tmp_path):
+    service = JarvisAppService(
+        memory_manager=LocalMemoryManager(tmp_path / "desktop_task096_memory.json")
+    )
+    view_model = DesktopShellViewModel(service)
+
+    text = view_model.execute_command("remember that task096marker is west")
+
+    assert "- command id: memory.remember" in text
+    assert "- category: memory" in text
+    assert "- risk: local_write" in text
+    assert "- requires confirmation: no" in text
+    assert "- operation id: op-" in text
+    assert "- operation status: succeeded" in text
+    assert service.memory_manager.recall_user_fact("task096marker").value == "west"
+
+
+def test_desktop_shell_projects_microphone_status_confirmation_from_app_service(tmp_path):
+    service = JarvisAppService(
+        command_processor=FakeAppServiceCommandProcessor(),
+        memory_manager=LocalMemoryManager(tmp_path / "desktop_microphone_status_memory.json"),
+    )
+    view_model = DesktopShellViewModel(service)
+
+    text = view_model.execute_command(
+        "\u0441\u0442\u0430\u0442\u0443\u0441 \u043c\u0438\u043a\u0440\u043e\u0444\u043e\u043d\u0430"
+    )
+
+    assert "- command id: none" in text
+    assert "- category: unknown" in text
+    assert "- risk: unknown" in text
+    assert "- requires confirmation: no" in text
+    assert "- operation status: succeeded" in text
+    assert "- awaiting confirmation: yes" not in text
+    assert service.memory_manager.recall_user_fact("task096marker").found is False
+
+
+def test_desktop_shell_projects_unknown_fallback_confirmation_from_app_service(tmp_path):
+    service = JarvisAppService(
+        command_processor=FakeAppServiceCommandProcessor(),
+        memory_manager=LocalMemoryManager(tmp_path / "desktop_unknown_fallback_memory.json"),
+    )
+    view_model = DesktopShellViewModel(service)
+
+    text = view_model.execute_command(
+        "task096 \u043d\u0435\u0438\u0437\u0432\u0435\u0441\u0442\u043d\u0430\u044f \u0431\u0435\u0437\u043e\u043f\u0430\u0441\u043d\u0430\u044f \u043a\u043e\u043c\u0430\u043d\u0434\u0430"
+    )
+
+    assert "- command id: none" in text
+    assert "- category: unknown" in text
+    assert "- risk: unknown" in text
+    assert "- requires confirmation: no" in text
+    assert "- operation status: succeeded" in text
+    assert "- awaiting confirmation: yes" not in text
+    assert service.memory_manager.recall_user_fact("task096marker").found is False
+
+
+def test_desktop_shell_renders_positive_awaiting_confirmation_result_without_execution():
+    class AwaitingConfirmationService(FakeAppService):
+        def execute_command(self, text, source):
+            self.execute_calls.append((text, source))
+            return FakeExecutionResult(
+                output_text="confirmation required",
+                registry_match_id="memory.forget_all",
+                category="memory",
+                risk_level="confirmation_required",
+                requires_confirmation=True,
+                operation_id="op-awaiting",
+                operation_status="awaiting_confirmation",
+                awaiting_confirmation=True,
+            )
+
+    service = AwaitingConfirmationService()
+    view_model = DesktopShellViewModel(service)
+
+    text = view_model.execute_command("forget all memory")
+
+    assert "- command id: memory.forget_all" in text
+    assert "- risk: confirmation_required" in text
+    assert "- requires confirmation: yes" in text
+    assert "- operation id: op-awaiting" in text
+    assert "- operation status: awaiting_confirmation" in text
+    assert "- executed through AppService: yes" in text
+    assert service.execute_calls == [("forget all memory", AppCommandSource.DESKTOP_UI)]
+
+
 def test_preview_of_groq_real_request_marks_network_risk_privacy_without_execution():
     service = FakeAppService()
     view_model = DesktopShellViewModel(service)
@@ -508,6 +623,7 @@ def test_execute_command_calls_app_service_execute_only():
 
     assert service.execute_calls == [("статус ai", AppCommandSource.DESKTOP_UI)]
     assert "Desktop shell execution:" in text
+    assert "- requires confirmation: no" in text
     assert "- executed through AppService: yes" in text
     assert "processed: статус ai" in text
 

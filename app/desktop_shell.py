@@ -202,6 +202,7 @@ class DesktopShellViewModel:
             f"- command id: {getattr(result, 'registry_match_id', None) or 'none'}",
             f"- category: {getattr(result, 'category', None) or 'unknown'}",
             f"- risk: {getattr(result, 'risk_level', None) or 'unknown'}",
+            f"- requires confirmation: {'yes' if getattr(result, 'requires_confirmation', False) else 'no'}",
             f"- operation id: {getattr(result, 'operation_id', None) or 'none'}",
             f"- operation status: {getattr(result, 'operation_status', None) or 'none'}",
             f"- duplicate suppressed: {'yes' if getattr(result, 'duplicate_suppressed', False) else 'no'}",

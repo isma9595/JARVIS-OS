@@ -81,8 +81,11 @@ def make_phase2_service():
         "microphone_mode_partial": "MICROPHONE_MODE_PARTIAL_COMMANDS",
         "microphone_mode_continuous": "MICROPHONE_MODE_CONTINUOUS_COMMANDS",
         "one_shot_vosk_bridge": "ONE_SHOT_VOSK_BRIDGE_COMMANDS",
+        "voice_output_dry_run_enable": "VOICE_OUTPUT_DRY_RUN_ENABLE_COMMANDS",
+        "voice_output_disable": "VOICE_OUTPUT_DISABLE_COMMANDS",
         "voice_output_local_status": "VOICE_OUTPUT_LOCAL_STATUS_COMMANDS",
         "assistant_identity": "ASSISTANT_IDENTITY_COMMANDS",
+        "assistant_name_reset": "ASSISTANT_NAME_RESET_COMMANDS",
         "assistant_name_change": "ASSISTANT_NAME_CHANGE_PREFIXES",
         "profile_status": "PROFILE_COMMANDS",
         "system_version": "VERSION_COMMANDS",
@@ -132,6 +135,57 @@ def test_exact_language_get_and_set_routes_resolve_with_safe_args():
     assert set_en.resolution_status == CommandResolutionStatus.RESOLVED
     assert set_en.command_id == "profile.language.set"
     assert set_en.safe_args == {"language": "english"}
+
+
+@pytest.mark.parametrize(
+    ("group_name", "command_id", "category"),
+    (
+        ("language_set", "profile.language.set", "profile"),
+        ("language_reset", "profile.language.reset", "profile"),
+        ("microphone_mode_off", "microphone.mode.off", "voice"),
+        ("microphone_mode_partial", "microphone.mode.partial", "voice"),
+        ("microphone_mode_continuous", "microphone.mode.continuous", "voice"),
+        ("voice_output_dry_run_enable", "voice.output.dry_run.enabled", "voice"),
+        ("voice_output_disable", "voice.output.disable", "voice"),
+        ("assistant_name_change", "assistant.name.set", "assistant"),
+        ("assistant_name_reset", "assistant.name.reset", "assistant"),
+    ),
+)
+def test_state_changing_resolver_metadata_comes_from_existing_registry(
+    group_name,
+    command_id,
+    category,
+):
+    from core.command_processor import CommandProcessor
+
+    group_to_attribute = {
+        "language_set": None,
+        "language_reset": None,
+        "microphone_mode_off": "MICROPHONE_MODE_OFF_COMMANDS",
+        "microphone_mode_partial": "MICROPHONE_MODE_PARTIAL_COMMANDS",
+        "microphone_mode_continuous": "MICROPHONE_MODE_CONTINUOUS_COMMANDS",
+        "voice_output_dry_run_enable": "VOICE_OUTPUT_DRY_RUN_ENABLE_COMMANDS",
+        "voice_output_disable": "VOICE_OUTPUT_DISABLE_COMMANDS",
+        "assistant_name_change": "ASSISTANT_NAME_CHANGE_PREFIXES",
+        "assistant_name_reset": "ASSISTANT_NAME_RESET_COMMANDS",
+    }
+    if group_name == "language_set":
+        command = "language English"
+    elif group_name == "language_reset":
+        command = "reset language"
+    elif group_name == "assistant_name_change":
+        command = next(iter(CommandProcessor.ASSISTANT_NAME_CHANGE_PREFIXES)) + " TASK096"
+    else:
+        command = next(iter(getattr(CommandProcessor, group_to_attribute[group_name])))
+
+    resolution = make_phase2_service().resolve(command)
+
+    assert resolution.resolution_status == CommandResolutionStatus.RESOLVED
+    assert resolution.command_id == command_id
+    assert resolution.category == category
+    if resolution.metadata is not None:
+        assert resolution.metadata.command_id == command_id
+        assert resolution.metadata.category.value == category
 
 
 def test_known_phase1_excluded_route_is_explicit_legacy_passthrough():

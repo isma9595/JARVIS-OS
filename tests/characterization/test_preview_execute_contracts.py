@@ -70,9 +70,8 @@ def assert_desktop_fields(
     assert f"- command id: {command_id}" in text
     assert f"- category: {category}" in text
     assert f"- risk: {risk}" in text
-    assert "- requires confirmation:" not in text
-    assert requires_confirmation is None
-    assert "- operation id: none" in text
+    assert f"- requires confirmation: {requires_confirmation}" in text
+    assert "- operation id: op-" in text
     assert f"- operation status: {operation_status}" in text
     assert "- executed through AppService: yes" in text
 
@@ -93,8 +92,12 @@ def test_characterizes_current_preview_execute_memory_remember(tmp_path):
     assert result.requires_confirmation is False
     assert result.network_may_be_used is False
     assert result.response_executed_as_command is False
-    assert result.operation_id is None
+    assert result.operation_id is not None
     assert result.operation_status == "succeeded"
+    operation = service.recent_execution_operations(1)[0]
+    assert operation["command_id"] == "memory.remember"
+    assert operation["status"] == "succeeded"
+    assert operation["metadata"]["risk_level"] == "local_write"
     assert memory.recall_user_fact("audit091key").value == "north"
     assert processor.calls == []
 
@@ -141,8 +144,12 @@ def test_characterizes_current_preview_execute_memory_forget(tmp_path):
     assert result.requires_confirmation is False
     assert result.network_may_be_used is False
     assert result.response_executed_as_command is False
-    assert result.operation_id is None
+    assert result.operation_id is not None
     assert result.operation_status == "succeeded"
+    operation = service.recent_execution_operations(1)[0]
+    assert operation["command_id"] == "memory.forget"
+    assert operation["status"] == "succeeded"
+    assert operation["metadata"]["risk_level"] == "local_write"
     assert memory.recall_user_fact("audit091key").found is False
     assert memory_entries(memory) == ()
     assert processor.calls == []
@@ -165,8 +172,8 @@ def test_characterizes_current_state_changing_metadata_for_memory_and_language(t
     )
     desktop_text = DesktopShellViewModel(desktop_service).execute_command(SET_LANGUAGE_EN)
 
-    # CHARACTERIZATION OF CURRENT BEHAVIOR: equivalent state-changing routes
-    # expose different metadata for recognition, risk, execution, and operations.
+    # TASK-096 CONTRACT: state-changing routes preserve local-write metadata
+    # and operation journal identity when they mutate isolated state.
     assert (memory_preview.known_command, memory_preview.registry_match_id) == (False, None)
     assert (remember.registry_match_id, remember.category, remember.risk_level) == (
         "memory.remember",
@@ -175,7 +182,7 @@ def test_characterizes_current_state_changing_metadata_for_memory_and_language(t
     )
     assert remember.executed is True
     assert remember.requires_confirmation is False
-    assert remember.operation_id is None
+    assert remember.operation_id is not None
     assert remember.operation_status == "succeeded"
 
     assert (forget.registry_match_id, forget.category, forget.risk_level) == (
@@ -185,7 +192,7 @@ def test_characterizes_current_state_changing_metadata_for_memory_and_language(t
     )
     assert forget.executed is True
     assert forget.requires_confirmation is False
-    assert forget.operation_id is None
+    assert forget.operation_id is not None
     assert forget.operation_status == "succeeded"
     assert memory.list_user_facts().entries == ()
 
@@ -201,17 +208,22 @@ def test_characterizes_current_state_changing_metadata_for_memory_and_language(t
 
     assert language_result.registry_match_id == "profile.language.set"
     assert language_result.category == "profile"
-    assert language_result.risk_level == "read_only"
-    assert language_result.executed is False
+    assert language_result.risk_level == "local_write"
+    assert language_result.executed is True
     assert language_result.requires_confirmation is False
     assert language_result.network_may_be_used is False
     assert language_result.response_executed_as_command is False
-    assert language_result.operation_id is None
-    assert language_result.operation_status is None
+    assert language_result.operation_id is not None
+    assert language_result.operation_status == "succeeded"
+    operation = service.recent_execution_operations(1)[0]
+    assert operation["command_id"] == "profile.language.set"
+    assert operation["status"] == "succeeded"
+    assert operation["metadata"]["risk_level"] == "local_write"
     assert language_after_execute == "en-US"
 
     assert "command id: profile.language.set" in desktop_text
-    assert "risk: read_only" in desktop_text
+    assert "risk: local_write" in desktop_text
+    assert "requires confirmation: no" in desktop_text
 
 
 def test_characterizes_current_desktop_memory_and_language_execution_fields(tmp_path):
@@ -233,14 +245,14 @@ def test_characterizes_current_desktop_memory_and_language_execution_fields(tmp_
     )
     language_text = DesktopShellViewModel(language_service).execute_command(SET_LANGUAGE_EN)
 
-    # CHARACTERIZATION OF CURRENT BEHAVIOR: Desktop Shell output matches the
-    # AppService values it renders, while omitting requires-confirmation.
+    # TASK-096 CONTRACT: Desktop Shell output renders AppService metadata,
+    # including confirmation and operation status for state-changing commands.
     assert_desktop_fields(
         remember_text,
         command_id="memory.remember",
         category="memory",
         risk="local_write",
-        requires_confirmation=None,
+        requires_confirmation="no",
         operation_status="succeeded",
     )
     assert remember_memory.recall_user_fact("audit091key").value == "north"
@@ -250,7 +262,7 @@ def test_characterizes_current_desktop_memory_and_language_execution_fields(tmp_
         command_id="memory.forget",
         category="memory",
         risk="local_write",
-        requires_confirmation=None,
+        requires_confirmation="no",
         operation_status="succeeded",
     )
     assert forget_memory.recall_user_fact("audit091key").found is False
@@ -259,9 +271,9 @@ def test_characterizes_current_desktop_memory_and_language_execution_fields(tmp_
         language_text,
         command_id="profile.language.set",
         category="profile",
-        risk="read_only",
-        requires_confirmation=None,
-        operation_status="none",
+        risk="local_write",
+        requires_confirmation="no",
+        operation_status="succeeded",
     )
     assert language.get_preference().language_code == "en-US"
     assert remember_processor.calls == []
