@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
@@ -201,6 +202,151 @@ def test_search_memories_with_empty_query():
         manager.add_memory("локальный факт")
 
         assert manager.search_memories("   ") == []
+
+
+def test_exact_user_fact_recall_still_succeeds():
+    with TemporaryDirectory() as tmp_dir:
+        manager = create_manager(tmp_dir)
+        manager.remember_user_fact("маркер аудита 9073", "value-9073")
+
+        result = manager.recall_user_fact("маркер аудита 9073")
+
+        assert result.found is True
+        assert result.value == "value-9073"
+        assert result.changed is False
+
+
+def test_russian_inflected_user_fact_recall_uses_read_only_alias():
+    with TemporaryDirectory() as tmp_dir:
+        manager = create_manager(tmp_dir)
+        manager.remember_user_fact("маркер аудита 9073", "value-9073")
+        before = manager.storage_path.read_text(encoding="utf-8")
+
+        result = manager.recall_user_fact("маркере аудита 9073")
+        after = manager.storage_path.read_text(encoding="utf-8")
+
+        assert result.found is True
+        assert result.key == "маркер аудита 9073"
+        assert result.value == "value-9073"
+        assert result.changed is False
+        assert before == after
+        assert len(manager.list_user_facts().entries) == 1
+
+
+def test_exact_recall_does_not_use_alias_candidates(monkeypatch):
+    with TemporaryDirectory() as tmp_dir:
+        manager = create_manager(tmp_dir)
+        manager.remember_user_fact("маркер аудита 9073", "exact-value")
+
+        def fail_if_called(_cls, _normalized_key):
+            raise AssertionError("exact recall must not derive alias candidates")
+
+        monkeypatch.setattr(
+            LocalMemoryManager,
+            "_recall_alias_candidate_keys",
+            classmethod(fail_if_called),
+        )
+
+        result = manager.recall_user_fact("маркер аудита 9073")
+
+        assert result.found is True
+        assert result.value == "exact-value"
+
+
+def test_exact_key_wins_when_exact_and_alias_like_keys_both_exist():
+    with TemporaryDirectory() as tmp_dir:
+        manager = create_manager(tmp_dir)
+        manager.remember_user_fact("маркер аудита 9073", "nominative-value")
+        manager.remember_user_fact("маркере аудита 9073", "inflected-value")
+
+        nominative = manager.recall_user_fact("маркер аудита 9073")
+        inflected = manager.recall_user_fact("маркере аудита 9073")
+
+        assert nominative.value == "nominative-value"
+        assert inflected.value == "inflected-value"
+        assert len(manager.list_user_facts().entries) == 2
+
+
+def test_ambiguous_recall_alias_candidates_return_safe_miss(monkeypatch):
+    with TemporaryDirectory() as tmp_dir:
+        manager = create_manager(tmp_dir)
+        manager.remember_user_fact("маркер аудита 9073", "first")
+        manager.remember_user_fact("маркер аудите 9073", "second")
+
+        monkeypatch.setattr(
+            LocalMemoryManager,
+            "_recall_alias_candidate_keys",
+            classmethod(
+                lambda _cls, _normalized_key: (
+                    "маркер аудита 9073",
+                    "маркер аудите 9073",
+                )
+            ),
+        )
+
+        result = manager.recall_user_fact("маркере аудита 9073")
+
+        assert result.found is False
+        assert result.value is None
+
+
+def test_recall_alias_does_not_persist_new_key_or_change_storage():
+    with TemporaryDirectory() as tmp_dir:
+        manager = create_manager(tmp_dir)
+        manager.remember_user_fact("маркер аудита 9073", "value-9073")
+        before_text = manager.storage_path.read_text(encoding="utf-8")
+        before_data = json.loads(before_text)
+
+        manager.recall_user_fact("маркере аудита 9073")
+
+        after_text = manager.storage_path.read_text(encoding="utf-8")
+        after_data = json.loads(after_text)
+        assert after_text == before_text
+        assert after_data == before_data
+        assert [
+            item["display_key"]
+            for item in after_data["items"]
+            if item.get("type") == "persistent_user_fact"
+        ] == ["маркер аудита 9073"]
+
+
+def test_bounded_forget_does_not_use_recall_alias():
+    with TemporaryDirectory() as tmp_dir:
+        manager = create_manager(tmp_dir)
+        manager.remember_user_fact("маркер аудита 9073", "value-9073")
+
+        forget = manager.forget_user_fact("маркере аудита 9073")
+        recall = manager.recall_user_fact("маркер аудита 9073")
+
+        assert forget.found is False
+        assert forget.changed is False
+        assert recall.found is True
+        assert recall.value == "value-9073"
+
+
+def test_remember_does_not_write_through_recall_alias_normalization():
+    with TemporaryDirectory() as tmp_dir:
+        manager = create_manager(tmp_dir)
+        manager.remember_user_fact("маркер аудита 9073", "nominative-value")
+        manager.remember_user_fact("маркере аудита 9073", "inflected-value")
+
+        entries = manager.list_user_facts().entries
+
+        assert len(entries) == 2
+        assert manager.recall_user_fact("маркер аудита 9073").value == "nominative-value"
+        assert manager.recall_user_fact("маркере аудита 9073").value == "inflected-value"
+
+
+def test_unrelated_russian_keys_are_not_over_normalized():
+    with TemporaryDirectory() as tmp_dir:
+        manager = create_manager(tmp_dir)
+        manager.remember_user_fact("маркер проекта 9073", "project-value")
+
+        result = manager.recall_user_fact("маркера проекта 9073")
+
+        assert result.found is False
+        assert result.value is None
+        assert len(manager.list_user_facts().entries) == 1
 
 
 def run_tests():

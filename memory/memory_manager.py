@@ -251,7 +251,10 @@ class LocalMemoryManager:
                 safe_message="Нужно уточнить, что именно найти в памяти.",
                 safe_error_code="empty_memory_key",
             )
-        item = self._find_user_fact_item(self.load_memory()["items"], normalized_key)
+        items = self.load_memory()["items"]
+        item = self._find_user_fact_item(items, normalized_key)
+        if item is None:
+            item = self._find_recall_alias_user_fact_item(items, normalized_key)
         if item is None:
             return MemoryOperationResult(
                 ok=True,
@@ -421,6 +424,42 @@ class LocalMemoryManager:
             "city": "город",
         }
         return aliases.get(text, text)
+
+    @classmethod
+    def _recall_alias_candidate_keys(cls, normalized_key) -> tuple[str, ...]:
+        text = str(normalized_key or "").strip()
+        words = text.split()
+        candidates = []
+        replacements = {
+            "маркере": "маркер",
+        }
+        for index, word in enumerate(words):
+            replacement = replacements.get(word)
+            if replacement is None:
+                continue
+            candidate_words = list(words)
+            candidate_words[index] = replacement
+            candidate = " ".join(candidate_words)
+            if candidate != text and candidate not in candidates:
+                candidates.append(candidate)
+        return tuple(candidates)
+
+    @classmethod
+    def _find_recall_alias_user_fact_item(cls, items, normalized_key):
+        candidates = cls._recall_alias_candidate_keys(normalized_key)
+        if not candidates:
+            return None
+        matches = []
+        for item in items:
+            if (
+                isinstance(item, dict)
+                and item.get("type") == MemoryKind.PERSISTENT_USER_FACT.value
+                and item.get("normalized_key") in candidates
+            ):
+                matches.append(item)
+        if len(matches) != 1:
+            return None
+        return matches[0]
 
     def _validate_user_fact(self, key, value):
         display_key = self._display_key(key)

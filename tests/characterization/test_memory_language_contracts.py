@@ -47,8 +47,10 @@ def test_characterizes_current_russian_inflected_memory_key_lookup(tmp_path):
     exact = service.execute_command(QUERY_RU_EXACT, AppCommandSource.TEST)
     inflected = service.execute_command(QUERY_RU_INFLECTED, AppCommandSource.TEST)
 
-    # CHARACTERIZATION OF CURRENT BEHAVIOR: exact Russian key lookup succeeds,
-    # but the natural inflected form "о маркере ..." is treated as a different key.
+    before_entries = memory.list_user_facts().entries
+
+    # AUD-009 corrected behavior: exact Russian key lookup still succeeds,
+    # and the natural inflected form "о маркере ..." resolves read-only.
     assert stored.ok is True
     assert memory.recall_user_fact(SAVE_RU_MARKER).found is True
 
@@ -56,11 +58,15 @@ def test_characterizes_current_russian_inflected_memory_key_lookup(tmp_path):
     assert exact.category == "memory"
     assert exact.risk_level == "read_only"
     assert exact.executed is False
+    assert exact.requires_confirmation is False
+    assert exact.operation_id is None
     assert "value-9073" in exact.output_text
 
     assert inflected.registry_match_id == "memory.recall"
     assert inflected.category == "memory"
     assert inflected.risk_level == "read_only"
     assert inflected.executed is False
-    assert "value-9073" not in inflected.output_text
-    assert memory.recall_user_fact("\u043c\u0430\u0440\u043a\u0435\u0440\u0435 \u0430\u0443\u0434\u0438\u0442\u0430 9073").found is False
+    assert inflected.requires_confirmation is False
+    assert inflected.operation_id is None
+    assert "value-9073" in inflected.output_text
+    assert memory.list_user_facts().entries == before_entries

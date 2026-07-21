@@ -104,6 +104,56 @@ def test_memory_key_normalization_is_deterministic():
     assert normalize("favorite color") == "любимый цвет"
 
 
+def test_appservice_inflected_russian_memory_recall_is_read_only(tmp_path):
+    processor = FailingProcessor()
+    service = service_for(tmp_path, processor=processor)
+    service.remember_user_fact("маркер аудита 9073", "value-9073")
+    before_entries = service.list_user_memories().entries
+    before_storage = (Path(tmp_path) / "memory.json").read_text(encoding="utf-8")
+
+    result = service.execute_command(
+        "что ты помнишь о маркере аудита 9073",
+        AppCommandSource.TEST,
+    )
+    after_storage = (Path(tmp_path) / "memory.json").read_text(encoding="utf-8")
+
+    assert result.registry_match_id == "memory.recall"
+    assert result.category == "memory"
+    assert result.risk_level == "read_only"
+    assert result.executed is False
+    assert result.requires_confirmation is False
+    assert result.operation_id is None
+    assert result.operation_status == "succeeded"
+    assert "value-9073" in result.output_text
+    assert service.list_user_memories().entries == before_entries
+    assert after_storage == before_storage
+    assert processor.calls == []
+
+
+def test_preview_inflected_russian_memory_recall_only_classifies(tmp_path):
+    processor = FailingProcessor()
+    service = service_for(tmp_path, processor=processor)
+    service.remember_user_fact("маркер аудита 9073", "value-9073")
+    before_entries = service.list_user_memories().entries
+    before_storage = (Path(tmp_path) / "memory.json").read_text(encoding="utf-8")
+
+    preview = service.preview_command("что ты помнишь о маркере аудита 9073")
+    after_storage = (Path(tmp_path) / "memory.json").read_text(encoding="utf-8")
+
+    assert preview.known_command is True
+    assert preview.registry_match_id == "memory.recall"
+    assert preview.category == "memory"
+    assert preview.risk_level == "read_only"
+    assert preview.read_only is True
+    assert preview.requires_confirmation is False
+    assert preview.operation_id is None
+    assert service.list_user_memories().entries == before_entries
+    assert after_storage == before_storage
+    assert service.recent_execution_operations(None) == ()
+    assert service._pending_memory_forget_all is None
+    assert processor.calls == []
+
+
 def test_validation_rejects_empty_oversized_control_and_credentials(tmp_path):
     manager = LocalMemoryManager(Path(tmp_path) / "memory.json")
 

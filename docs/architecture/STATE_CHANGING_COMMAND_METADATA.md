@@ -42,7 +42,7 @@ The corrected direct AppService rows are:
 - `memory.remember`: execution is `local_write`, `executed=True`, operation status `succeeded`.
 - `memory.forget`: execution is `local_write`, `executed=True`, operation status `succeeded`.
 
-Read-only status/recall routes do not get artificial state-changing operation ids. Direct no-op requests on the coordinated routes, such as setting the active language, forgetting a missing key, or remembering an identical existing value, still register before handler execution so duplicate/conflict detection cannot be bypassed by a later `changed=False` result. The projected result may remain `read_only` / `executed=False` while the operation lifecycle records the accepted request.
+Read-only status/recall routes do not get artificial state-changing operation ids. TASK-098 corrected AUD-009 with a recall-only Russian memory-key alias path; that alias lookup remains read-only and does not affect remember, bounded forget, forget-all, write-time normalization, storage serialization, or operation registration. Direct no-op requests on the coordinated routes, such as setting the active language, forgetting a missing key, or remembering an identical existing value, still register before handler execution so duplicate/conflict detection cannot be bypassed by a later `changed=False` result. The projected result may remain `read_only` / `executed=False` while the operation lifecycle records the accepted request.
 
 Forget-all remains excluded from this direct-route registration path because it already has its own confirmation and pending-operation flow.
 
@@ -77,7 +77,6 @@ The shell remains a rendering layer.
 
 Unchanged:
 
-- AUD-009 Russian memory-key inflection.
 - AUD-011 Russian forget-all planner misclassification.
 - AUD-013 local TTS result metadata inconsistency.
 - AUD-016 technical microphone error presentation.
