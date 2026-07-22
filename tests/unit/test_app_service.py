@@ -21,6 +21,15 @@ LOCAL_TTS_TEST_COMMAND = (
     "\u043b\u043e\u043a\u0430\u043b\u044c\u043d\u043e\u0433\u043e "
     "\u0433\u043e\u043b\u043e\u0441\u0430"
 )
+ONE_SHOT_REAL_VOSK_COMMAND = (
+    "\u0440\u0435\u0430\u043b\u044c\u043d\u043e\u0435 "
+    "\u0440\u0430\u0441\u043f\u043e\u0437\u043d\u0430\u0432\u0430\u043d\u0438\u0435 "
+    "vosk"
+)
+RAW_MICROPHONE_ERROR = "Error querying device -1: PaErrorCode -9999; MME error 1"
+RAW_RECOGNIZER_ERROR = (
+    "backend sounddevice failed at C:/Users/User/vosk/model with raw exception"
+)
 
 
 class FakeLocalTtsBackend:
@@ -1926,6 +1935,65 @@ def test_one_shot_voice_blocks_without_provider_call_after_recognition_failure()
     assert recognizer.closed is True
 
 
+def test_one_shot_voice_sanitizes_raw_microphone_blocked_reason():
+    recognizer = FakeOneShotRecognition(
+        OneShotVoskRealRecognitionResult(
+            allowed=False,
+            completed=False,
+            blocked=True,
+            recognized_text=None,
+            capture_seconds=0,
+            reasons=[RAW_MICROPHONE_ERROR],
+            next_steps=["Проверьте микрофон."],
+        )
+    )
+    service = JarvisAppService(
+        command_processor=FakeCommandProcessor(),
+        one_shot_voice_recognition=recognizer,
+    )
+
+    result = service.process_one_shot_voice_request(AppCommandSource.TEST)
+    safe_text = result.safe_text_ru()
+
+    assert result.ok is False
+    assert result.result_type == "voice_recognition_blocked"
+    assert result.error_code == "recognition_blocked"
+    assert result.operation_id is None
+    assert result.operation_status is None
+    assert result.requires_confirmation is False
+    assert "Не удалось получить доступ к микрофону." in result.user_message
+    assert "PaErrorCode" not in result.user_message
+    assert "MME error" not in result.user_message
+    assert "Error querying device" not in result.user_message
+    assert "PaErrorCode" not in safe_text
+    assert "MME error" not in safe_text
+    assert "Error querying device" not in safe_text
+
+
+def test_one_shot_voice_sanitizes_unexpected_recognizer_exception_details():
+    service = JarvisAppService(
+        command_processor=FakeCommandProcessor(),
+        one_shot_voice_recognition=FakeOneShotRecognition(
+            error=RuntimeError(RAW_RECOGNIZER_ERROR)
+        ),
+    )
+
+    result = service.process_one_shot_voice_request(AppCommandSource.TEST)
+    safe_text = result.safe_text_ru()
+
+    assert result.ok is False
+    assert result.error_code == "one_shot_voice_failure"
+    assert result.requires_confirmation is False
+    assert "Не удалось получить доступ к микрофону." in result.user_message
+    assert "sounddevice" not in result.user_message
+    assert "C:/Users/User" not in result.user_message
+    assert "backend" not in result.user_message.lower()
+    assert "raw exception" not in result.user_message
+    assert "sounddevice" not in safe_text
+    assert "C:/Users/User" not in safe_text
+    assert "backend" not in safe_text.lower()
+
+
 def test_one_shot_voice_text_processing_failure_is_serializable_and_redacted():
     class FailingProcessor(FakeCommandProcessor):
         def process(self, text):
@@ -1951,7 +2019,7 @@ def test_one_shot_voice_text_processing_failure_is_serializable_and_redacted():
 def test_one_shot_voice_failure_message_is_russian_and_safe():
     class BrokenRecognizer:
         def run_once(self, explicit_one_shot_requested=False):
-            raise RuntimeError("device exploded")
+            raise RuntimeError("opaque recognizer failure")
 
     service = JarvisAppService(
         command_processor=FakeCommandProcessor(),
@@ -1962,8 +2030,40 @@ def test_one_shot_voice_failure_message_is_russian_and_safe():
 
     assert result.ok is False
     assert result.error_code == "one_shot_voice_failure"
-    assert "Голосовой запрос безопасно завершился ошибкой" in result.user_message
+    assert "Голосовой запрос безопасно завершился ошибкой." in result.user_message
+    assert "opaque recognizer failure" not in result.user_message
     assert "Traceback" not in result.user_message
+
+
+def test_text_one_shot_vosk_command_sanitizes_raw_hardware_reason_in_output_and_journal():
+    recognizer = FakeOneShotRecognition(
+        OneShotVoskRealRecognitionResult(
+            allowed=False,
+            completed=False,
+            blocked=True,
+            recognized_text=None,
+            capture_seconds=0,
+            reasons=[RAW_MICROPHONE_ERROR],
+            next_steps=["Проверьте микрофон."],
+        )
+    )
+    processor = CommandProcessor(one_shot_vosk_real_recognition=recognizer)
+    service = JarvisAppService(command_processor=processor)
+
+    preview = service.preview_command(ONE_SHOT_REAL_VOSK_COMMAND)
+    result = service.execute_command(ONE_SHOT_REAL_VOSK_COMMAND, AppCommandSource.TEST)
+    journal_text = str(service.recent_execution_operations())
+
+    assert preview.known_command is False
+    assert result.ok is True
+    assert result.operation_status == "succeeded"
+    assert "Не удалось получить доступ к микрофону." in result.output_text
+    assert "PaErrorCode" not in result.output_text
+    assert "MME error" not in result.output_text
+    assert "Error querying device" not in result.output_text
+    assert "PaErrorCode" not in journal_text
+    assert "MME error" not in journal_text
+    assert "Error querying device" not in journal_text
 
 
 def test_one_shot_voice_empty_recognition_message_is_russian():

@@ -5,6 +5,7 @@ from app import desktop_shell
 from app.desktop_shell import DesktopShellViewModel, JarvisDesktopShell
 from core.command_processor import CommandProcessor
 from memory import LocalMemoryManager
+from voice.one_shot_vosk_real_recognition import OneShotVoskRealRecognitionResult
 from voice.speech_synthesis_backend import SpeechSynthesisResult
 from voice.voice_output_manager import VoiceOutputManager
 
@@ -24,6 +25,7 @@ LOCAL_TTS_TEST_COMMAND = (
     "\u043b\u043e\u043a\u0430\u043b\u044c\u043d\u043e\u0433\u043e "
     "\u0433\u043e\u043b\u043e\u0441\u0430"
 )
+RAW_MICROPHONE_ERROR = "Error querying device -1: PaErrorCode -9999; MME error 1"
 
 
 class FakeLocalTtsBackend:
@@ -196,6 +198,17 @@ class FakeAppServiceCommandProcessor:
                 "response": "\u041f\u043e\u043b\u044c\u0437\u043e\u0432\u0430\u0442\u0435\u043b\u044c, \u044f \u043f\u043e\u043a\u0430 \u043d\u0435 \u0443\u043c\u0435\u044e \u0432\u044b\u043f\u043e\u043b\u043d\u044f\u0442\u044c \u044d\u0442\u0443 \u043a\u043e\u043c\u0430\u043d\u0434\u0443, \u043d\u043e \u043c\u043e\u0433\u0443 \u0441\u043e\u0445\u0440\u0430\u043d\u0438\u0442\u044c \u0435\u0451 \u043a\u0430\u043a \u0438\u0434\u0435\u044e \u0434\u043b\u044f \u0431\u0443\u0434\u0443\u0449\u0435\u0433\u043e.",
             }
         return {"intent": "fake.intent", "response": f"processed: {text}"}
+
+
+class FakeOneShotRecognition:
+    def __init__(self, result):
+        self.result = result
+        self.calls = 0
+
+    def run_once(self, explicit_one_shot_requested=False):
+        self.calls += 1
+        assert explicit_one_shot_requested is True
+        return self.result
 
 
 class FakeRoot:
@@ -927,6 +940,32 @@ def test_process_one_shot_voice_request_wraps_failure_safely():
     assert "vosk_runtime_unavailable" in text
     assert "sk-test-1234567890secret" not in text
     assert "[REDACTED]" in text
+    assert view_model.state.last_error == text
+
+
+def test_process_one_shot_voice_request_renders_sanitized_microphone_failure():
+    recognizer = FakeOneShotRecognition(
+        OneShotVoskRealRecognitionResult(
+            allowed=False,
+            completed=False,
+            blocked=True,
+            recognized_text=None,
+            capture_seconds=0,
+            reasons=[RAW_MICROPHONE_ERROR],
+            next_steps=["Проверьте микрофон."],
+        )
+    )
+    service = JarvisAppService(one_shot_voice_recognition=recognizer)
+    view_model = DesktopShellViewModel(service)
+
+    text = view_model.process_one_shot_voice_request()
+
+    assert "- result type: voice_recognition_blocked" in text
+    assert "- требуется подтверждение: нет" in text
+    assert "Не удалось получить доступ к микрофону." in text
+    assert "PaErrorCode" not in text
+    assert "MME error" not in text
+    assert "Error querying device" not in text
     assert view_model.state.last_error == text
 
 

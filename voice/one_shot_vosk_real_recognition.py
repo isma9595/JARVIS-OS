@@ -6,6 +6,7 @@ explicit one-shot request, recognizes locally, and never executes the text.
 
 from dataclasses import dataclass, field
 import json
+import re
 
 from voice.microphone_listening_modes import MicrophoneListeningModeManager
 from voice.one_shot_microphone_capture import (
@@ -36,6 +37,23 @@ DEFAULT_BLOCKED_SAFETY_NOTES = [
     "Распознавание не выполнялось.",
     "Распознанный текст не выполнялся как команда.",
 ]
+
+SAFE_MICROPHONE_ACCESS_FAILURE_REASON = (
+    "Не удалось получить доступ к микрофону. "
+    "Проверьте разрешение на использование микрофона в настройках Windows. "
+    "Убедитесь, что устройство ввода подключено и не используется другим приложением. "
+    "После исправления повторите голосовую команду."
+)
+
+SAFE_VOSK_RUNTIME_FAILURE_REASON = (
+    "Локальное распознавание Vosk временно недоступно. "
+    "Проверьте установку Vosk и путь к модели вручную."
+)
+
+SAFE_VOSK_RECOGNITION_FAILURE_REASON = (
+    "Локальное распознавание Vosk завершилось ошибкой. "
+    "Проверьте модель Vosk и повторите явную one-shot команду."
+)
 
 
 @dataclass(frozen=True)
@@ -162,7 +180,7 @@ class OneShotVoskRealRecognition:
             )
         except Exception as exc:
             return self._blocked_result(
-                [f"Vosk runtime недоступен: {exc}"],
+                [self._safe_vosk_runtime_failure_reason(exc)],
                 warnings=gate_warnings,
                 safety_notes=blocked_safety_notes,
                 next_steps=["Проверьте установку Vosk вручную."],
@@ -181,7 +199,7 @@ class OneShotVoskRealRecognition:
             capture_result = self._capture_once(active_capture_provider)
         except Exception as exc:
             return self._blocked_result(
-                [f"Одноразовый захват микрофона завершился ошибкой: {exc}"],
+                [self._safe_microphone_capture_failure_reason(exc)],
                 warnings=gate_warnings,
                 safety_notes=recognition_safety_notes,
                 next_steps=["Проверьте микрофон и повторите явную one-shot команду."],
@@ -200,7 +218,7 @@ class OneShotVoskRealRecognition:
             recognized_text = self._recognize(runtime, model_path, audio_payload)
         except Exception as exc:
             return self._blocked_result(
-                [f"Распознавание Vosk завершилось ошибкой: {exc}"],
+                [self._safe_vosk_recognition_failure_reason(exc)],
                 warnings=gate_warnings,
                 safety_notes=recognition_safety_notes,
                 next_steps=["Проверьте модель Vosk и совместимость пакета vosk."],
@@ -225,8 +243,12 @@ class OneShotVoskRealRecognition:
         if result.blocked:
             lines = ["Реальное распознавание Vosk заблокировано."]
             if result.reasons:
+                reasons = [
+                    OneShotVoskRealRecognition._safe_reason_for_display(reason)
+                    for reason in result.reasons
+                ]
                 lines.append("Причины:")
-                lines.extend(f"- {reason}" for reason in result.reasons)
+                lines.extend(f"- {reason}" for reason in reasons if reason)
             if result.next_steps:
                 lines.append(f"Следующий шаг: {result.next_steps[0]}")
             lines.append(f"Безопасность: {safety}")
@@ -365,6 +387,45 @@ class OneShotVoskRealRecognition:
             safety_notes=safety_notes,
             next_steps=next_steps,
         )
+
+    @staticmethod
+    def _safe_microphone_capture_failure_reason(_exc):
+        return SAFE_MICROPHONE_ACCESS_FAILURE_REASON
+
+    @staticmethod
+    def _safe_vosk_runtime_failure_reason(_exc):
+        return SAFE_VOSK_RUNTIME_FAILURE_REASON
+
+    @staticmethod
+    def _safe_vosk_recognition_failure_reason(_exc):
+        return SAFE_VOSK_RECOGNITION_FAILURE_REASON
+
+    @staticmethod
+    def _safe_reason_for_display(reason):
+        text = str(reason or "").strip()
+        if not text:
+            return ""
+        normalized = text.lower()
+        raw_markers = (
+            "paerrorcode",
+            "mme error",
+            "portaudio",
+            "error querying device",
+            "device",
+            "sounddevice",
+            "traceback",
+            "runtimeerror",
+            "exception",
+            "backend",
+        )
+        if any(marker in normalized for marker in raw_markers):
+            return SAFE_MICROPHONE_ACCESS_FAILURE_REASON
+        if re.search(r"(?i)\b[a-z]:[\\/]", text) or re.search(
+            r"(?i)([\\/]|^)(users|home)[\\/][^\\/\s]+",
+            text,
+        ):
+            return SAFE_MICROPHONE_ACCESS_FAILURE_REASON
+        return text
 
     @staticmethod
     def _missing_dependency_reason(dependency_name):

@@ -1,6 +1,7 @@
 # TASK-091 Contract Characterization
 
 TASK-091 records current behavior for AUD-008 through AUD-013. The tests are not fixes and should pass on the baseline production code.
+TASK-101 extends the characterization record for AUD-016 microphone error presentation.
 
 | Finding ID | Scenario | Current observed behavior | Safety invariant | Desired future contract | Expected remediation task |
 |---|---|---|---|---|---|
@@ -10,12 +11,14 @@ TASK-091 records current behavior for AUD-008 through AUD-013. The tests are not
 | AUD-011 | `составь план: забудь всё, что ты обо мне помнишь` | TASK-099 corrected planner classification to `memory.forget_all` with empty arguments and `requires_confirmation=True` | Preview and plan creation do not delete memory; execution pauses at `awaiting_confirmation`; tests do not send affirmative confirmation | Natural Russian forget-all maps to the real destructive capability with confirmation | TASK-099 |
 | AUD-012 | Active forget-all plan, Preview `execute plan`, Execute, cancel, then `show plan` | Preview reports read-only/no confirmation; Execute pauses at `awaiting_confirmation`; cancellation preserves the operation relationship and terminal cancelled snapshot; later status read does not resume execution | No deletion before confirmation or after cancellation; tests never send positive confirmation | Preview exposes the active step's effective confirmation policy | TASK-092 |
 | AUD-013 | Local TTS diagnostics and local test commands | TASK-100 corrected completed Execute metadata while leaving Preview unknown and side-effect free; diagnostics, disabled test, enable, enabled test, and failure paths have structured Execute metadata assertions; only the enabled fake test synthesizes | Fake local backend only; diagnostics, disabled test, and enable do not synthesize; fake reports no network, no audio file, and `played_audio=False` | TTS metadata accurately distinguishes diagnostics, mode changes, skipped tests, actual synthesis, and failures | TASK-100 |
+| AUD-016 | One-shot microphone/Vosk capture and recognizer failures | TASK-101 sanitizes raw microphone, PortAudio/MME, backend, exception, device, and local-path details before user-facing recognition reasons, AppService voice request messages, Desktop output, and text-command formatted output | Tests use fake recognizers/capture adapters only; no real microphone or audio hardware is initialized; operation and journal metadata do not receive raw error details | Microphone/Vosk failures remain failed or blocked, but user-facing output gives concise safe Russian guidance | TASK-101 |
 
 ## Metadata Completeness Notes
 
 - Desktop Shell confirmation metadata is explicitly characterized for `memory.remember`, `memory.forget`, and `profile.language.set`: AppService structured results contain `requires_confirmation=False`, while Desktop Shell currently omits the requires-confirmation line for those routes.
 - AppService `profile.language.set` operation status and full structured metadata are explicitly characterized alongside the isolated language state change.
 - Local TTS diagnostics, disabled test, enable, enabled test, and failure Execute routes all have structured metadata assertions after TASK-100.
+- One-shot microphone/Vosk failure presentation is characterized after TASK-101. The text-command recognizer-blocked path keeps its existing operation-status semantics while sanitizing formatted output and journal-visible text.
 
 ## Planner Introspection Boundary
 

@@ -79,12 +79,12 @@ The shell remains a rendering layer.
 
 Unchanged:
 
-- AUD-016 technical microphone error presentation.
 - Existing internal/public id mappings characterized by TASK-095.
 
 Resolved after TASK-096:
 
 - AUD-013 local TTS result metadata inconsistency was corrected by TASK-100 at the AppService execution projection boundary. Preview remains side-effect free and may stay unknown for these legacy local TTS inputs, but completed local TTS Execute results must not reuse unknown Preview confirmation metadata.
+- AUD-016 microphone error presentation was hardened by TASK-101 for one-shot microphone/Vosk failures. User-facing recognition reasons, AppService voice request messages, Desktop output, and text-command formatted output must use safe Russian guidance instead of raw PortAudio/MME codes, backend names, exception details, device details, or local paths. Existing operation-status semantics for blocked text-command recognizer results are intentionally preserved.
 
 ## Rollback
 

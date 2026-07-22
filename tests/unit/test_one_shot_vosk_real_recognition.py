@@ -241,14 +241,49 @@ def test_blocks_safely_when_capture_provider_is_missing():
 
 
 def test_handles_capture_failure_safely():
-    capture = FakeCapture(error=RuntimeError("mic failed"))
+    capture = FakeCapture(
+        error=RuntimeError("Error querying device -1: PaErrorCode -9999; MME error 1")
+    )
     service = create_service(capture_provider=capture)
 
     result = service.run_once(explicit_one_shot_requested=True)
+    formatted = OneShotVoskRealRecognition.format_result(result)
+    reason_text = " ".join(result.reasons)
 
     assert result.blocked is True
     assert result.completed is False
-    assert "Одноразовый захват микрофона завершился ошибкой: mic failed" in result.reasons
+    assert "Не удалось получить доступ к микрофону." in reason_text
+    assert "PaErrorCode" not in reason_text
+    assert "MME error" not in reason_text
+    assert "Error querying device" not in reason_text
+    assert "PaErrorCode" not in formatted
+    assert "MME error" not in formatted
+    assert "Error querying device" not in formatted
+
+
+def test_handles_recognizer_failure_without_exposing_backend_or_path_details():
+    class FailingRuntime(FakeRuntime):
+        class KaldiRecognizer(FakeRuntime.KaldiRecognizer):
+            def FinalResult(self):
+                raise RuntimeError(
+                    "backend sounddevice failed at C:/Users/User/vosk/model"
+                )
+
+    service = create_service(vosk_runtime_factory=lambda: FailingRuntime)
+
+    result = service.run_once(explicit_one_shot_requested=True)
+    formatted = OneShotVoskRealRecognition.format_result(result)
+    reason_text = " ".join(result.reasons)
+
+    assert result.blocked is True
+    assert result.completed is False
+    assert "Локальное распознавание Vosk завершилось ошибкой." in reason_text
+    assert "sounddevice" not in reason_text
+    assert "C:/Users/User" not in reason_text
+    assert "backend" not in reason_text.lower()
+    assert "sounddevice" not in formatted
+    assert "C:/Users/User" not in formatted
+    assert "backend" not in formatted.lower()
 
 
 def test_handles_recognizer_empty_result_safely():

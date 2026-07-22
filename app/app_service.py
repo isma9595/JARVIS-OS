@@ -83,6 +83,47 @@ from planner import (
 )
 
 
+SAFE_ONE_SHOT_MICROPHONE_FAILURE_MESSAGE = (
+    "Не удалось получить доступ к микрофону. "
+    "Проверьте разрешение на использование микрофона в настройках Windows. "
+    "Убедитесь, что устройство ввода подключено и не используется другим приложением. "
+    "После исправления повторите голосовую команду."
+)
+
+SAFE_ONE_SHOT_VOICE_FAILURE_MESSAGE = (
+    "Голосовой запрос безопасно завершился ошибкой. "
+    "Проверьте доступ к микрофону и повторите явную голосовую команду."
+)
+
+_RAW_ONE_SHOT_VOICE_ERROR_MARKERS = (
+    "paerrorcode",
+    "mme error",
+    "portaudio",
+    "error querying device",
+    "device",
+    "device id",
+    "sounddevice",
+    "traceback",
+    "runtimeerror",
+    "exception",
+    "backend",
+)
+_WINDOWS_PATH_PATTERN = re.compile(r"(?i)\b[a-z]:[\\/]")
+_USER_PATH_PATTERN = re.compile(r"(?i)([\\/]|^)(users|home)[\\/][^\\/\s]+")
+
+
+def _looks_like_raw_voice_error(text: str) -> bool:
+    normalized = str(text or "").strip().lower()
+    if not normalized:
+        return False
+    if any(marker in normalized for marker in _RAW_ONE_SHOT_VOICE_ERROR_MARKERS):
+        return True
+    return bool(
+        _WINDOWS_PATH_PATTERN.search(normalized)
+        or _USER_PATH_PATTERN.search(normalized)
+    )
+
+
 @dataclass(frozen=True)
 class PendingAppConfirmation:
     operation_id: str
@@ -799,10 +840,7 @@ class JarvisAppService:
         except Exception as exc:
             return self._voice_error_result(
                 error_code="one_shot_voice_failure",
-                user_message=(
-                    "Голосовой запрос безопасно завершился ошибкой: "
-                    + self._safe_text_preview(str(exc))
-                ),
+                user_message=self._safe_one_shot_voice_exception_message(exc),
                 result_type="voice_failure",
             )
         finally:
@@ -3886,8 +3924,29 @@ class JarvisAppService:
     def _voice_message_from_recognition(self, recognition_result, fallback: str) -> str:
         reasons = list(self._get_value(recognition_result, "reasons", ()) or ())
         if reasons:
-            return safe_contract_text("; ".join(str(reason) for reason in reasons))
+            safe_reasons = [
+                self._safe_one_shot_voice_reason(reason)
+                for reason in reasons
+                if str(reason or "").strip()
+            ]
+            return safe_contract_text("; ".join(safe_reasons) or fallback)
         return fallback
+
+    @classmethod
+    def _safe_one_shot_voice_exception_message(cls, exc) -> str:
+        text = str(exc or "").strip()
+        if _looks_like_raw_voice_error(text):
+            return SAFE_ONE_SHOT_MICROPHONE_FAILURE_MESSAGE
+        return SAFE_ONE_SHOT_VOICE_FAILURE_MESSAGE
+
+    @staticmethod
+    def _safe_one_shot_voice_reason(reason) -> str:
+        text = str(reason or "").strip()
+        if not text:
+            return ""
+        if _looks_like_raw_voice_error(text):
+            return SAFE_ONE_SHOT_MICROPHONE_FAILURE_MESSAGE
+        return text
 
     @staticmethod
     def _voice_error_code_from_reasons(reasons) -> str:
