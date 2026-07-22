@@ -1,6 +1,68 @@
 from app import AppCommandPreview, AppCommandResult, AppCommandSource, JarvisAppService
 from app.text_normalization import normalize_control_text
+from core.command_processor import CommandProcessor
 from voice.one_shot_vosk_real_recognition import OneShotVoskRealRecognitionResult
+from voice.speech_synthesis_backend import SpeechSynthesisResult
+from voice.voice_output_manager import VoiceOutputManager
+
+
+LOCAL_TTS_STATUS_COMMAND = (
+    "\u0434\u0438\u0430\u0433\u043d\u043e\u0441\u0442\u0438\u043a\u0430 "
+    "\u043b\u043e\u043a\u0430\u043b\u044c\u043d\u043e\u0433\u043e "
+    "\u0433\u043e\u043b\u043e\u0441\u0430"
+)
+LOCAL_TTS_ENABLE_COMMAND = (
+    "\u0432\u043a\u043b\u044e\u0447\u0438\u0442\u044c "
+    "\u043b\u043e\u043a\u0430\u043b\u044c\u043d\u044b\u0439 "
+    "\u0433\u043e\u043b\u043e\u0441"
+)
+LOCAL_TTS_TEST_COMMAND = (
+    "\u0442\u0435\u0441\u0442 "
+    "\u043b\u043e\u043a\u0430\u043b\u044c\u043d\u043e\u0433\u043e "
+    "\u0433\u043e\u043b\u043e\u0441\u0430"
+)
+
+
+class FakeLocalTtsBackend:
+    def __init__(self, *, available=True, fail_diagnostics=False, synthesize_success=True):
+        self.available = available
+        self.fail_diagnostics = fail_diagnostics
+        self.synthesize_success = synthesize_success
+        self.diagnostics_calls = 0
+        self.synthesis_calls = []
+
+    def get_name(self):
+        return "windows_local_tts"
+
+    def availability_diagnostics(self):
+        self.diagnostics_calls += 1
+        if self.fail_diagnostics:
+            raise RuntimeError("local tts diagnostics failed")
+        return {
+            "available": self.available,
+            "reason": "fake available" if self.available else "fake unavailable",
+            "backend_name": self.get_name(),
+            "network_used": False,
+            "audio_file_saved": False,
+        }
+
+    def synthesize(self, text, mode="WINDOWS_LOCAL"):
+        self.synthesis_calls.append((text, mode))
+        return SpeechSynthesisResult(
+            success=self.synthesize_success,
+            spoken_text=text,
+            backend_name=self.get_name(),
+            mode=mode,
+            played_audio=False,
+            backend_available=True,
+            error=None if self.synthesize_success else "fake synthesis failed",
+        )
+
+
+def make_local_tts_service(local_backend):
+    voice_output = VoiceOutputManager(windows_local_backend=local_backend)
+    processor = CommandProcessor(voice_output_manager=voice_output)
+    return JarvisAppService(command_processor=processor), processor
 
 
 class FakeCommandProcessor:
@@ -166,6 +228,237 @@ def test_search_commands_finds_fallback_ollama_and_app():
     assert "ai_fallback" in service.search_commands("fallback")
     assert "ollama" in service.search_commands("ollama")
     assert "app_service" in service.search_commands("app service")
+
+
+def assert_local_tts_result(
+    result,
+    *,
+    ok,
+    command_id,
+    risk_level,
+    operation_status,
+    error=None,
+):
+    assert result.ok is ok
+    assert result.registry_match_id == command_id
+    assert result.category == "voice"
+    assert result.risk_level == risk_level
+    assert result.executed is True
+    assert result.requires_confirmation is False
+    assert result.network_may_be_used is False
+    assert result.response_executed_as_command is False
+    assert result.operation_id
+    assert result.operation_status == operation_status
+    assert result.error == error
+    assert result.awaiting_confirmation is False
+
+
+def test_local_tts_preview_remains_side_effect_free_and_unknown():
+    backend = FakeLocalTtsBackend(available=True)
+    service, processor = make_local_tts_service(backend)
+
+    status = service.preview_command(LOCAL_TTS_STATUS_COMMAND)
+    enable = service.preview_command(LOCAL_TTS_ENABLE_COMMAND)
+    local_test = service.preview_command(LOCAL_TTS_TEST_COMMAND)
+
+    for preview in (status, enable, local_test):
+        assert preview.known_command is False
+        assert preview.registry_match_id is None
+        assert preview.category is None
+        assert preview.risk_level is None
+        assert preview.requires_confirmation is True
+        assert preview.operation_id is None
+    assert backend.diagnostics_calls == 0
+    assert backend.synthesis_calls == []
+    assert processor.voice_output_manager.mode == "OFF"
+    assert service.recent_execution_operations(None) == ()
+
+
+def test_local_tts_diagnostics_success_projects_voice_metadata():
+    backend = FakeLocalTtsBackend(available=True)
+    service, _processor = make_local_tts_service(backend)
+
+    result = service.execute_command(LOCAL_TTS_STATUS_COMMAND, AppCommandSource.TEST)
+
+    assert_local_tts_result(
+        result,
+        ok=True,
+        command_id="voice.output.local.status",
+        risk_level="read_only",
+        operation_status="succeeded",
+    )
+    assert backend.diagnostics_calls == 1
+    assert backend.synthesis_calls == []
+
+
+def test_local_tts_diagnostics_failure_projects_failed_voice_metadata():
+    backend = FakeLocalTtsBackend(available=True, fail_diagnostics=True)
+    service, _processor = make_local_tts_service(backend)
+
+    result = service.execute_command(LOCAL_TTS_STATUS_COMMAND, AppCommandSource.TEST)
+
+    assert result.ok is False
+    assert result.registry_match_id == "voice.output.local.status"
+    assert result.category == "voice"
+    assert result.risk_level == "read_only"
+    assert result.executed is False
+    assert result.requires_confirmation is False
+    assert result.network_may_be_used is False
+    assert result.operation_id
+    assert result.operation_status == "failed"
+    assert result.error == "local tts diagnostics failed"
+    assert backend.diagnostics_calls == 1
+    assert backend.synthesis_calls == []
+
+
+def test_local_tts_enable_success_projects_local_runtime_metadata():
+    backend = FakeLocalTtsBackend(available=True)
+    service, processor = make_local_tts_service(backend)
+
+    result = service.execute_command(LOCAL_TTS_ENABLE_COMMAND, AppCommandSource.TEST)
+
+    assert_local_tts_result(
+        result,
+        ok=True,
+        command_id="voice.output.windows_local.enable",
+        risk_level="local_runtime",
+        operation_status="succeeded",
+    )
+    assert processor.voice_output_manager.mode == "WINDOWS_LOCAL"
+    assert backend.diagnostics_calls == 1
+    assert backend.synthesis_calls == []
+
+
+def test_local_tts_enable_unavailable_projects_failed_voice_metadata():
+    backend = FakeLocalTtsBackend(available=False)
+    service, processor = make_local_tts_service(backend)
+
+    result = service.execute_command(LOCAL_TTS_ENABLE_COMMAND, AppCommandSource.TEST)
+
+    assert_local_tts_result(
+        result,
+        ok=False,
+        command_id="voice.output.windows_local.enable",
+        risk_level="local_runtime",
+        operation_status="failed",
+        error="voice.output.windows_local.unavailable",
+    )
+    assert processor.voice_output_manager.mode == "OFF"
+    assert backend.diagnostics_calls == 1
+    assert backend.synthesis_calls == []
+
+
+def test_local_tts_test_before_enable_projects_failed_voice_metadata():
+    backend = FakeLocalTtsBackend(available=True)
+    service, _processor = make_local_tts_service(backend)
+
+    result = service.execute_command(LOCAL_TTS_TEST_COMMAND, AppCommandSource.TEST)
+
+    assert_local_tts_result(
+        result,
+        ok=False,
+        command_id="voice.output.local_test.not_enabled",
+        risk_level="local_runtime",
+        operation_status="failed",
+        error="voice.output.local_test.not_enabled",
+    )
+    assert backend.diagnostics_calls == 0
+    assert backend.synthesis_calls == []
+
+
+def test_local_tts_test_after_enable_uses_fake_backend_and_redacted_metadata():
+    backend = FakeLocalTtsBackend(available=True)
+    service, _processor = make_local_tts_service(backend)
+    service.execute_command(LOCAL_TTS_ENABLE_COMMAND, AppCommandSource.TEST)
+
+    result = service.execute_command(LOCAL_TTS_TEST_COMMAND, AppCommandSource.TEST)
+
+    assert_local_tts_result(
+        result,
+        ok=True,
+        command_id="voice.output.spoken",
+        risk_level="local_runtime",
+        operation_status="succeeded",
+    )
+    assert len(backend.synthesis_calls) == 1
+    spoken_text, mode = backend.synthesis_calls[0]
+    assert spoken_text
+    assert mode == "WINDOWS_LOCAL"
+    operation = service.recent_execution_operations(1)[0]
+    metadata_values = " ".join(str(value) for value in operation["metadata"].values())
+    assert spoken_text not in metadata_values
+    assert "windows_local_tts" not in metadata_values
+
+
+def test_local_tts_test_after_enable_failure_projects_failed_voice_metadata():
+    backend = FakeLocalTtsBackend(available=True, synthesize_success=False)
+    service, _processor = make_local_tts_service(backend)
+    service.execute_command(LOCAL_TTS_ENABLE_COMMAND, AppCommandSource.TEST)
+
+    result = service.execute_command(LOCAL_TTS_TEST_COMMAND, AppCommandSource.TEST)
+
+    assert_local_tts_result(
+        result,
+        ok=False,
+        command_id="voice.output.spoken",
+        risk_level="local_runtime",
+        operation_status="failed",
+        error="voice.output.local_test.failed",
+    )
+    assert len(backend.synthesis_calls) == 1
+
+
+def test_ordinary_speech_output_is_not_relabelled_as_local_tts():
+    backend = FakeLocalTtsBackend(available=True)
+    service, _processor = make_local_tts_service(backend)
+    service.execute_command(LOCAL_TTS_ENABLE_COMMAND, AppCommandSource.TEST)
+
+    result = service.execute_command(
+        "\u0441\u043a\u0430\u0436\u0438: "
+        "\u043f\u0440\u043e\u0432\u0435\u0440\u043a\u0430 "
+        "\u043b\u043e\u043a\u0430\u043b\u044c\u043d\u043e\u0433\u043e "
+        "\u0433\u043e\u043b\u043e\u0441\u0430",
+        AppCommandSource.TEST,
+    )
+
+    assert result.registry_match_id is None
+    assert result.category is None
+    assert result.risk_level is None
+    assert result.requires_confirmation is True
+    assert result.operation_status == "succeeded"
+    assert len(backend.synthesis_calls) == 1
+
+
+def test_unknown_preview_metadata_is_not_reused_for_known_local_tts_execute():
+    backend = FakeLocalTtsBackend(available=True)
+    service, _processor = make_local_tts_service(backend)
+
+    preview = service.preview_command(LOCAL_TTS_STATUS_COMMAND)
+    result = service.execute_command(LOCAL_TTS_STATUS_COMMAND, AppCommandSource.TEST)
+
+    assert preview.known_command is False
+    assert preview.requires_confirmation is True
+    assert result.registry_match_id == "voice.output.local.status"
+    assert result.category == "voice"
+    assert result.requires_confirmation is False
+
+
+def test_unrelated_unknown_command_keeps_existing_completed_unknown_contract():
+    service = JarvisAppService(command_processor=FakeCommandProcessor())
+    command = (
+        "task096 \u043d\u0435\u0438\u0437\u0432\u0435\u0441\u0442\u043d\u0430\u044f "
+        "\u0431\u0435\u0437\u043e\u043f\u0430\u0441\u043d\u0430\u044f "
+        "\u043a\u043e\u043c\u0430\u043d\u0434\u0430"
+    )
+
+    result = service.execute_command(command, AppCommandSource.TEST)
+
+    assert result.registry_match_id is None
+    assert result.category is None
+    assert result.risk_level is None
+    assert result.executed is True
+    assert result.requires_confirmation is False
+    assert result.operation_status == "succeeded"
 
 
 def test_preview_command_known_status_command():

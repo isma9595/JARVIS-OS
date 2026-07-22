@@ -3,7 +3,66 @@ from dataclasses import dataclass
 from app.app_service import AppCommandSource, JarvisAppService
 from app import desktop_shell
 from app.desktop_shell import DesktopShellViewModel, JarvisDesktopShell
+from core.command_processor import CommandProcessor
 from memory import LocalMemoryManager
+from voice.speech_synthesis_backend import SpeechSynthesisResult
+from voice.voice_output_manager import VoiceOutputManager
+
+
+LOCAL_TTS_STATUS_COMMAND = (
+    "\u0434\u0438\u0430\u0433\u043d\u043e\u0441\u0442\u0438\u043a\u0430 "
+    "\u043b\u043e\u043a\u0430\u043b\u044c\u043d\u043e\u0433\u043e "
+    "\u0433\u043e\u043b\u043e\u0441\u0430"
+)
+LOCAL_TTS_ENABLE_COMMAND = (
+    "\u0432\u043a\u043b\u044e\u0447\u0438\u0442\u044c "
+    "\u043b\u043e\u043a\u0430\u043b\u044c\u043d\u044b\u0439 "
+    "\u0433\u043e\u043b\u043e\u0441"
+)
+LOCAL_TTS_TEST_COMMAND = (
+    "\u0442\u0435\u0441\u0442 "
+    "\u043b\u043e\u043a\u0430\u043b\u044c\u043d\u043e\u0433\u043e "
+    "\u0433\u043e\u043b\u043e\u0441\u0430"
+)
+
+
+class FakeLocalTtsBackend:
+    def __init__(self, *, available=True):
+        self.available = available
+        self.diagnostics_calls = 0
+        self.synthesis_calls = []
+
+    def get_name(self):
+        return "windows_local_tts"
+
+    def availability_diagnostics(self):
+        self.diagnostics_calls += 1
+        return {
+            "available": self.available,
+            "reason": "fake available" if self.available else "fake unavailable",
+            "backend_name": self.get_name(),
+            "network_used": False,
+            "audio_file_saved": False,
+        }
+
+    def synthesize(self, text, mode="WINDOWS_LOCAL"):
+        self.synthesis_calls.append((text, mode))
+        return SpeechSynthesisResult(
+            success=True,
+            spoken_text=text,
+            backend_name=self.get_name(),
+            mode=mode,
+            played_audio=False,
+            backend_available=True,
+        )
+
+
+def make_local_tts_desktop_view_model(*, available=True):
+    backend = FakeLocalTtsBackend(available=available)
+    voice_output = VoiceOutputManager(windows_local_backend=backend)
+    processor = CommandProcessor(voice_output_manager=voice_output)
+    service = JarvisAppService(command_processor=processor)
+    return DesktopShellViewModel(service), backend, processor
 
 
 @dataclass
@@ -671,6 +730,66 @@ def test_desktop_shell_projects_unknown_fallback_confirmation_from_app_service(t
     assert "- operation status: succeeded" in text
     assert "- awaiting confirmation: yes" not in text
     assert service.memory_manager.recall_user_fact("task096marker").found is False
+
+
+def test_desktop_shell_renders_local_tts_diagnostics_without_confirmation():
+    view_model, backend, _processor = make_local_tts_desktop_view_model(available=True)
+
+    text = view_model.execute_command(LOCAL_TTS_STATUS_COMMAND)
+
+    assert "- ok: yes" in text
+    assert "- command id: voice.output.local.status" in text
+    assert "- category: voice" in text
+    assert "- risk: read_only" in text
+    assert "- requires confirmation: no" in text
+    assert "- operation status: succeeded" in text
+    assert "- awaiting confirmation: yes" not in text
+    assert "- network may be used: no" in text
+    assert "confirmation_required" not in text
+    assert backend.diagnostics_calls == 1
+    assert backend.synthesis_calls == []
+
+
+def test_desktop_shell_renders_local_tts_enable_failure_as_failed_not_pending():
+    view_model, backend, processor = make_local_tts_desktop_view_model(available=False)
+
+    text = view_model.execute_command(LOCAL_TTS_ENABLE_COMMAND)
+
+    assert "- ok: no" in text
+    assert "- command id: voice.output.windows_local.enable" in text
+    assert "- category: voice" in text
+    assert "- risk: local_runtime" in text
+    assert "- requires confirmation: no" in text
+    assert "- operation status: failed" in text
+    assert "- error: voice.output.windows_local.unavailable" in text
+    assert "- awaiting confirmation: yes" not in text
+    assert "confirmation_required" not in text
+    assert processor.voice_output_manager.mode == "OFF"
+    assert backend.diagnostics_calls == 1
+    assert backend.synthesis_calls == []
+
+
+def test_desktop_shell_renders_local_tts_test_success_without_raw_audio_text_metadata():
+    view_model, backend, _processor = make_local_tts_desktop_view_model(available=True)
+    view_model.execute_command(LOCAL_TTS_ENABLE_COMMAND)
+
+    text = view_model.execute_command(LOCAL_TTS_TEST_COMMAND)
+
+    assert "- ok: yes" in text
+    assert "- command id: voice.output.spoken" in text
+    assert "- category: voice" in text
+    assert "- risk: local_runtime" in text
+    assert "- requires confirmation: no" in text
+    assert "- operation status: succeeded" in text
+    assert "- awaiting confirmation: yes" not in text
+    assert len(backend.synthesis_calls) == 1
+    spoken_text, _mode = backend.synthesis_calls[0]
+    metadata_lines = [
+        line
+        for line in text.splitlines()
+        if line.startswith(("- command id:", "- category:", "- risk:", "- operation"))
+    ]
+    assert spoken_text not in "\n".join(metadata_lines)
 
 
 def test_desktop_shell_renders_positive_awaiting_confirmation_result_without_execution():

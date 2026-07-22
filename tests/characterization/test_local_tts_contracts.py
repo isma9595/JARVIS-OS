@@ -72,6 +72,7 @@ def make_service(local_backend):
 def assert_execute_metadata(
     result,
     *,
+    ok,
     registry_match_id,
     category,
     risk_level,
@@ -82,6 +83,7 @@ def assert_execute_metadata(
     operation_id_present,
     operation_status,
 ):
+    assert result.ok is ok
     assert result.registry_match_id == registry_match_id
     assert result.category == category
     assert result.risk_level == risk_level
@@ -96,15 +98,37 @@ def assert_execute_metadata(
     assert result.operation_status == operation_status
 
 
-def test_characterizes_current_local_tts_metadata(tmp_path):
+def test_characterizes_corrected_local_tts_execute_metadata(tmp_path):
     local_backend = FakeLocalTtsBackend(available=True)
     service, processor = make_service(local_backend)
 
     preview_status = service.preview_command(LOCAL_TTS_STATUS)
+    preview_enable = service.preview_command(ENABLE_LOCAL_TTS)
+    preview_test_before_enable = service.preview_command(LOCAL_TTS_TEST)
+
+    # Preview remains side-effect free for local TTS commands. TASK-100 fixes
+    # completed Execute metadata without broadening Preview recognition.
+    assert preview_status.known_command is False
+    assert preview_status.registry_match_id is None
+    assert preview_status.category is None
+    assert preview_status.risk_level is None
+    assert preview_status.requires_confirmation is True
+    assert preview_enable.known_command is False
+    assert preview_enable.registry_match_id is None
+    assert preview_enable.category is None
+    assert preview_enable.risk_level is None
+    assert preview_enable.requires_confirmation is True
+    assert preview_test_before_enable.known_command is False
+    assert preview_test_before_enable.registry_match_id is None
+    assert preview_test_before_enable.category is None
+    assert preview_test_before_enable.risk_level is None
+    assert preview_test_before_enable.requires_confirmation is True
+    assert local_backend.diagnostics_calls == 0
+    assert local_backend.synthesis_calls == []
+
     status = service.execute_command(LOCAL_TTS_STATUS, AppCommandSource.TEST)
     diagnostics_after_status = local_backend.diagnostics_calls
     synthesis_after_status = list(local_backend.synthesis_calls)
-    preview_test_before_enable = service.preview_command(LOCAL_TTS_TEST)
     test_before_enable = service.execute_command(LOCAL_TTS_TEST, AppCommandSource.TEST)
     diagnostics_after_disabled_test = local_backend.diagnostics_calls
     synthesis_after_disabled_test = list(local_backend.synthesis_calls)
@@ -113,22 +137,14 @@ def test_characterizes_current_local_tts_metadata(tmp_path):
     synthesis_after_enable = list(local_backend.synthesis_calls)
     test_after_enable = service.execute_command(LOCAL_TTS_TEST, AppCommandSource.TEST)
 
-    # CHARACTERIZATION OF CURRENT BEHAVIOR: AppService Preview does not
-    # recognize local TTS commands, while Execute wraps CommandProcessor
-    # execution with generic confirmation metadata.
-    assert preview_status.known_command is False
-    assert preview_status.registry_match_id is None
-    assert preview_status.category is None
-    assert preview_status.risk_level is None
-    assert preview_status.requires_confirmation is True
-
     assert_execute_metadata(
         status,
-        registry_match_id=None,
-        category=None,
-        risk_level=None,
+        ok=True,
+        registry_match_id="voice.output.local.status",
+        category="voice",
+        risk_level="read_only",
         executed=True,
-        requires_confirmation=True,
+        requires_confirmation=False,
         network_may_be_used=False,
         response_executed_as_command=False,
         operation_id_present=True,
@@ -137,29 +153,31 @@ def test_characterizes_current_local_tts_metadata(tmp_path):
     assert diagnostics_after_status == 1
     assert synthesis_after_status == []
 
-    assert preview_test_before_enable.known_command is False
     assert_execute_metadata(
         test_before_enable,
-        registry_match_id=None,
-        category=None,
-        risk_level=None,
+        ok=False,
+        registry_match_id="voice.output.local_test.not_enabled",
+        category="voice",
+        risk_level="local_runtime",
         executed=True,
-        requires_confirmation=True,
+        requires_confirmation=False,
         network_may_be_used=False,
         response_executed_as_command=False,
         operation_id_present=True,
-        operation_status="succeeded",
+        operation_status="failed",
     )
+    assert test_before_enable.error == "voice.output.local_test.not_enabled"
     assert diagnostics_after_disabled_test == diagnostics_after_status
     assert synthesis_after_disabled_test == []
 
     assert_execute_metadata(
         enable,
-        registry_match_id=None,
-        category=None,
-        risk_level=None,
+        ok=True,
+        registry_match_id="voice.output.windows_local.enable",
+        category="voice",
+        risk_level="local_runtime",
         executed=True,
-        requires_confirmation=True,
+        requires_confirmation=False,
         network_may_be_used=False,
         response_executed_as_command=False,
         operation_id_present=True,
@@ -171,11 +189,12 @@ def test_characterizes_current_local_tts_metadata(tmp_path):
 
     assert_execute_metadata(
         test_after_enable,
-        registry_match_id=None,
-        category=None,
-        risk_level=None,
+        ok=True,
+        registry_match_id="voice.output.spoken",
+        category="voice",
+        risk_level="local_runtime",
         executed=True,
-        requires_confirmation=True,
+        requires_confirmation=False,
         network_may_be_used=False,
         response_executed_as_command=False,
         operation_id_present=True,

@@ -79,9 +79,12 @@ The shell remains a rendering layer.
 
 Unchanged:
 
-- AUD-013 local TTS result metadata inconsistency.
 - AUD-016 technical microphone error presentation.
 - Existing internal/public id mappings characterized by TASK-095.
+
+Resolved after TASK-096:
+
+- AUD-013 local TTS result metadata inconsistency was corrected by TASK-100 at the AppService execution projection boundary. Preview remains side-effect free and may stay unknown for these legacy local TTS inputs, but completed local TTS Execute results must not reuse unknown Preview confirmation metadata.
 
 ## Rollback
 

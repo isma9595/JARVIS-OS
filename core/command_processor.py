@@ -4949,11 +4949,15 @@ class CommandProcessor:
 
     def _voice_output_local_test_result(self):
         speak_result = self.voice_output_manager.test_local_voice()
-        return self._result(
+        result = self._result(
             speak_result["intent"],
             speak_result["message"],
             speakable=False,
         )
+        result["local_tts_success"] = bool(speak_result.get("success"))
+        if speak_result.get("error"):
+            result["local_tts_error"] = str(speak_result.get("error"))
+        return result
 
     def _last_assistant_response_result(self):
         text = self.voice_interaction_controls.get_last_assistant_response()

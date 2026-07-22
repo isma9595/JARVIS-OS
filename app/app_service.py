@@ -1253,6 +1253,11 @@ class JarvisAppService:
             operation = self.execution_coordinator.mark_awaiting_confirmation(
                 operation.operation_id
             )
+        elif not result.ok and self._is_local_tts_result(result):
+            operation = self.execution_coordinator.mark_failed(
+                operation.operation_id,
+                error_code=result.error or "command_execution_failed",
+            )
         elif result.executed:
             operation = self.execution_coordinator.mark_succeeded(
                 operation.operation_id,
@@ -1678,25 +1683,44 @@ class JarvisAppService:
             ):
                 self.command_processor._policy_confirmation_for_command = previous_confirmation
             output_text = str(processor_result.get("response", processor_result))
+            local_tts_metadata = self._local_tts_execution_metadata(
+                input_text,
+                resolution,
+                processor_result,
+            )
             requires_confirmation = preview.requires_confirmation
             if not confirmation_present and (
                 processor_result.get("requires_confirmation") is False
                 or processor_result.get("intent") == "microphone.mode.status"
+                or local_tts_metadata is not None
             ):
                 requires_confirmation = False
+            registry_match_id = preview.registry_match_id
+            category = preview.category
+            risk_level = preview.risk_level
+            network_may_be_used = preview.requires_network
+            ok = True
+            error = None
+            if local_tts_metadata is not None:
+                registry_match_id = local_tts_metadata["registry_match_id"]
+                category = local_tts_metadata["category"]
+                risk_level = local_tts_metadata["risk_level"]
+                network_may_be_used = False
+                ok = bool(local_tts_metadata["ok"])
+                error = local_tts_metadata["error"]
             return AppCommandResult(
-                ok=True,
+                ok=ok,
                 input_text=input_text,
                 output_text=output_text,
                 source=source,
-                registry_match_id=preview.registry_match_id,
-                category=preview.category,
-                risk_level=preview.risk_level,
+                registry_match_id=registry_match_id,
+                category=category,
+                risk_level=risk_level,
                 executed=True,
                 requires_confirmation=requires_confirmation,
-                network_may_be_used=preview.requires_network,
+                network_may_be_used=network_may_be_used,
                 response_executed_as_command=False,
-                error=None,
+                error=error,
                 intent_resolution=resolution,
                 policy_decision=policy_decision,
             )
@@ -1706,6 +1730,28 @@ class JarvisAppService:
                 "_policy_confirmation_for_command",
             ):
                 self.command_processor._policy_confirmation_for_command = previous_confirmation
+            local_tts_metadata = self._local_tts_execution_metadata(
+                input_text,
+                resolution,
+                None,
+            )
+            if local_tts_metadata is not None:
+                return AppCommandResult(
+                    ok=False,
+                    input_text=input_text,
+                    output_text="",
+                    source=source,
+                    registry_match_id=local_tts_metadata["registry_match_id"],
+                    category=local_tts_metadata["category"],
+                    risk_level=local_tts_metadata["risk_level"],
+                    executed=False,
+                    requires_confirmation=False,
+                    network_may_be_used=False,
+                    response_executed_as_command=False,
+                    error=str(exc),
+                    intent_resolution=resolution,
+                    policy_decision=policy_decision,
+                )
             return AppCommandResult(
                 ok=False,
                 input_text=input_text,
@@ -1722,6 +1768,114 @@ class JarvisAppService:
                 intent_resolution=resolution,
                 policy_decision=policy_decision,
             )
+
+    LOCAL_TTS_STATUS_COMMANDS = frozenset(
+        {
+            "диагностика локального голоса",
+            "проверить локальный голос",
+            "проверить голос windows",
+            "статус локального голоса windows",
+            "доступен ли голос windows",
+        }
+    )
+    LOCAL_TTS_ENABLE_COMMANDS = frozenset(
+        {
+            "включить локальный голос",
+            "включить голос windows",
+            "включи локальный голос",
+            "режим голоса windows",
+            "режим голоса локальный",
+        }
+    )
+    LOCAL_TTS_TEST_COMMANDS = frozenset(
+        {
+            "тест локального голоса",
+            "проверка локального голоса",
+        }
+    )
+    LOCAL_TTS_RESULT_IDS = frozenset(
+        {
+            "voice.output.local.status",
+            "voice.output.windows_local.enable",
+            "voice.output.local_test.not_enabled",
+            "voice.output.spoken",
+        }
+    )
+
+    @classmethod
+    def _local_tts_execution_metadata(
+        cls,
+        input_text: str,
+        resolution,
+        processor_result,
+    ) -> dict[str, object] | None:
+        processor_result = processor_result or {}
+        processor_intent = str(processor_result.get("intent") or "")
+        resolver_command_id = str(getattr(resolution, "command_id", "") or "")
+        normalized_text = CommandRegistry.normalize_alias(input_text)
+        if (
+            processor_intent == "voice.output.local.status"
+            or resolver_command_id == "voice.output.local.status"
+            or (
+                not processor_intent
+                and normalized_text in cls.LOCAL_TTS_STATUS_COMMANDS
+            )
+        ):
+            return {
+                "registry_match_id": "voice.output.local.status",
+                "category": "voice",
+                "risk_level": "read_only",
+                "ok": True,
+                "error": None,
+            }
+        if (
+            processor_intent
+            in {
+                "voice.output.windows_local.enabled",
+                "voice.output.windows_local.unavailable",
+            }
+            or resolver_command_id == "voice.output.windows_local.enable"
+            or (
+                not processor_intent
+                and normalized_text in cls.LOCAL_TTS_ENABLE_COMMANDS
+            )
+        ):
+            ok = processor_intent != "voice.output.windows_local.unavailable"
+            return {
+                "registry_match_id": "voice.output.windows_local.enable",
+                "category": "voice",
+                "risk_level": "local_runtime",
+                "ok": ok,
+                "error": None if ok else "voice.output.windows_local.unavailable",
+            }
+        if processor_intent == "voice.output.local_test.not_enabled":
+            return {
+                "registry_match_id": "voice.output.local_test.not_enabled",
+                "category": "voice",
+                "risk_level": "local_runtime",
+                "ok": False,
+                "error": "voice.output.local_test.not_enabled",
+            }
+        if (
+            processor_intent == "voice.output.spoken"
+            and normalized_text in cls.LOCAL_TTS_TEST_COMMANDS
+        ):
+            ok = processor_result.get("local_tts_success") is not False
+            return {
+                "registry_match_id": "voice.output.spoken",
+                "category": "voice",
+                "risk_level": "local_runtime",
+                "ok": ok,
+                "error": None if ok else "voice.output.local_test.failed",
+            }
+        return None
+
+    @classmethod
+    def _is_local_tts_result(cls, result: AppCommandResult) -> bool:
+        return (
+            result.category == "voice"
+            and result.registry_match_id in cls.LOCAL_TTS_RESULT_IDS
+        )
 
     def _consume_pending_control_response(
         self,
