@@ -1,6 +1,8 @@
 from app import AppCommandPreview, AppCommandResult, AppCommandSource, JarvisAppService
 from app.text_normalization import normalize_control_text
 from core.command_processor import CommandProcessor
+from core.execution_journal import ExecutionOperation, ExecutionStatus, safe_journal_metadata, utc_now_iso
+from memory import LocalMemoryManager
 from voice.one_shot_vosk_real_recognition import OneShotVoskRealRecognitionResult
 from voice.speech_synthesis_backend import SpeechSynthesisResult
 from voice.voice_output_manager import VoiceOutputManager
@@ -281,6 +283,139 @@ def test_local_tts_preview_remains_side_effect_free_and_unknown():
     assert backend.synthesis_calls == []
     assert processor.voice_output_manager.mode == "OFF"
     assert service.recent_execution_operations(None) == ()
+    assert service.execution_history().entries == ()
+
+
+def test_execution_history_empty_journal_returns_safe_empty_result():
+    service = JarvisAppService(command_processor=FakeCommandProcessor())
+
+    result = service.execution_history()
+
+    assert result.ok is True
+    assert result.entries == ()
+    assert result.empty is True
+    assert result.limit == service.DEFAULT_EXECUTION_HISTORY_LIMIT
+    assert "no entries" in result.safe_text_ru()
+
+
+def test_execution_history_returns_recent_entries_newest_first_and_detached(tmp_path):
+    service = JarvisAppService(
+        memory_manager=LocalMemoryManager(tmp_path / "history_memory.json")
+    )
+
+    first = service.execute_command("remember that history first is north", AppCommandSource.TEST)
+    second = service.execute_command("forget history first", AppCommandSource.TEST)
+    history = service.execution_history(limit=10)
+
+    assert history.ok is True
+    assert [entry.entry_id for entry in history.entries[:2]] == [
+        second.operation_id,
+        first.operation_id,
+    ]
+    assert history.entries[0].status == "succeeded"
+    assert history.entries[0].succeeded is True
+    assert history.entries[0].metadata
+    assert isinstance(history.entries[0].metadata, tuple)
+    assert all(isinstance(item, tuple) for item in history.entries[0].metadata)
+
+
+def test_execution_history_enforces_default_and_maximum_limits(tmp_path):
+    service = JarvisAppService(
+        memory_manager=LocalMemoryManager(tmp_path / "history_limit_memory.json")
+    )
+    for index in range(3):
+        service.execute_command(f"remember that history limit {index} is value", AppCommandSource.TEST)
+
+    default_history = service.execution_history()
+    max_history = service.execution_history(limit=999)
+    zero_history = service.execution_history(limit=0)
+    invalid_history = service.execution_history(limit="not-a-number")
+
+    assert default_history.limit == service.DEFAULT_EXECUTION_HISTORY_LIMIT
+    assert max_history.limit == service.MAX_EXECUTION_HISTORY_LIMIT
+    assert zero_history.limit == 1
+    assert invalid_history.limit == service.DEFAULT_EXECUTION_HISTORY_LIMIT
+    assert len(zero_history.entries) == 1
+
+
+def test_execution_history_projects_missing_optional_fields_safely():
+    service = JarvisAppService(command_processor=FakeCommandProcessor())
+    now = utc_now_iso()
+    operation = ExecutionOperation(
+        operation_id="op-history-missing",
+        idempotency_key="idem-history-missing",
+        source="test",
+        request_fingerprint="fp-history-missing",
+        status=ExecutionStatus.CREATED,
+        created_at=now,
+        updated_at=now,
+        command_id=None,
+        action_id=None,
+        safe_result_summary=None,
+        safe_error_code=None,
+        metadata=safe_journal_metadata({"unexpected": object()}),
+    )
+    service.execution_coordinator.journal.add(operation)
+
+    entry = service.execution_history(limit=1).entries[0]
+
+    assert entry.entry_id == "op-history-missing"
+    assert entry.command_id is None
+    assert entry.action_id is None
+    assert entry.operation_type == "operation"
+    assert entry.request_summary == "No request summary available."
+    assert "Execution history entry:" in entry.details_text()
+
+
+def test_execution_history_sanitizes_internal_failure_details():
+    service = JarvisAppService(command_processor=FakeCommandProcessor())
+    now = utc_now_iso()
+    operation = ExecutionOperation(
+        operation_id="op-history-secret",
+        idempotency_key="idem-history-secret",
+        source="test",
+        request_fingerprint="fp-history-secret",
+        status=ExecutionStatus.FAILED,
+        created_at=now,
+        updated_at=now,
+        command_id="voice.test",
+        safe_result_summary="RuntimeError backend failed at C:/Users/User/device.txt",
+        safe_error_code="PaErrorCode -9999 MME error 1 at C:/Users/User/device.txt",
+        metadata=safe_journal_metadata(
+            {
+                "input_preview": "api key sk-test-1234567890secret at C:/Users/User/file.txt",
+                "backend": "sounddevice",
+                "token": "sk-test-1234567890secret",
+            }
+        ),
+    )
+    service.execution_coordinator.journal.add(operation)
+
+    text = service.execution_history(limit=1).entries[0].details_text()
+
+    assert "sk-test-1234567890secret" not in text
+    assert "C:/Users/User" not in text
+    assert "PaErrorCode" not in text
+    assert "MME error" not in text
+    assert "sounddevice" not in text
+    assert "RuntimeError" not in text
+
+
+def test_execution_history_handles_journal_access_failure_safely():
+    class BrokenCoordinator:
+        def recent_operations(self, limit=None):
+            raise RuntimeError("Traceback backend C:/Users/User/raw.log")
+
+    service = JarvisAppService(command_processor=FakeCommandProcessor())
+    service.execution_coordinator = BrokenCoordinator()
+
+    result = service.execution_history()
+
+    assert result.ok is False
+    assert result.entries == ()
+    assert result.error == "execution_history_unavailable"
+    assert "Traceback" not in result.safe_text_ru()
+    assert "C:/Users/User" not in result.safe_text_ru()
 
 
 def test_local_tts_diagnostics_success_projects_voice_metadata():

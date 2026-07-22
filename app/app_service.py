@@ -19,6 +19,8 @@ from app.app_contracts import (
     AppCommandPreview,
     AppCommandResult,
     AppCommandSource,
+    AppExecutionHistoryEntry,
+    AppExecutionHistoryResult,
     AppClarificationOption,
     AppContractManifest,
     AppContractStatus,
@@ -28,6 +30,7 @@ from app.app_contracts import (
     AppStatusCard,
     AppVoiceRequestResult,
     safe_contract_text,
+    safe_history_text,
 )
 from app.text_normalization import normalize_control_text
 from core.lazy_component import LazyComponent
@@ -185,6 +188,9 @@ class DirectStateChangePreparation:
 
 class JarvisAppService:
     """Stable boundary for app/UI code."""
+
+    DEFAULT_EXECUTION_HISTORY_LIMIT = 50
+    MAX_EXECUTION_HISTORY_LIMIT = 100
 
     PREVIEW_PREFIX_ALIASES = (
         "app preview:",
@@ -2465,6 +2471,162 @@ class JarvisAppService:
 
     def recent_execution_operations(self, limit: int | None = 20) -> tuple[dict[str, object], ...]:
         return self.execution_coordinator.journal.recent_dicts(limit)
+
+    def execution_history(
+        self,
+        limit: int | None = None,
+    ) -> AppExecutionHistoryResult:
+        effective_limit = self._bounded_history_limit(limit)
+        try:
+            operations = self.execution_coordinator.recent_operations(effective_limit)
+            entries = tuple(
+                self._history_entry_from_operation(operation)
+                for operation in reversed(operations)
+            )
+            return AppExecutionHistoryResult(
+                ok=True,
+                entries=entries,
+                limit=effective_limit,
+                max_limit=self.MAX_EXECUTION_HISTORY_LIMIT,
+                empty=not entries,
+                error=None,
+            )
+        except Exception:
+            return AppExecutionHistoryResult(
+                ok=False,
+                entries=(),
+                limit=effective_limit,
+                max_limit=self.MAX_EXECUTION_HISTORY_LIMIT,
+                empty=True,
+                error="execution_history_unavailable",
+            )
+
+    def execution_history_text_ru(self, limit: int | None = None) -> str:
+        return self.execution_history(limit).safe_text_ru()
+
+    @classmethod
+    def _bounded_history_limit(cls, limit: int | None) -> int:
+        if limit is None:
+            return cls.DEFAULT_EXECUTION_HISTORY_LIMIT
+        try:
+            value = int(limit)
+        except (TypeError, ValueError):
+            return cls.DEFAULT_EXECUTION_HISTORY_LIMIT
+        if value < 1:
+            return 1
+        return min(value, cls.MAX_EXECUTION_HISTORY_LIMIT)
+
+    @classmethod
+    def _history_entry_from_operation(
+        cls,
+        operation: ExecutionOperation,
+    ) -> AppExecutionHistoryEntry:
+        metadata = cls._safe_history_metadata(getattr(operation, "metadata", None))
+        status = safe_history_text(getattr(getattr(operation, "status", None), "value", None))
+        if not status:
+            status = safe_history_text(getattr(operation, "status", "unknown"))
+        safe_error = safe_history_text(getattr(operation, "safe_error_code", None), max_length=120)
+        user_message = safe_history_text(
+            getattr(operation, "safe_result_summary", None),
+            max_length=220,
+        )
+        command_id = cls._optional_history_text(getattr(operation, "command_id", None), 100)
+        action_id = cls._optional_history_text(getattr(operation, "action_id", None), 100)
+        operation_type = command_id or action_id or "operation"
+        return AppExecutionHistoryEntry(
+            entry_id=safe_history_text(getattr(operation, "operation_id", None), max_length=80)
+            or "unknown",
+            timestamp=safe_history_text(getattr(operation, "created_at", None), max_length=80)
+            or "unknown",
+            updated_at=safe_history_text(getattr(operation, "updated_at", None), max_length=80)
+            or "unknown",
+            source=safe_history_text(getattr(operation, "source", None), max_length=80)
+            or "unknown",
+            command_id=command_id,
+            action_id=action_id,
+            operation_type=operation_type,
+            status=status or "unknown",
+            succeeded=cls._history_success(status),
+            preview=cls._history_preview_flag(metadata),
+            awaiting_confirmation=status == "awaiting_confirmation",
+            cancellable=bool(getattr(operation, "cancellable", False)),
+            duplicate_suppressed=bool(getattr(operation, "duplicate_suppressed", False)),
+            request_summary=cls._history_request_summary(metadata, command_id, action_id),
+            user_message=user_message or None,
+            safe_error_summary=safe_error or None,
+            metadata=metadata,
+        )
+
+    @staticmethod
+    def _optional_history_text(value, max_length: int) -> str | None:
+        text = safe_history_text(value, max_length=max_length)
+        return text or None
+
+    @staticmethod
+    def _history_success(status: str) -> bool | None:
+        if status == "succeeded":
+            return True
+        if status in {"failed", "denied", "cancelled", "duplicate_suppressed"}:
+            return False
+        return None
+
+    @staticmethod
+    def _safe_history_metadata(metadata) -> tuple[tuple[str, str], ...]:
+        if not metadata:
+            return ()
+        safe_items: list[tuple[str, str]] = []
+        try:
+            items = metadata.items()
+        except AttributeError:
+            return ()
+        blocked_keys = {
+            "policy_decision",
+            "request_fingerprint",
+            "idempotency_key",
+            "exception",
+            "traceback",
+            "raw_error",
+            "raw_audio",
+            "document_contents",
+            "file_contents",
+            "provider_response",
+            "provider_client",
+            "credentials",
+            "token",
+            "api_key",
+            "authorization",
+        }
+        for key, value in items:
+            raw_key = str(key or "").strip().lower()
+            if raw_key in blocked_keys:
+                continue
+            safe_key = safe_history_text(key, max_length=64)
+            if not safe_key:
+                continue
+            safe_value = safe_history_text(value, max_length=140)
+            if safe_value:
+                safe_items.append((safe_key, safe_value))
+        return tuple(safe_items)
+
+    @staticmethod
+    def _history_preview_flag(metadata: tuple[tuple[str, str], ...]) -> bool:
+        values = {key.lower(): value.lower() for key, value in metadata}
+        return values.get("preview") == "yes" or values.get("executed") == "no"
+
+    @staticmethod
+    def _history_request_summary(
+        metadata: tuple[tuple[str, str], ...],
+        command_id: str | None,
+        action_id: str | None,
+    ) -> str:
+        values = {key.lower(): value for key, value in metadata}
+        return (
+            values.get("input_preview")
+            or values.get("summary")
+            or command_id
+            or action_id
+            or "No request summary available."
+        )
 
     @staticmethod
     def _action_id_for_text(text: str) -> str | None:

@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 
+from app.app_contracts import AppExecutionHistoryEntry, AppExecutionHistoryResult
 from app.app_service import AppCommandSource, JarvisAppService
 from app import desktop_shell
 from app.desktop_shell import DesktopShellViewModel, JarvisDesktopShell
@@ -26,6 +27,44 @@ LOCAL_TTS_TEST_COMMAND = (
     "\u0433\u043e\u043b\u043e\u0441\u0430"
 )
 RAW_MICROPHONE_ERROR = "Error querying device -1: PaErrorCode -9999; MME error 1"
+RAW_HISTORY_ERROR = "Traceback RuntimeError backend failed at C:/Users/User/raw.log"
+
+
+def history_entry(
+    entry_id,
+    *,
+    timestamp="2026-07-22T10:00:00+00:00",
+    status="succeeded",
+    command_id="ai.status",
+    request_summary="status ai",
+    user_message="processed safely",
+    safe_error_summary=None,
+):
+    return AppExecutionHistoryEntry(
+        entry_id=entry_id,
+        timestamp=timestamp,
+        updated_at=timestamp,
+        source="desktop_ui",
+        command_id=command_id,
+        action_id=None,
+        operation_type=command_id or "operation",
+        status=status,
+        succeeded=(
+            True
+            if status == "succeeded"
+            else False
+            if status in {"failed", "denied", "cancelled"}
+            else None
+        ),
+        preview=False,
+        awaiting_confirmation=status == "awaiting_confirmation",
+        cancellable=status == "awaiting_confirmation",
+        duplicate_suppressed=False,
+        request_summary=request_summary,
+        user_message=user_message,
+        safe_error_summary=safe_error_summary,
+        metadata=(("risk_level", "read_only"),),
+    )
 
 
 class FakeLocalTtsBackend:
@@ -109,6 +148,25 @@ class FakeAppService:
         self.execute_calls = []
         self.voice_calls = []
         self.list_calls = []
+        self.history_calls = []
+        self.history_entries = (
+            history_entry(
+                "op-new",
+                timestamp="2026-07-22T10:02:00+00:00",
+                status="failed",
+                command_id="voice.test",
+                request_summary="voice test",
+                safe_error_summary="voice.output.local_test.failed",
+            ),
+            history_entry(
+                "op-old",
+                timestamp="2026-07-22T10:01:00+00:00",
+                status="succeeded",
+                command_id="ai.status",
+                request_summary="status ai",
+            ),
+        )
+        self.history_error = None
 
     def status_text_ru(self):
         return "\n".join(
@@ -172,6 +230,26 @@ class FakeAppService:
         self.voice_calls.append(source)
         return getattr(self, "voice_result", None) or FakeVoiceResult(
             text_result=FakeExecutionResult(output_text="processed voice command")
+        )
+
+    def execution_history(self, limit=None):
+        self.history_calls.append(limit)
+        if self.history_error is not None:
+            return AppExecutionHistoryResult(
+                ok=False,
+                entries=(),
+                limit=50,
+                max_limit=100,
+                empty=True,
+                error=self.history_error,
+            )
+        return AppExecutionHistoryResult(
+            ok=True,
+            entries=tuple(self.history_entries),
+            limit=50 if limit is None else int(limit),
+            max_limit=100,
+            empty=not self.history_entries,
+            error=None,
         )
 
 
@@ -364,6 +442,123 @@ def test_view_model_builds_initial_state_safely():
     assert state.safe_mode is True
     assert "No command has been executed" in state.output_text
     assert "desktop_shell.status" in state.command_list_text
+    assert "Execution history:" in state.history_list_text
+    assert "op-new" in state.selected_history_details_text
+    assert state.selected_history_id == "op-new"
+
+
+def test_view_model_displays_history_entries_newest_first():
+    service = FakeAppService()
+    view_model = DesktopShellViewModel(service)
+
+    text = view_model.refresh_execution_history()
+
+    assert service.history_calls[-1] is None
+    assert "1. 2026-07-22T10:02:00+00:00 | failed | voice.test" in text
+    assert "2. 2026-07-22T10:01:00+00:00 | succeeded | ai.status" in text
+    assert view_model.state.history_entries[0].entry_id == "op-new"
+    assert view_model.state.history_entries[1].entry_id == "op-old"
+
+
+def test_view_model_refreshes_history_without_duplicates():
+    service = FakeAppService()
+    view_model = DesktopShellViewModel(service)
+    service.history_entries = (history_entry("op-third", command_id="memory.remember"),)
+
+    first = view_model.refresh_execution_history()
+    second = view_model.refresh_execution_history()
+
+    assert first.count("op-third") <= 1
+    assert second.count("op-third") <= 1
+    assert len(view_model.state.history_entries) == 1
+    assert view_model.state.selected_history_id == "op-third"
+
+
+def test_view_model_displays_empty_history_state():
+    service = FakeAppService()
+    service.history_entries = ()
+    view_model = DesktopShellViewModel(service)
+
+    assert "no entries yet" in view_model.state.history_list_text
+    assert "no entry selected" in view_model.state.selected_history_details_text
+    assert view_model.state.history_entries == ()
+
+
+def test_view_model_displays_safe_history_loading_error():
+    service = FakeAppService()
+    service.history_error = RAW_HISTORY_ERROR
+    view_model = DesktopShellViewModel(service)
+
+    text = view_model.refresh_execution_history()
+
+    assert "execution_history_unavailable" in text
+    assert "Traceback" not in text
+    assert "RuntimeError" not in text
+    assert "C:/Users/User" not in text
+    assert view_model.state.last_error == text
+
+
+def test_view_model_updates_selected_history_details():
+    view_model = DesktopShellViewModel(FakeAppService())
+
+    details = view_model.select_history_entry(1)
+
+    assert "op-old" in details
+    assert "- command id: ai.status" in details
+    assert view_model.state.selected_history_id == "op-old"
+
+
+def test_view_model_history_copy_uses_safe_projected_content():
+    service = FakeAppService()
+    service.history_entries = (
+        history_entry(
+            "op-copy",
+            status="failed",
+            command_id="voice.test",
+            request_summary="api key sk-test-1234567890secret",
+            user_message="RuntimeError backend C:/Users/User/raw.log",
+            safe_error_summary="PaErrorCode -9999 MME error 1",
+        ),
+    )
+    view_model = DesktopShellViewModel(service)
+
+    copied = view_model.selected_history_copy_text()
+
+    assert "op-copy" in copied
+    assert "sk-test-1234567890secret" not in copied
+    assert "RuntimeError" not in copied
+    assert "C:/Users/User" not in copied
+    assert "PaErrorCode" not in copied
+    assert "MME error" not in copied
+
+
+def test_shell_history_copy_action_uses_selected_safe_text():
+    root = FakeRoot()
+    shell = fake_shell(root)
+
+    shell._on_history_copy()
+
+    assert root.clipboard
+    assert "Execution history entry:" in root.clipboard
+    assert "op-new" in root.clipboard
+    assert "sk-test" not in root.clipboard
+
+
+def test_view_model_malformed_history_entry_does_not_crash_rendering():
+    class MalformedEntry:
+        entry_id = "op-malformed"
+        timestamp = "2026-07-22T10:03:00+00:00"
+        status = "cancelled"
+        command_id = None
+        user_message = None
+        safe_error_summary = None
+
+    service = FakeAppService()
+    service.history_entries = (MalformedEntry(),)
+    view_model = DesktopShellViewModel(service)
+
+    assert "op-malformed" in view_model.state.selected_history_details_text
+    assert "cancelled" in view_model.state.history_list_text
 
 
 def test_status_text_mentions_app_service_and_no_network_default():

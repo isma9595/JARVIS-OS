@@ -19,7 +19,8 @@ secure key storage foundation, but this shell still has no key input fields.
 
 The desktop shell uses `JarvisAppService` as its app-facing boundary.
 The shell can show service status, list registry commands, preview command
-risk, and execute explicit user commands only through AppService.
+risk, execute explicit user commands, and show recent execution history only
+through AppService.
 
 TASK-073 adds versioned AppService contracts. The shell may read contract
 status/cards through AppService, but TASK-073 adds no new screens or key input.
@@ -53,6 +54,10 @@ python run_desktop.py
 - List command registry categories and commands.
 - Preview command risk without execution.
 - Execute explicit command text through AppService.
+- Display a bounded, newest-first execution history list from AppService.
+- Refresh the execution history without restarting the shell.
+- Show safe details for the selected history entry.
+- Copy the selected history entry's safe user-facing summary/details.
 - Display Russian clarification questions and options returned by AppService.
 - Start one explicit one-shot voice request through AppService with the
   `Микрофон` button.
@@ -70,6 +75,8 @@ python run_desktop.py
 - No automation.
 - No network by default.
 - No continuous listening or wake-word service.
+- No history deletion, editing, replay, re-execution, file export, cloud sync,
+  or remote history access.
 
 ## Safety
 
@@ -78,6 +85,10 @@ python run_desktop.py
 - No network by default.
 - AI responses are not executed as commands.
 - Preview does not execute target commands.
+- Execution history is read-only and uses the existing Execution Journal
+  through AppService-safe DTOs.
+- Copied history text is built from projected user-facing fields, not raw
+  journal objects or tracebacks.
 - Risky/network commands require explicit command text and Execute.
 - Voice requests require an explicit button press, run in a worker thread, and
   return through the AppService result boundary.

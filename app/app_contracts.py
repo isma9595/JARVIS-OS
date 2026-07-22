@@ -18,12 +18,31 @@ APP_CONTRACT_SCHEMA_NAME = "jarvis.app_service.contracts"
 _SECRET_PATTERN = re.compile(
     r"(?i)(sk-[a-z0-9_-]{8,}|api[_ -]?key\s*[:=]?\s*\S+|token\s*[:=]?\s*\S+)"
 )
+_WINDOWS_PATH_PATTERN = re.compile(r"(?i)\b[a-z]:[\\/][^\r\n\t ]+")
+_USER_PATH_PATTERN = re.compile(r"(?i)([\\/]|^)(users|home)[\\/][^\\/\s]+")
+_TECHNICAL_ERROR_PATTERN = re.compile(
+    r"(?i)(traceback|runtimeerror|exception|paerrorcode|mme error|portaudio|sounddevice|backend|device id)"
+)
 
 
 def safe_contract_text(text: str) -> str:
     """Return text suitable for UI serialization without obvious secrets."""
 
     return _SECRET_PATTERN.sub("[REDACTED]", str(text or ""))
+
+
+def safe_history_text(text: object, *, max_length: int = 220) -> str:
+    """Return execution-history text suitable for Desktop rendering."""
+
+    safe = safe_contract_text(str(text or ""))
+    safe = _WINDOWS_PATH_PATTERN.sub("[PATH REDACTED]", safe)
+    safe = _USER_PATH_PATTERN.sub("[PATH REDACTED]", safe)
+    safe = safe.replace("\r", " ").replace("\n", " ").strip()
+    if _TECHNICAL_ERROR_PATTERN.search(safe):
+        safe = "Safe execution detail unavailable."
+    if len(safe) > max_length:
+        return safe[: max_length - 3].rstrip() + "..."
+    return safe
 
 
 def _safe_value(value: Any) -> object:
@@ -475,6 +494,113 @@ class AppVoiceRequestResult(_ContractMixin):
             lines.append("Text result:")
             lines.append(self.text_result.safe_text_ru())
         return "\n".join(lines)
+
+
+@dataclass(frozen=True)
+class AppExecutionHistoryEntry(_ContractMixin):
+    entry_id: str
+    timestamp: str
+    updated_at: str
+    source: str
+    command_id: str | None
+    action_id: str | None
+    operation_type: str
+    status: str
+    succeeded: bool | None
+    preview: bool
+    awaiting_confirmation: bool
+    cancellable: bool
+    duplicate_suppressed: bool
+    request_summary: str
+    user_message: str | None
+    safe_error_summary: str | None
+    metadata: tuple[tuple[str, str], ...]
+
+    def summary_text(self) -> str:
+        status = safe_history_text(self.status, max_length=80) or "unknown"
+        command = safe_history_text(
+            self.command_id or self.action_id or self.operation_type or "unknown",
+            max_length=100,
+        )
+        return f"{safe_history_text(self.timestamp, max_length=40)} | {status} | {command}"
+
+    def details_text(self) -> str:
+        lines = [
+            "Execution history entry:",
+            f"- id: {safe_history_text(self.entry_id, max_length=80)}",
+            f"- timestamp: {safe_history_text(self.timestamp, max_length=80)}",
+            f"- updated: {safe_history_text(self.updated_at, max_length=80)}",
+            f"- source: {safe_history_text(self.source, max_length=80)}",
+            f"- command id: {safe_history_text(self.command_id or 'none', max_length=100)}",
+            f"- action id: {safe_history_text(self.action_id or 'none', max_length=100)}",
+            f"- operation type: {safe_history_text(self.operation_type, max_length=100)}",
+            f"- status: {safe_history_text(self.status, max_length=80)}",
+            f"- succeeded: {'unknown' if self.succeeded is None else ('yes' if self.succeeded else 'no')}",
+            f"- preview: {'yes' if self.preview else 'no'}",
+            f"- awaiting confirmation: {'yes' if self.awaiting_confirmation else 'no'}",
+            f"- cancellable: {'yes' if self.cancellable else 'no'}",
+            f"- duplicate suppressed: {'yes' if self.duplicate_suppressed else 'no'}",
+            f"- request: {safe_history_text(self.request_summary, max_length=220)}",
+        ]
+        if self.user_message:
+            lines.append(f"- message: {safe_history_text(self.user_message, max_length=220)}")
+        if self.safe_error_summary:
+            lines.append(
+                f"- error: {safe_history_text(self.safe_error_summary, max_length=160)}"
+            )
+        if self.metadata:
+            lines.append("Metadata:")
+            lines.extend(
+                f"- {safe_history_text(key, max_length=80)}: {safe_history_text(value, max_length=140)}"
+                for key, value in self.metadata
+            )
+        return "\n".join(lines)
+
+    def safe_text_ru(self) -> str:
+        return self.details_text()
+
+
+@dataclass(frozen=True)
+class AppExecutionHistoryResult(_ContractMixin):
+    ok: bool
+    entries: tuple[AppExecutionHistoryEntry, ...]
+    limit: int
+    max_limit: int
+    empty: bool
+    error: str | None = None
+
+    def safe_text_ru(self) -> str:
+        if not self.ok:
+            return "\n".join(
+                [
+                    "Execution history:",
+                    "- status: unavailable",
+                    f"- error: {safe_history_text(self.error or 'history_unavailable')}",
+                    "- no secrets",
+                ]
+            )
+        if not self.entries:
+            return "\n".join(
+                [
+                    "Execution history:",
+                    "- status: empty",
+                    f"- limit: {self.limit}",
+                    "- no entries",
+                    "- no secrets",
+                ]
+            )
+        return "\n".join(
+            [
+                "Execution history:",
+                f"- status: ready",
+                f"- entries: {len(self.entries)}",
+                f"- limit: {self.limit}",
+                "- newest first",
+                "- no secrets",
+                "",
+                *[entry.summary_text() for entry in self.entries],
+            ]
+        )
 
 
 @dataclass(frozen=True)

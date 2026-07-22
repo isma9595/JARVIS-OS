@@ -33,7 +33,8 @@ handlers / ActionRouter fallback
 
 The UI is not an execution authority. Desktop Shell code uses
 `JarvisAppService` for status, command listing, preview, explicit execution,
-clarification display, and one-shot voice requests. It does not call
+clarification display, recent execution history, and one-shot voice requests.
+It does not call
 `CommandProcessor`, `ActionRouter`, provider adapters, memory storage, or
 filesystem adapters directly.
 
@@ -93,7 +94,9 @@ providers, audio, GUI, or credential stores.
 `ExecutionCoordinator` creates operation IDs, idempotency keys, request
 fingerprints, cancellation tokens, and operation lifecycle transitions.
 `ExecutionJournal` stores bounded in-memory `ExecutionOperation` records with
-safe metadata.
+safe metadata. AppService exposes recent history through detached
+`AppExecutionHistoryEntry` DTOs. Desktop Shell reads those projections only; it
+does not mutate, replay, delete, or inspect journal storage internals.
 
 Confirmation-required operations pause before side effects. Repeated execution
 is not treated as confirmation. Cancellation and idempotency are tracked through
@@ -233,5 +236,7 @@ Future work should stay focused and evidence-based:
 - optional coverage tooling and policy;
 - repository line-ending normalization in a separate maintenance task;
 - Desktop Shell action clarity and copy/export UX;
+- future history filtering, export, deletion, replay, or persistent journal
+  storage only after separately approved design work;
 - installer, mobile, admin/support, and broader portability only after
   separately approved architecture work.

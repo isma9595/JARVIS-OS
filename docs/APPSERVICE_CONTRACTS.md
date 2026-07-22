@@ -22,6 +22,11 @@ Contract/list/status/card methods are deterministic and do not execute commands.
 `execute_contract(text, source)` is the only execution contract method, and it
 delegates to the existing `execute_command()` path.
 
+TASK-103 adds `execution_history(limit)` for read-only Desktop history
+rendering. It retrieves recent entries from the existing Execution Journal,
+enforces AppService bounds, projects detached DTOs, and returns safe error
+state when history cannot be loaded.
+
 TASK-078 adds `process_one_shot_voice_request(source)`. It captures one
 explicit local Vosk utterance through the existing one-shot recognition
 boundary, then delegates recognized text to `execute_contract()` so voice input
@@ -69,6 +74,8 @@ addendum. No new desktop screens, key fields, or product UI are added.
 - `AppPreviewContract`
 - `AppExecutionContract`
 - `AppVoiceRequestResult`
+- `AppExecutionHistoryEntry`
+- `AppExecutionHistoryResult`
 - `AppContractManifest`
 
 Every contract supports deterministic `to_dict()`. Text-oriented contracts also
@@ -93,6 +100,9 @@ execution handles.
 - No response execution as commands.
 - Preview does not execute.
 - Status, manifest, and card commands are read-only.
+- Execution history is read-only and does not expose mutable journal storage,
+  raw exceptions, tracebacks, secrets, local paths, device details, or policy
+  internals.
 - Raw microphone audio is not sent to AI providers.
 - Recognized voice text reaches providers only by entering the same text path
   as typed input.
@@ -110,8 +120,25 @@ Future UI should use:
 - `preview_contract(text)`
 - `execute_contract(text, source)`
 - `process_one_shot_voice_request(source)`
+- `execution_history(limit)`
 
 Future UI should not call `CommandProcessor` or `ActionRouter` directly.
+
+## Execution History Contract
+
+`AppExecutionHistoryResult` reports whether history loading succeeded, the
+bounded limit used, the AppService maximum, empty state, safe error code, and a
+tuple of `AppExecutionHistoryEntry` objects.
+
+`AppExecutionHistoryEntry` is a detached UI projection of an
+`ExecutionOperation`. It can include operation id, timestamp, source, command
+or action id, operation type, execution status, success state, preview marker,
+confirmation/cancellation flags, duplicate-suppression flag, user-facing
+request summary, safe user message, safe error summary, and safe metadata.
+
+The contract is for viewing, refreshing, selecting, and copying safe summary
+text. It does not support deletion, editing, replay, re-execution, export,
+remote synchronization, or direct journal mutation.
 
 ## One-Shot Voice Contract
 

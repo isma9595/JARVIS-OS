@@ -25,6 +25,7 @@ AppService provides UI-safe access to:
 - memory and language preference operations;
 - one-shot local voice request projection;
 - local TTS execution metadata projection;
+- recent execution history projection;
 - provider runtime status metadata.
 
 Desktop Shell uses AppService and should not bypass it.
@@ -62,7 +63,8 @@ Current public methods include these groups:
   `preview_text_ru()`, `execute_command()`, `execute_command_text_ru()`.
 - One-shot voice: `process_one_shot_voice_request()`,
   `process_one_shot_voice_request_text_ru()`.
-- Execution journal projection: `recent_execution_operations()`.
+- Execution journal projection: `recent_execution_operations()`,
+  `execution_history()`, `execution_history_text_ru()`.
 - Memory helpers: `remember_user_fact()`, `recall_user_fact()`,
   `list_user_memories()`, `forget_user_fact()`,
   `request_forget_all_memories()`, `confirm_forget_all_memories()`,
@@ -82,6 +84,8 @@ AppService returns and projects DTOs from `app/app_contracts.py`, including:
 - `AppExecutionContract`
 - `AppPreviewContract`
 - `AppVoiceRequestResult`
+- `AppExecutionHistoryEntry`
+- `AppExecutionHistoryResult`
 - `AppContractStatus`
 - `AppStatusCard`
 - `AppCommandCard`
@@ -108,6 +112,10 @@ helpers or subsystem internals.
 The Desktop Shell does not call `CommandProcessor`, `ActionRouter`, provider
 adapters, memory storage, Vosk objects, TTS backends, or filesystem adapters
 directly.
+
+TASK-103 adds Desktop history access through `execution_history()`. The shell
+receives bounded, newest-first `AppExecutionHistoryEntry` DTOs and never reads
+or mutates `ExecutionJournal` internals.
 
 ## Planner Interaction
 
@@ -170,6 +178,13 @@ risk, confirmation requirement, execution status, operation id/status,
 duplicate suppression, network possibility, workflow and planner metadata,
 local TTS metadata, and safe user-facing error text where applicable.
 
+`execution_history(limit)` is a read-only projection over the existing
+Execution Journal. It enforces a bounded limit, defaults to the current
+AppService history limit, caps oversized requests, preserves deterministic
+newest-first rendering order, handles an empty journal, and returns a safe
+failure result if the journal cannot be loaded. It does not create a second
+history store and does not expose mutable `ExecutionOperation` objects.
+
 ## Confirmation-Required Behavior
 
 Confirmation-required operations pause before side effects. AppService tracks
@@ -190,6 +205,12 @@ raw PortAudio/MME/backend/path details are not shown through
 
 Technical diagnostics may still exist inside controlled test fakes or internal
 objects, but user-facing AppService projection must stay sanitized.
+
+TASK-103 applies the same user-facing principle to execution history. History
+DTO projection omits blocked internal metadata keys and sanitizes details that
+look like tracebacks, backend/device failures, local filesystem paths, tokens,
+or raw exception text. A malformed optional journal field is projected with a
+safe fallback or omitted instead of failing the whole history request.
 
 ## Local TTS Projection
 
@@ -261,6 +282,7 @@ Future implementation tasks may extract focused services for:
 - voice request projection;
 - local TTS metadata projection;
 - provider runtime status projection;
+- recent execution history projection;
 - status/card assembly.
 
 These are future opportunities, not current implementation claims. Any

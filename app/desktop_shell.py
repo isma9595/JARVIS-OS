@@ -20,6 +20,11 @@ class DesktopShellState:
     output_text: str
     selected_category: str | None
     command_list_text: str
+    history_list_text: str
+    selected_history_id: str | None
+    selected_history_details_text: str
+    history_copy_text: str
+    history_entries: tuple[object, ...]
     last_error: str | None
     ui_ready: bool
     safe_mode: bool
@@ -38,6 +43,7 @@ class DesktopShellViewModel:
             command_list_text = self._safe_text(self.app_service.list_commands(None))
         except Exception as exc:
             command_list_text = self._safe_error(exc)
+        history = self._load_history_state()
         return DesktopShellState(
             app_title="JARVIS OS",
             status_text=status_text,
@@ -53,6 +59,11 @@ class DesktopShellViewModel:
             ),
             selected_category=None,
             command_list_text=command_list_text,
+            history_list_text=history["history_list_text"],
+            selected_history_id=history["selected_history_id"],
+            selected_history_details_text=history["selected_history_details_text"],
+            history_copy_text=history["history_copy_text"],
+            history_entries=history["history_entries"],
             last_error=None,
             ui_ready=True,
             safe_mode=True,
@@ -151,6 +162,139 @@ class DesktopShellViewModel:
         )
         return output_text
 
+    def refresh_execution_history(self, limit: int | None = None) -> str:
+        history = self._load_history_state(limit=limit)
+        self.state = self._replace(
+            history_list_text=history["history_list_text"],
+            selected_history_id=history["selected_history_id"],
+            selected_history_details_text=history["selected_history_details_text"],
+            history_copy_text=history["history_copy_text"],
+            history_entries=history["history_entries"],
+            last_error=history["last_error"],
+        )
+        return self.state.history_list_text
+
+    def select_history_entry(self, index: int | str | None) -> str:
+        try:
+            selected_index = int(index)
+        except (TypeError, ValueError):
+            selected_index = -1
+        entries = self.state.history_entries
+        if selected_index < 0 or selected_index >= len(entries):
+            details = "Execution history entry details:\n- no entry selected"
+            self.state = self._replace(
+                selected_history_id=None,
+                selected_history_details_text=details,
+                history_copy_text=details,
+                last_error=None,
+            )
+            return details
+        entry = entries[selected_index]
+        details = self._history_entry_details(entry)
+        self.state = self._replace(
+            selected_history_id=getattr(entry, "entry_id", None),
+            selected_history_details_text=details,
+            history_copy_text=details,
+            last_error=None,
+        )
+        return details
+
+    def selected_history_copy_text(self) -> str:
+        text = self.state.history_copy_text or self.state.selected_history_details_text
+        if not text:
+            text = "Execution history entry details:\n- no entry selected"
+        return self._safe_text(text)
+
+    def _load_history_state(self, limit: int | None = None) -> dict[str, object]:
+        try:
+            result = self.app_service.execution_history(limit)
+            if not getattr(result, "ok", False):
+                error_text = self._safe_history_error(getattr(result, "error", None))
+                return {
+                    "history_list_text": error_text,
+                    "selected_history_id": None,
+                    "selected_history_details_text": error_text,
+                    "history_copy_text": error_text,
+                    "history_entries": (),
+                    "last_error": error_text,
+                }
+            entries = tuple(getattr(result, "entries", ()) or ())
+            if not entries:
+                empty_text = "Execution history:\n- no entries yet"
+                details = "Execution history entry details:\n- no entry selected"
+                return {
+                    "history_list_text": empty_text,
+                    "selected_history_id": None,
+                    "selected_history_details_text": details,
+                    "history_copy_text": details,
+                    "history_entries": (),
+                    "last_error": None,
+                }
+            list_text = self._history_list_text(entries)
+            details = self._history_entry_details(entries[0])
+            return {
+                "history_list_text": list_text,
+                "selected_history_id": getattr(entries[0], "entry_id", None),
+                "selected_history_details_text": details,
+                "history_copy_text": details,
+                "history_entries": entries,
+                "last_error": None,
+            }
+        except Exception:
+            error_text = self._safe_history_error("execution_history_unavailable")
+            return {
+                "history_list_text": error_text,
+                "selected_history_id": None,
+                "selected_history_details_text": error_text,
+                "history_copy_text": error_text,
+                "history_entries": (),
+                "last_error": error_text,
+            }
+
+    def _history_list_text(self, entries: tuple[object, ...]) -> str:
+        lines = [
+            "Execution history:",
+            "- newest first",
+            f"- entries: {len(entries)}",
+        ]
+        for index, entry in enumerate(entries, start=1):
+            summary = (
+                entry.summary_text()
+                if hasattr(entry, "summary_text")
+                else self._fallback_history_summary(entry)
+            )
+            lines.append(f"{index}. {summary}")
+        return self._safe_text("\n".join(lines))
+
+    def _history_entry_details(self, entry) -> str:
+        if hasattr(entry, "details_text"):
+            return self._safe_text(entry.details_text())
+        return self._safe_text(self._fallback_history_summary(entry))
+
+    def _fallback_history_summary(self, entry) -> str:
+        return "\n".join(
+            [
+                "Execution history entry:",
+                f"- id: {getattr(entry, 'entry_id', 'unknown') or 'unknown'}",
+                f"- timestamp: {getattr(entry, 'timestamp', 'unknown') or 'unknown'}",
+                f"- status: {getattr(entry, 'status', 'unknown') or 'unknown'}",
+                f"- command id: {getattr(entry, 'command_id', None) or 'none'}",
+                f"- message: {getattr(entry, 'user_message', None) or 'none'}",
+                f"- error: {getattr(entry, 'safe_error_summary', None) or 'none'}",
+            ]
+        )
+
+    @classmethod
+    def _safe_history_error(cls, _error=None) -> str:
+        return "\n".join(
+            [
+                "Execution history:",
+                "- status: unavailable",
+                "- error: execution_history_unavailable",
+                "- no internal details",
+            ]
+        )
+
     def safe_status_text_ru(self) -> str:
         service_status = self.app_service.status_text_ru()
         contract_status = self.app_service.contract_status_text_ru()
@@ -186,6 +330,7 @@ class DesktopShellViewModel:
                 "- can list command registry/categories",
                 "- can preview command risk",
                 "- can execute through AppService",
+                "- can show recent execution history",
                 "- future AI provider settings planned",
                 "- secure key storage foundation available",
                 "- future secure key input UI planned",
@@ -523,6 +668,59 @@ class JarvisDesktopShell:
         )
         note.grid(row=1, column=0, sticky="ew", pady=8)
 
+        history_panel = tk.Frame(main, bg=self.COLORS["panel"], padx=10, pady=10)
+        history_panel.grid(row=2, column=0, sticky="ew", pady=(0, 8))
+        history_panel.grid_columnconfigure(0, weight=1)
+        tk.Label(
+            history_panel,
+            text="Execution History",
+            bg=self.COLORS["panel"],
+            fg=self.COLORS["text"],
+            font=("Segoe UI", 12, "bold"),
+        ).grid(row=0, column=0, sticky="w")
+        tk.Button(
+            history_panel,
+            text="Refresh",
+            command=self._on_history_refresh,
+            bg=self.COLORS["panel_alt"],
+            fg=self.COLORS["text"],
+            activebackground=self.COLORS["accent"],
+            activeforeground=self.COLORS["text"],
+            relief="flat",
+            padx=10,
+            pady=6,
+        ).grid(row=0, column=1, sticky="e", padx=(8, 4))
+        tk.Button(
+            history_panel,
+            text="Copy Selected",
+            command=self._on_history_copy,
+            bg=self.COLORS["panel_alt"],
+            fg=self.COLORS["text"],
+            activebackground=self.COLORS["accent"],
+            activeforeground=self.COLORS["text"],
+            relief="flat",
+            padx=10,
+            pady=6,
+        ).grid(row=0, column=2, sticky="e")
+        history_content = tk.Frame(history_panel, bg=self.COLORS["panel"])
+        history_content.grid(row=1, column=0, columnspan=3, sticky="ew", pady=(8, 0))
+        history_content.grid_columnconfigure(0, weight=1)
+        history_content.grid_columnconfigure(1, weight=1)
+        self.history_list = tk.Listbox(
+            history_content,
+            height=5,
+            bg=self.COLORS["panel_alt"],
+            fg=self.COLORS["text"],
+            selectbackground=self.COLORS["accent"],
+            relief="flat",
+            exportselection=False,
+        )
+        self.history_list.grid(row=0, column=0, sticky="ew", padx=(0, 6))
+        self.history_list.bind("<<ListboxSelect>>", self._on_history_selected)
+        self.history_details_box = self._text_box(history_content, height=5)
+        self.history_details_box.grid(row=0, column=1, sticky="ew", padx=(6, 0))
+        self._bind_readonly_text_copy(self.history_details_box)
+
         split = tk.PanedWindow(main, orient="vertical", bg=self.COLORS["bg"], sashwidth=6)
         split.grid(row=3, column=0, sticky="nsew")
         self.preview_box = self._text_box(split, height=10)
@@ -661,6 +859,30 @@ class JarvisDesktopShell:
         self._set_text(self.preview_box, state.preview_text)
         self._set_text(self.output_box, state.output_text)
         self._set_text(self.command_list_box, state.command_list_text)
+        self._render_history_state(state)
+
+    def _render_history_state(self, state) -> None:
+        self.history_list.delete(0, "end")
+        entries = tuple(getattr(state, "history_entries", ()) or ())
+        if entries:
+            for entry in entries:
+                summary = (
+                    entry.summary_text()
+                    if hasattr(entry, "summary_text")
+                    else self.view_model._fallback_history_summary(entry)
+                )
+                self.history_list.insert("end", self.view_model._safe_text(summary))
+            selected_id = getattr(state, "selected_history_id", None)
+            selected_index = 0
+            for index, entry in enumerate(entries):
+                if getattr(entry, "entry_id", None) == selected_id:
+                    selected_index = index
+                    break
+            self.history_list.selection_set(selected_index)
+            self.history_list.see(selected_index)
+        else:
+            self.history_list.insert("end", "No execution history")
+        self._set_text(self.history_details_box, state.selected_history_details_text)
 
     @staticmethod
     def _set_text(widget, text: str) -> None:
@@ -678,6 +900,7 @@ class JarvisDesktopShell:
 
     def _on_execute(self) -> None:
         self.view_model.execute_command(self._command_input())
+        self.view_model.refresh_execution_history()
         self._render_state()
 
     def _on_voice_once(self) -> None:
@@ -705,6 +928,7 @@ class JarvisDesktopShell:
     def _finish_voice_once(self) -> None:
         self._voice_worker_active = False
         self.voice_button.configure(state="normal")
+        self.view_model.refresh_execution_history()
         self._render_state()
 
     def _on_status(self) -> None:
@@ -734,6 +958,21 @@ class JarvisDesktopShell:
         category = self.category_list.get(selection[0])
         self.view_model.list_commands(category)
         self._render_state()
+
+    def _on_history_refresh(self) -> None:
+        self.view_model.refresh_execution_history()
+        self._render_state()
+
+    def _on_history_selected(self, _event) -> None:
+        selection = self.history_list.curselection()
+        if not selection:
+            self.view_model.select_history_entry(None)
+        else:
+            self.view_model.select_history_entry(selection[0])
+        self._render_state()
+
+    def _on_history_copy(self) -> None:
+        self._clipboard_set(self.view_model.selected_history_copy_text())
 
 
 def launch_desktop_shell() -> bool:
