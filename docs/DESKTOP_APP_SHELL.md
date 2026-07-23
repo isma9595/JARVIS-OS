@@ -55,6 +55,9 @@ python run_desktop.py
 - Preview command risk without execution.
 - Execute explicit command text through AppService.
 - Display a bounded, newest-first execution history list from AppService.
+- Search the currently loaded safe history entries by plain text.
+- Filter the currently loaded safe history entries by supported execution
+  status categories.
 - Refresh the execution history without restarting the shell.
 - Show safe details for the selected history entry.
 - Copy the selected history entry's safe user-facing summary/details.
@@ -87,6 +90,8 @@ python run_desktop.py
 - Preview does not execute target commands.
 - Execution history is read-only and uses the existing Execution Journal
   through AppService-safe DTOs.
+- History search and status filtering run locally over the safe bounded DTOs
+  already returned by AppService; they do not query journal internals.
 - Copied history text is built from projected user-facing fields, not raw
   journal objects or tracebacks.
 - Risky/network commands require explicit command text and Execute.

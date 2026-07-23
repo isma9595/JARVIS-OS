@@ -24,7 +24,13 @@ class DesktopShellState:
     selected_history_id: str | None
     selected_history_details_text: str
     history_copy_text: str
+    loaded_history_entries: tuple[object, ...]
     history_entries: tuple[object, ...]
+    history_search_query: str
+    history_status_filter: str
+    history_result_count_text: str
+    history_loading: bool
+    history_load_error: str | None
     last_error: str | None
     ui_ready: bool
     safe_mode: bool
@@ -32,6 +38,15 @@ class DesktopShellState:
 
 class DesktopShellViewModel:
     """Pure app-shell logic that can be tested without opening a GUI."""
+
+    HISTORY_STATUS_FILTERS = (
+        "All",
+        "Successful",
+        "Failed",
+        "Denied",
+        "Cancelled",
+        "Preview",
+    )
 
     def __init__(self, app_service: JarvisAppService):
         self.app_service = app_service
@@ -63,7 +78,13 @@ class DesktopShellViewModel:
             selected_history_id=history["selected_history_id"],
             selected_history_details_text=history["selected_history_details_text"],
             history_copy_text=history["history_copy_text"],
+            loaded_history_entries=history["loaded_history_entries"],
             history_entries=history["history_entries"],
+            history_search_query=history["history_search_query"],
+            history_status_filter=history["history_status_filter"],
+            history_result_count_text=history["history_result_count_text"],
+            history_loading=history["history_loading"],
+            history_load_error=history["history_load_error"],
             last_error=None,
             ui_ready=True,
             safe_mode=True,
@@ -163,13 +184,29 @@ class DesktopShellViewModel:
         return output_text
 
     def refresh_execution_history(self, limit: int | None = None) -> str:
+        previous_selected_id = self.state.selected_history_id
         history = self._load_history_state(limit=limit)
+        if history["last_error"] is None:
+            history = self._apply_history_filters(
+                loaded_entries=history["loaded_history_entries"],
+                search_query=self.state.history_search_query,
+                status_filter=self.state.history_status_filter,
+                preferred_selected_id=previous_selected_id,
+                last_error=None,
+                history_load_error=None,
+            )
         self.state = self._replace(
             history_list_text=history["history_list_text"],
             selected_history_id=history["selected_history_id"],
             selected_history_details_text=history["selected_history_details_text"],
             history_copy_text=history["history_copy_text"],
+            loaded_history_entries=history["loaded_history_entries"],
             history_entries=history["history_entries"],
+            history_search_query=history["history_search_query"],
+            history_status_filter=history["history_status_filter"],
+            history_result_count_text=history["history_result_count_text"],
+            history_loading=history["history_loading"],
+            history_load_error=history["history_load_error"],
             last_error=history["last_error"],
         )
         return self.state.history_list_text
@@ -185,7 +222,7 @@ class DesktopShellViewModel:
             self.state = self._replace(
                 selected_history_id=None,
                 selected_history_details_text=details,
-                history_copy_text=details,
+                history_copy_text="",
                 last_error=None,
             )
             return details
@@ -200,10 +237,46 @@ class DesktopShellViewModel:
         return details
 
     def selected_history_copy_text(self) -> str:
+        if not self.state.selected_history_id:
+            return ""
         text = self.state.history_copy_text or self.state.selected_history_details_text
-        if not text:
-            text = "Execution history entry details:\n- no entry selected"
         return self._safe_text(text)
+
+    def update_history_search(self, query: str | None) -> str:
+        history = self._apply_history_filters(
+            loaded_entries=self.state.loaded_history_entries,
+            search_query=query,
+            status_filter=self.state.history_status_filter,
+            preferred_selected_id=self.state.selected_history_id,
+            last_error=self.state.last_error,
+            history_load_error=self.state.history_load_error,
+        )
+        self.state = self._replace(**history)
+        return self.state.history_list_text
+
+    def update_history_status_filter(self, status_filter: str | None) -> str:
+        history = self._apply_history_filters(
+            loaded_entries=self.state.loaded_history_entries,
+            search_query=self.state.history_search_query,
+            status_filter=status_filter,
+            preferred_selected_id=self.state.selected_history_id,
+            last_error=self.state.last_error,
+            history_load_error=self.state.history_load_error,
+        )
+        self.state = self._replace(**history)
+        return self.state.history_list_text
+
+    def clear_history_filters(self) -> str:
+        history = self._apply_history_filters(
+            loaded_entries=self.state.loaded_history_entries,
+            search_query="",
+            status_filter="All",
+            preferred_selected_id=self.state.selected_history_id,
+            last_error=self.state.last_error,
+            history_load_error=self.state.history_load_error,
+        )
+        self.state = self._replace(**history)
+        return self.state.history_list_text
 
     def _load_history_state(self, limit: int | None = None) -> dict[str, object]:
         try:
@@ -214,48 +287,132 @@ class DesktopShellViewModel:
                     "history_list_text": error_text,
                     "selected_history_id": None,
                     "selected_history_details_text": error_text,
-                    "history_copy_text": error_text,
+                    "history_copy_text": "",
+                    "loaded_history_entries": (),
                     "history_entries": (),
+                    "history_search_query": "",
+                    "history_status_filter": "All",
+                    "history_result_count_text": "0 entries",
+                    "history_loading": False,
+                    "history_load_error": error_text,
                     "last_error": error_text,
                 }
             entries = tuple(getattr(result, "entries", ()) or ())
-            if not entries:
-                empty_text = "Execution history:\n- no entries yet"
-                details = "Execution history entry details:\n- no entry selected"
-                return {
-                    "history_list_text": empty_text,
-                    "selected_history_id": None,
-                    "selected_history_details_text": details,
-                    "history_copy_text": details,
-                    "history_entries": (),
-                    "last_error": None,
-                }
-            list_text = self._history_list_text(entries)
-            details = self._history_entry_details(entries[0])
-            return {
-                "history_list_text": list_text,
-                "selected_history_id": getattr(entries[0], "entry_id", None),
-                "selected_history_details_text": details,
-                "history_copy_text": details,
-                "history_entries": entries,
-                "last_error": None,
-            }
+            return self._apply_history_filters(
+                loaded_entries=entries,
+                search_query="",
+                status_filter="All",
+                preferred_selected_id=None,
+                last_error=None,
+                history_load_error=None,
+            )
         except Exception:
             error_text = self._safe_history_error("execution_history_unavailable")
             return {
                 "history_list_text": error_text,
                 "selected_history_id": None,
                 "selected_history_details_text": error_text,
-                "history_copy_text": error_text,
+                "history_copy_text": "",
+                "loaded_history_entries": (),
                 "history_entries": (),
+                "history_search_query": "",
+                "history_status_filter": "All",
+                "history_result_count_text": "0 entries",
+                "history_loading": False,
+                "history_load_error": error_text,
                 "last_error": error_text,
             }
 
-    def _history_list_text(self, entries: tuple[object, ...]) -> str:
+    def _apply_history_filters(
+        self,
+        *,
+        loaded_entries: tuple[object, ...],
+        search_query: str | None,
+        status_filter: str | None,
+        preferred_selected_id: str | None,
+        last_error: str | None,
+        history_load_error: str | None,
+    ) -> dict[str, object]:
+        normalized_query = str(search_query or "").strip()
+        normalized_filter = self._normalize_history_status_filter(status_filter)
+        loaded = tuple(loaded_entries or ())
+        if history_load_error:
+            return {
+                "history_list_text": history_load_error,
+                "selected_history_id": None,
+                "selected_history_details_text": history_load_error,
+                "history_copy_text": "",
+                "loaded_history_entries": loaded,
+                "history_entries": (),
+                "history_search_query": normalized_query,
+                "history_status_filter": normalized_filter,
+                "history_result_count_text": self._history_result_count_text(0, len(loaded), True),
+                "history_loading": False,
+                "history_load_error": history_load_error,
+                "last_error": last_error,
+            }
+        visible = tuple(
+            entry
+            for entry in loaded
+            if self._history_matches_status(entry, normalized_filter)
+            and self._history_matches_search(entry, normalized_query)
+        )
+        selected_entry = self._select_visible_history_entry(visible, preferred_selected_id)
+        details = (
+            self._history_entry_details(selected_entry)
+            if selected_entry is not None
+            else "Execution history entry details:\n- no entry selected"
+        )
+        return {
+            "history_list_text": self._history_list_text(
+                visible,
+                loaded_count=len(loaded),
+                search_query=normalized_query,
+                status_filter=normalized_filter,
+            ),
+            "selected_history_id": getattr(selected_entry, "entry_id", None)
+            if selected_entry is not None
+            else None,
+            "selected_history_details_text": details,
+            "history_copy_text": details if selected_entry is not None else "",
+            "loaded_history_entries": loaded,
+            "history_entries": visible,
+            "history_search_query": normalized_query,
+            "history_status_filter": normalized_filter,
+            "history_result_count_text": self._history_result_count_text(
+                len(visible),
+                len(loaded),
+                self._history_filters_active(normalized_query, normalized_filter),
+            ),
+            "history_loading": False,
+            "history_load_error": None,
+            "last_error": last_error,
+        }
+
+    def _history_list_text(
+        self,
+        entries: tuple[object, ...],
+        *,
+        loaded_count: int | None = None,
+        search_query: str = "",
+        status_filter: str = "All",
+    ) -> str:
+        total = len(entries) if loaded_count is None else loaded_count
+        active = self._history_filters_active(search_query, status_filter)
+        if total == 0:
+            return "Execution history:\n- No execution history is available."
+        if not entries:
+            return "\n".join(
+                [
+                    "Execution history:",
+                    "- No history entries match the current filters.",
+                    f"- {self._history_result_count_text(0, total, True)}",
+                ]
+            )
         lines = [
             "Execution history:",
             "- newest first",
-            f"- entries: {len(entries)}",
+            f"- {self._history_result_count_text(len(entries), total, active)}",
         ]
         for index, entry in enumerate(entries, start=1):
             summary = (
@@ -265,6 +422,68 @@ class DesktopShellViewModel:
             )
             lines.append(f"{index}. {summary}")
         return self._safe_text("\n".join(lines))
+
+    @classmethod
+    def _normalize_history_status_filter(cls, status_filter: str | None) -> str:
+        raw = str(status_filter or "All").strip().lower()
+        for option in cls.HISTORY_STATUS_FILTERS:
+            if option.lower() == raw:
+                return option
+        return "All"
+
+    @staticmethod
+    def _history_filters_active(search_query: str, status_filter: str) -> bool:
+        return bool(str(search_query or "").strip()) or status_filter != "All"
+
+    @staticmethod
+    def _history_result_count_text(visible_count: int, total_count: int, active: bool) -> str:
+        noun = "entry" if visible_count == 1 else "entries"
+        if active:
+            total_noun = "entry" if total_count == 1 else "entries"
+            return f"{visible_count} of {total_count} {total_noun}"
+        return f"{visible_count} {noun}"
+
+    @staticmethod
+    def _select_visible_history_entry(entries: tuple[object, ...], preferred_id: str | None):
+        if preferred_id:
+            for entry in entries:
+                if getattr(entry, "entry_id", None) == preferred_id:
+                    return entry
+        return entries[0] if entries else None
+
+    def _history_matches_status(self, entry, status_filter: str) -> bool:
+        if status_filter == "All":
+            return True
+        if status_filter == "Preview":
+            return bool(getattr(entry, "preview", False))
+        status = str(getattr(entry, "status", "") or "").strip().lower()
+        if status_filter == "Successful":
+            return status == "succeeded" or getattr(entry, "succeeded", None) is True
+        if status_filter == "Failed":
+            return status == "failed"
+        if status_filter == "Denied":
+            return status == "denied"
+        if status_filter == "Cancelled":
+            return status == "cancelled"
+        return True
+
+    def _history_matches_search(self, entry, query: str) -> bool:
+        normalized = str(query or "").strip().lower()
+        if not normalized:
+            return True
+        return normalized in self._history_search_text(entry).lower()
+
+    def _history_search_text(self, entry) -> str:
+        parts = [
+            getattr(entry, "request_summary", None),
+            getattr(entry, "command_id", None),
+            getattr(entry, "action_id", None),
+            getattr(entry, "operation_type", None),
+            getattr(entry, "status", None),
+            getattr(entry, "user_message", None),
+            getattr(entry, "safe_error_summary", None),
+        ]
+        return " ".join(self._safe_text(part) for part in parts if part)
 
     def _history_entry_details(self, entry) -> str:
         if hasattr(entry, "details_text"):
@@ -671,6 +890,7 @@ class JarvisDesktopShell:
         history_panel = tk.Frame(main, bg=self.COLORS["panel"], padx=10, pady=10)
         history_panel.grid(row=2, column=0, sticky="ew", pady=(0, 8))
         history_panel.grid_columnconfigure(0, weight=1)
+        history_panel.grid_columnconfigure(1, weight=1)
         tk.Label(
             history_panel,
             text="Execution History",
@@ -678,6 +898,14 @@ class JarvisDesktopShell:
             fg=self.COLORS["text"],
             font=("Segoe UI", 12, "bold"),
         ).grid(row=0, column=0, sticky="w")
+        self.history_count_label = tk.Label(
+            history_panel,
+            text="",
+            bg=self.COLORS["panel"],
+            fg=self.COLORS["muted"],
+            anchor="e",
+        )
+        self.history_count_label.grid(row=0, column=1, sticky="e", padx=(8, 4))
         tk.Button(
             history_panel,
             text="Refresh",
@@ -689,8 +917,8 @@ class JarvisDesktopShell:
             relief="flat",
             padx=10,
             pady=6,
-        ).grid(row=0, column=1, sticky="e", padx=(8, 4))
-        tk.Button(
+        ).grid(row=0, column=2, sticky="e", padx=(8, 4))
+        self.history_copy_button = tk.Button(
             history_panel,
             text="Copy Selected",
             command=self._on_history_copy,
@@ -701,9 +929,66 @@ class JarvisDesktopShell:
             relief="flat",
             padx=10,
             pady=6,
-        ).grid(row=0, column=2, sticky="e")
+        )
+        self.history_copy_button.grid(row=0, column=3, sticky="e")
+        history_filter_bar = tk.Frame(history_panel, bg=self.COLORS["panel"])
+        history_filter_bar.grid(row=1, column=0, columnspan=4, sticky="ew", pady=(8, 0))
+        history_filter_bar.grid_columnconfigure(1, weight=1)
+        tk.Label(
+            history_filter_bar,
+            text="Search",
+            bg=self.COLORS["panel"],
+            fg=self.COLORS["muted"],
+        ).grid(row=0, column=0, sticky="w", padx=(0, 6))
+        self.history_search_var = tk.StringVar(value=self.view_model.state.history_search_query)
+        self.history_search_entry = tk.Entry(
+            history_filter_bar,
+            textvariable=self.history_search_var,
+            bg=self.COLORS["panel_alt"],
+            fg=self.COLORS["text"],
+            insertbackground=self.COLORS["text"],
+            relief="flat",
+        )
+        self.history_search_entry.grid(row=0, column=1, sticky="ew", padx=(0, 10))
+        self.history_search_entry.bind("<KeyRelease>", self._on_history_search_changed)
+        tk.Label(
+            history_filter_bar,
+            text="Status",
+            bg=self.COLORS["panel"],
+            fg=self.COLORS["muted"],
+        ).grid(row=0, column=2, sticky="e", padx=(0, 6))
+        self.history_status_var = tk.StringVar(
+            value=self.view_model.state.history_status_filter
+        )
+        self.history_status_menu = tk.OptionMenu(
+            history_filter_bar,
+            self.history_status_var,
+            *self.view_model.HISTORY_STATUS_FILTERS,
+            command=self._on_history_status_changed,
+        )
+        self.history_status_menu.configure(
+            bg=self.COLORS["panel_alt"],
+            fg=self.COLORS["text"],
+            activebackground=self.COLORS["accent"],
+            activeforeground=self.COLORS["text"],
+            relief="flat",
+            highlightthickness=0,
+        )
+        self.history_status_menu.grid(row=0, column=3, sticky="e", padx=(0, 8))
+        tk.Button(
+            history_filter_bar,
+            text="Clear Filters",
+            command=self._on_history_clear_filters,
+            bg=self.COLORS["panel_alt"],
+            fg=self.COLORS["text"],
+            activebackground=self.COLORS["accent"],
+            activeforeground=self.COLORS["text"],
+            relief="flat",
+            padx=10,
+            pady=4,
+        ).grid(row=0, column=4, sticky="e")
         history_content = tk.Frame(history_panel, bg=self.COLORS["panel"])
-        history_content.grid(row=1, column=0, columnspan=3, sticky="ew", pady=(8, 0))
+        history_content.grid(row=2, column=0, columnspan=4, sticky="ew", pady=(8, 0))
         history_content.grid_columnconfigure(0, weight=1)
         history_content.grid_columnconfigure(1, weight=1)
         self.history_list = tk.Listbox(
@@ -862,6 +1147,11 @@ class JarvisDesktopShell:
         self._render_history_state(state)
 
     def _render_history_state(self, state) -> None:
+        if self.history_search_var.get() != state.history_search_query:
+            self.history_search_var.set(state.history_search_query)
+        if self.history_status_var.get() != state.history_status_filter:
+            self.history_status_var.set(state.history_status_filter)
+        self.history_count_label.configure(text=state.history_result_count_text)
         self.history_list.delete(0, "end")
         entries = tuple(getattr(state, "history_entries", ()) or ())
         if entries:
@@ -881,7 +1171,14 @@ class JarvisDesktopShell:
             self.history_list.selection_set(selected_index)
             self.history_list.see(selected_index)
         else:
-            self.history_list.insert("end", "No execution history")
+            if getattr(state, "history_load_error", None):
+                self.history_list.insert("end", "History unavailable")
+            elif getattr(state, "loaded_history_entries", ()):
+                self.history_list.insert("end", "No history entries match the current filters.")
+            else:
+                self.history_list.insert("end", "No execution history is available.")
+        copy_state = "normal" if getattr(state, "selected_history_id", None) else "disabled"
+        self.history_copy_button.configure(state=copy_state)
         self._set_text(self.history_details_box, state.selected_history_details_text)
 
     @staticmethod
@@ -963,6 +1260,18 @@ class JarvisDesktopShell:
         self.view_model.refresh_execution_history()
         self._render_state()
 
+    def _on_history_search_changed(self, _event) -> None:
+        self.view_model.update_history_search(self.history_search_var.get())
+        self._render_history_state(self.view_model.state)
+
+    def _on_history_status_changed(self, value) -> None:
+        self.view_model.update_history_status_filter(value)
+        self._render_history_state(self.view_model.state)
+
+    def _on_history_clear_filters(self) -> None:
+        self.view_model.clear_history_filters()
+        self._render_history_state(self.view_model.state)
+
     def _on_history_selected(self, _event) -> None:
         selection = self.history_list.curselection()
         if not selection:
@@ -972,7 +1281,9 @@ class JarvisDesktopShell:
         self._render_state()
 
     def _on_history_copy(self) -> None:
-        self._clipboard_set(self.view_model.selected_history_copy_text())
+        text = self.view_model.selected_history_copy_text()
+        if text:
+            self._clipboard_set(text)
 
 
 def launch_desktop_shell() -> bool:

@@ -34,7 +34,8 @@ orchestration modules.
 - Execution coordination, idempotency, cancellation, and in-memory operation
   journal in `core/execution_coordinator.py` and `core/execution_journal.py`.
 - Desktop execution history viewer backed by the existing Execution Journal and
-  projected through AppService-safe DTOs.
+  projected through AppService-safe DTOs, with local Desktop text search and
+  status filtering over the bounded loaded history.
 - Deterministic multi-step planner in `planner/`.
 - Reusable workflow runner and local TXT document-review workflow in
   `workflows/`.
@@ -196,7 +197,8 @@ git diff --check
 - Risky and destructive operations must pass through explicit confirmation.
 - Provider responses must not be executed as commands.
 - Execution history is read-only in the Desktop Shell; it supports viewing,
-  refresh, selection, and safe copy, not replay, editing, deletion, or export.
+  refresh, local filtering/search, selection, and safe copy, not replay,
+  editing, deletion, or export.
 - Network/provider calls are explicit-only.
 - Raw microphone audio remains local; recognized text enters the same
   AppService route as typed input.

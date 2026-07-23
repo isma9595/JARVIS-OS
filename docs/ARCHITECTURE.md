@@ -96,7 +96,9 @@ fingerprints, cancellation tokens, and operation lifecycle transitions.
 `ExecutionJournal` stores bounded in-memory `ExecutionOperation` records with
 safe metadata. AppService exposes recent history through detached
 `AppExecutionHistoryEntry` DTOs. Desktop Shell reads those projections only; it
-does not mutate, replay, delete, or inspect journal storage internals.
+does not mutate, replay, delete, or inspect journal storage internals. Desktop
+history search and status filtering are local presentation behavior over the
+bounded DTO collection already loaded from AppService.
 
 Confirmation-required operations pause before side effects. Repeated execution
 is not treated as confirmation. Cancellation and idempotency are tracked through
@@ -236,7 +238,7 @@ Future work should stay focused and evidence-based:
 - optional coverage tooling and policy;
 - repository line-ending normalization in a separate maintenance task;
 - Desktop Shell action clarity and copy/export UX;
-- future history filtering, export, deletion, replay, or persistent journal
-  storage only after separately approved design work;
+- future history export, deletion, replay, or persistent journal storage only
+  after separately approved design work;
 - installer, mobile, admin/support, and broader portability only after
   separately approved architecture work.

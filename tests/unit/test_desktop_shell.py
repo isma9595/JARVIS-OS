@@ -36,27 +36,31 @@ def history_entry(
     timestamp="2026-07-22T10:00:00+00:00",
     status="succeeded",
     command_id="ai.status",
+    action_id=None,
+    operation_type=None,
+    preview=False,
     request_summary="status ai",
     user_message="processed safely",
     safe_error_summary=None,
 ):
+    success = (
+        True
+        if status == "succeeded"
+        else False
+        if status in {"failed", "denied", "cancelled"}
+        else None
+    )
     return AppExecutionHistoryEntry(
         entry_id=entry_id,
         timestamp=timestamp,
         updated_at=timestamp,
         source="desktop_ui",
         command_id=command_id,
-        action_id=None,
-        operation_type=command_id or "operation",
+        action_id=action_id,
+        operation_type=operation_type or command_id or action_id or "operation",
         status=status,
-        succeeded=(
-            True
-            if status == "succeeded"
-            else False
-            if status in {"failed", "denied", "cancelled"}
-            else None
-        ),
-        preview=False,
+        succeeded=success,
+        preview=preview,
         awaiting_confirmation=status == "awaiting_confirmation",
         cancellable=status == "awaiting_confirmation",
         duplicate_suppressed=False,
@@ -458,6 +462,8 @@ def test_view_model_displays_history_entries_newest_first():
     assert "2. 2026-07-22T10:01:00+00:00 | succeeded | ai.status" in text
     assert view_model.state.history_entries[0].entry_id == "op-new"
     assert view_model.state.history_entries[1].entry_id == "op-old"
+    assert view_model.state.loaded_history_entries == view_model.state.history_entries
+    assert view_model.state.history_result_count_text == "2 entries"
 
 
 def test_view_model_refreshes_history_without_duplicates():
@@ -479,8 +485,9 @@ def test_view_model_displays_empty_history_state():
     service.history_entries = ()
     view_model = DesktopShellViewModel(service)
 
-    assert "no entries yet" in view_model.state.history_list_text
+    assert "No execution history is available." in view_model.state.history_list_text
     assert "no entry selected" in view_model.state.selected_history_details_text
+    assert view_model.state.loaded_history_entries == ()
     assert view_model.state.history_entries == ()
 
 
@@ -559,6 +566,248 @@ def test_view_model_malformed_history_entry_does_not_crash_rendering():
 
     assert "op-malformed" in view_model.state.selected_history_details_text
     assert "cancelled" in view_model.state.history_list_text
+
+
+def test_history_search_is_case_insensitive_and_matches_command_summary():
+    service = FakeAppService()
+    service.history_entries = (
+        history_entry("op-doc", command_id="document.open", request_summary="Open Document"),
+        history_entry("op-ai", command_id="ai.status", request_summary="status ai"),
+    )
+    view_model = DesktopShellViewModel(service)
+
+    text = view_model.update_history_search(" document ")
+
+    assert [entry.entry_id for entry in view_model.state.history_entries] == ["op-doc"]
+    assert view_model.state.loaded_history_entries[1].entry_id == "op-ai"
+    assert view_model.state.history_search_query == "document"
+    assert view_model.state.history_result_count_text == "1 of 2 entries"
+    assert "op-ai" not in text
+
+
+def test_history_search_matches_operation_action_message_and_error_fields():
+    service = FakeAppService()
+    service.history_entries = (
+        history_entry(
+            "op-action",
+            command_id=None,
+            action_id="workflow.review",
+            operation_type="document_review",
+            request_summary="review request",
+        ),
+        history_entry("op-message", user_message="Local microphone check failed"),
+        history_entry(
+            "op-error",
+            status="failed",
+            safe_error_summary="voice.output.local_test.failed",
+        ),
+    )
+    view_model = DesktopShellViewModel(service)
+
+    view_model.update_history_search("DOCUMENT_REVIEW")
+    assert [entry.entry_id for entry in view_model.state.history_entries] == ["op-action"]
+
+    view_model.update_history_search("microphone")
+    assert [entry.entry_id for entry in view_model.state.history_entries] == ["op-message"]
+
+    view_model.update_history_search("LOCAL_TEST")
+    assert [entry.entry_id for entry in view_model.state.history_entries] == ["op-error"]
+
+
+def test_history_search_whitespace_only_behaves_as_no_filter():
+    view_model = DesktopShellViewModel(FakeAppService())
+
+    view_model.update_history_search("   ")
+
+    assert len(view_model.state.history_entries) == 2
+    assert view_model.state.history_search_query == ""
+    assert view_model.state.history_result_count_text == "2 entries"
+
+
+def test_history_search_missing_optional_fields_and_unsafe_details_are_safe():
+    class MinimalEntry:
+        entry_id = "op-minimal"
+        status = None
+        preview = False
+
+    service = FakeAppService()
+    service.history_entries = (
+        MinimalEntry(),
+        history_entry(
+            "op-safe",
+            status="failed",
+            command_id="voice.test",
+            request_summary="microphone unavailable",
+            user_message="Safe execution detail unavailable.",
+            safe_error_summary="Safe execution detail unavailable.",
+        ),
+    )
+    view_model = DesktopShellViewModel(service)
+
+    view_model.update_history_search("RuntimeError")
+    assert view_model.state.history_entries == ()
+
+    view_model.update_history_search("microphone")
+    assert [entry.entry_id for entry in view_model.state.history_entries] == ["op-safe"]
+
+
+def test_history_status_filter_all_and_each_supported_status():
+    service = FakeAppService()
+    service.history_entries = (
+        history_entry("op-success", status="succeeded"),
+        history_entry("op-failed", status="FAILED"),
+        history_entry("op-denied", status="denied"),
+        history_entry("op-cancelled", status="cancelled"),
+        history_entry("op-preview", status="succeeded", preview=True),
+        history_entry("op-unknown", status="mystery"),
+    )
+    view_model = DesktopShellViewModel(service)
+
+    view_model.update_history_status_filter("All")
+    assert [entry.entry_id for entry in view_model.state.history_entries] == [
+        "op-success",
+        "op-failed",
+        "op-denied",
+        "op-cancelled",
+        "op-preview",
+        "op-unknown",
+    ]
+
+    view_model.update_history_status_filter("successful")
+    assert [entry.entry_id for entry in view_model.state.history_entries] == [
+        "op-success",
+        "op-preview",
+    ]
+
+    view_model.update_history_status_filter("Failed")
+    assert [entry.entry_id for entry in view_model.state.history_entries] == ["op-failed"]
+
+    view_model.update_history_status_filter("Denied")
+    assert [entry.entry_id for entry in view_model.state.history_entries] == ["op-denied"]
+
+    view_model.update_history_status_filter("Cancelled")
+    assert [entry.entry_id for entry in view_model.state.history_entries] == [
+        "op-cancelled"
+    ]
+
+    view_model.update_history_status_filter("Preview")
+    assert [entry.entry_id for entry in view_model.state.history_entries] == ["op-preview"]
+
+    view_model.update_history_status_filter("unsupported")
+    assert len(view_model.state.history_entries) == 6
+
+
+def test_history_status_filter_does_not_mutate_dtos():
+    service = FakeAppService()
+    original_entries = service.history_entries
+    view_model = DesktopShellViewModel(service)
+
+    view_model.update_history_status_filter("Failed")
+
+    assert service.history_entries == original_entries
+    assert view_model.state.loaded_history_entries == original_entries
+    assert view_model.state.loaded_history_entries is not view_model.state.history_entries
+
+
+def test_history_combined_search_and_status_filter_use_and_semantics():
+    service = FakeAppService()
+    service.history_entries = (
+        history_entry("op-success-mic", status="succeeded", request_summary="microphone status"),
+        history_entry("op-failed-mic", status="failed", request_summary="microphone blocked"),
+        history_entry("op-failed-doc", status="failed", request_summary="document failed"),
+        history_entry("op-preview-mic", status="succeeded", preview=True, request_summary="microphone preview"),
+    )
+    view_model = DesktopShellViewModel(service)
+
+    view_model.update_history_status_filter("Failed")
+    view_model.update_history_search("microphone")
+
+    assert [entry.entry_id for entry in view_model.state.history_entries] == [
+        "op-failed-mic"
+    ]
+    assert view_model.state.selected_history_id == "op-failed-mic"
+    assert view_model.state.history_result_count_text == "1 of 4 entries"
+
+
+def test_history_no_matches_clear_filters_and_copy_state():
+    view_model = DesktopShellViewModel(FakeAppService())
+    view_model.select_history_entry(1)
+
+    text = view_model.update_history_search("value-that-does-not-exist")
+
+    assert view_model.state.history_entries == ()
+    assert view_model.state.selected_history_id is None
+    assert view_model.state.history_copy_text == ""
+    assert view_model.selected_history_copy_text() == ""
+    assert "No history entries match the current filters." in text
+    assert "No execution history is available." not in text
+
+    view_model.clear_history_filters()
+
+    assert view_model.state.history_search_query == ""
+    assert view_model.state.history_status_filter == "All"
+    assert len(view_model.state.history_entries) == 2
+    assert view_model.state.selected_history_id == "op-new"
+    assert view_model.state.history_result_count_text == "2 entries"
+
+
+def test_history_refresh_reapplies_filters_without_duplicates_and_preserves_selection():
+    service = FakeAppService()
+    service.history_entries = (
+        history_entry("op-keep", status="failed", request_summary="microphone failed"),
+        history_entry("op-drop", status="failed", request_summary="document failed"),
+    )
+    view_model = DesktopShellViewModel(service)
+    view_model.update_history_status_filter("Failed")
+    view_model.update_history_search("microphone")
+    view_model.select_history_entry(0)
+    service.history_entries = (
+        history_entry("op-new", status="failed", request_summary="microphone failed again"),
+        history_entry("op-keep", status="failed", request_summary="microphone failed"),
+        history_entry("op-success", status="succeeded", request_summary="microphone ok"),
+    )
+
+    first = view_model.refresh_execution_history()
+    second = view_model.refresh_execution_history()
+
+    assert [entry.entry_id for entry in view_model.state.history_entries] == [
+        "op-new",
+        "op-keep",
+    ]
+    assert first.count("op-keep") <= 1
+    assert second.count("op-keep") <= 1
+    assert view_model.state.selected_history_id == "op-keep"
+
+
+def test_history_refresh_selects_first_visible_when_previous_selection_no_longer_matches():
+    service = FakeAppService()
+    service.history_entries = (
+        history_entry("op-old", status="failed", request_summary="microphone failed"),
+    )
+    view_model = DesktopShellViewModel(service)
+    view_model.update_history_status_filter("Failed")
+    view_model.update_history_search("microphone")
+    service.history_entries = (
+        history_entry("op-new", status="failed", request_summary="microphone failed"),
+    )
+
+    view_model.refresh_execution_history()
+
+    assert [entry.entry_id for entry in view_model.state.history_entries] == ["op-new"]
+    assert view_model.state.selected_history_id == "op-new"
+
+
+def test_history_loading_failure_remains_distinct_from_filtering_state():
+    service = FakeAppService()
+    service.history_error = RAW_HISTORY_ERROR
+    view_model = DesktopShellViewModel(service)
+
+    view_model.update_history_search("microphone")
+    view_model.clear_history_filters()
+
+    assert "execution_history_unavailable" in view_model.state.history_list_text
+    assert view_model.state.history_load_error is not None
+    assert view_model.state.history_entries == ()
 
 
 def test_status_text_mentions_app_service_and_no_network_default():
