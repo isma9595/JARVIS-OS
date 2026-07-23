@@ -125,8 +125,9 @@ or mutates `ExecutionJournal` internals.
 
 TASK-105 adds a read-only workflow history foundation through
 `recent_workflow_runs()` and `workflow_run_history()`. These methods return
-safe, detached workflow DTOs for future UI use. Desktop Shell does not render a
-workflow run/step viewer yet.
+safe, detached workflow DTOs. TASK-106 adds Desktop Shell rendering for those
+DTOs without allowing the shell to inspect `WorkflowRunner`, `ExecutionJournal`,
+or mutable workflow runtime state directly.
 
 ## Planner Interaction
 
@@ -202,6 +203,10 @@ access, return newest runs first for recent history, expose ordered immutable
 step history, and return `workflow_history_unavailable` on safe access failure.
 They do not mutate workflow state, resume execution, retry failed steps, replay
 commands, delete runs, export data, or add persistence.
+
+Desktop Shell consumes these methods for its Workflow History panel. The panel
+performs presentation-only selection, refresh, ordered step display, and safe
+copy over the returned DTOs.
 
 ## Confirmation-Required Behavior
 

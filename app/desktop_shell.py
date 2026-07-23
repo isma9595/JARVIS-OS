@@ -31,6 +31,14 @@ class DesktopShellState:
     history_result_count_text: str
     history_loading: bool
     history_load_error: str | None
+    workflow_list_text: str
+    selected_workflow_run_id: str | None
+    workflow_details_text: str
+    workflow_copy_text: str
+    workflow_runs: tuple[object, ...]
+    selected_workflow_steps: tuple[object, ...]
+    workflow_loading: bool
+    workflow_load_error: str | None
     last_error: str | None
     ui_ready: bool
     safe_mode: bool
@@ -59,6 +67,7 @@ class DesktopShellViewModel:
         except Exception as exc:
             command_list_text = self._safe_error(exc)
         history = self._load_history_state()
+        workflow = self._load_workflow_state()
         return DesktopShellState(
             app_title="JARVIS OS",
             status_text=status_text,
@@ -85,6 +94,14 @@ class DesktopShellViewModel:
             history_result_count_text=history["history_result_count_text"],
             history_loading=history["history_loading"],
             history_load_error=history["history_load_error"],
+            workflow_list_text=workflow["workflow_list_text"],
+            selected_workflow_run_id=workflow["selected_workflow_run_id"],
+            workflow_details_text=workflow["workflow_details_text"],
+            workflow_copy_text=workflow["workflow_copy_text"],
+            workflow_runs=workflow["workflow_runs"],
+            selected_workflow_steps=workflow["selected_workflow_steps"],
+            workflow_loading=workflow["workflow_loading"],
+            workflow_load_error=workflow["workflow_load_error"],
             last_error=None,
             ui_ready=True,
             safe_mode=True,
@@ -242,6 +259,60 @@ class DesktopShellViewModel:
         text = self.state.history_copy_text or self.state.selected_history_details_text
         return self._safe_text(text)
 
+    def refresh_workflow_history(self, limit: int | None = None) -> str:
+        previous_selected_id = self.state.selected_workflow_run_id
+        workflow = self._load_workflow_state(
+            limit=limit,
+            preferred_selected_id=previous_selected_id,
+        )
+        self.state = self._replace(
+            workflow_list_text=workflow["workflow_list_text"],
+            selected_workflow_run_id=workflow["selected_workflow_run_id"],
+            workflow_details_text=workflow["workflow_details_text"],
+            workflow_copy_text=workflow["workflow_copy_text"],
+            workflow_runs=workflow["workflow_runs"],
+            selected_workflow_steps=workflow["selected_workflow_steps"],
+            workflow_loading=workflow["workflow_loading"],
+            workflow_load_error=workflow["workflow_load_error"],
+            last_error=workflow["last_error"],
+        )
+        return self.state.workflow_list_text
+
+    def select_workflow_run(self, index: int | str | None) -> str:
+        try:
+            selected_index = int(index)
+        except (TypeError, ValueError):
+            selected_index = -1
+        runs = self.state.workflow_runs
+        if selected_index < 0 or selected_index >= len(runs):
+            details = "Workflow run details:\n- Select a workflow run to view its steps."
+            self.state = self._replace(
+                selected_workflow_run_id=None,
+                workflow_details_text=details,
+                workflow_copy_text="",
+                selected_workflow_steps=(),
+                last_error=None,
+            )
+            return details
+        run = runs[selected_index]
+        run_id = getattr(run, "run_id", None) or getattr(run, "operation_id", None)
+        details = self._load_workflow_details_text(run_id)
+        self.state = self._replace(
+            selected_workflow_run_id=str(run_id or ""),
+            workflow_details_text=details["workflow_details_text"],
+            workflow_copy_text=details["workflow_copy_text"],
+            selected_workflow_steps=details["selected_workflow_steps"],
+            workflow_load_error=details["workflow_load_error"],
+            last_error=details["last_error"],
+        )
+        return self.state.workflow_details_text
+
+    def selected_workflow_copy_text(self) -> str:
+        if not self.state.selected_workflow_run_id or self.state.workflow_load_error:
+            return ""
+        text = self.state.workflow_copy_text or self.state.workflow_details_text
+        return self._safe_text(text)
+
     def update_history_search(self, query: str | None) -> str:
         history = self._apply_history_filters(
             loaded_entries=self.state.loaded_history_entries,
@@ -322,6 +393,202 @@ class DesktopShellViewModel:
                 "history_load_error": error_text,
                 "last_error": error_text,
             }
+
+    def _load_workflow_state(
+        self,
+        limit: int | None = None,
+        *,
+        preferred_selected_id: str | None = None,
+    ) -> dict[str, object]:
+        try:
+            result = self.app_service.recent_workflow_runs(limit)
+            if not getattr(result, "ok", False):
+                error_text = self._safe_workflow_error(getattr(result, "error", None))
+                return {
+                    "workflow_list_text": error_text,
+                    "selected_workflow_run_id": None,
+                    "workflow_details_text": error_text,
+                    "workflow_copy_text": "",
+                    "workflow_runs": (),
+                    "selected_workflow_steps": (),
+                    "workflow_loading": False,
+                    "workflow_load_error": error_text,
+                    "last_error": error_text,
+                }
+            runs = tuple(getattr(result, "runs", ()) or ())
+            selected_run = self._select_workflow_run(runs, preferred_selected_id)
+            details = (
+                self._load_workflow_details_text(
+                    getattr(selected_run, "run_id", None)
+                    or getattr(selected_run, "operation_id", None)
+                )
+                if selected_run is not None
+                else self._empty_workflow_details()
+            )
+            return {
+                "workflow_list_text": self._workflow_list_text(runs),
+                "selected_workflow_run_id": (
+                    getattr(selected_run, "run_id", None)
+                    or getattr(selected_run, "operation_id", None)
+                    if selected_run is not None
+                    else None
+                ),
+                "workflow_details_text": details["workflow_details_text"],
+                "workflow_copy_text": details["workflow_copy_text"],
+                "workflow_runs": runs,
+                "selected_workflow_steps": details["selected_workflow_steps"],
+                "workflow_loading": False,
+                "workflow_load_error": details["workflow_load_error"],
+                "last_error": details["last_error"],
+            }
+        except Exception:
+            error_text = self._safe_workflow_error("workflow_history_unavailable")
+            return {
+                "workflow_list_text": error_text,
+                "selected_workflow_run_id": None,
+                "workflow_details_text": error_text,
+                "workflow_copy_text": "",
+                "workflow_runs": (),
+                "selected_workflow_steps": (),
+                "workflow_loading": False,
+                "workflow_load_error": error_text,
+                "last_error": error_text,
+            }
+
+    def _load_workflow_details_text(self, run_id: str | None) -> dict[str, object]:
+        if not run_id:
+            return self._empty_workflow_details()
+        try:
+            result = self.app_service.workflow_run_history(run_id)
+            if not getattr(result, "ok", False):
+                error_text = self._safe_workflow_error(getattr(result, "error", None))
+                return {
+                    "workflow_details_text": error_text,
+                    "workflow_copy_text": "",
+                    "selected_workflow_steps": (),
+                    "workflow_load_error": error_text,
+                    "last_error": error_text,
+                }
+            runs = tuple(getattr(result, "runs", ()) or ())
+            run = runs[0] if runs else None
+            if run is None:
+                return self._empty_workflow_details()
+            details = self._workflow_run_details(run)
+            return {
+                "workflow_details_text": details,
+                "workflow_copy_text": details,
+                "selected_workflow_steps": tuple(getattr(run, "steps", ()) or ()),
+                "workflow_load_error": None,
+                "last_error": None,
+            }
+        except Exception:
+            error_text = self._safe_workflow_error("workflow_history_unavailable")
+            return {
+                "workflow_details_text": error_text,
+                "workflow_copy_text": "",
+                "selected_workflow_steps": (),
+                "workflow_load_error": error_text,
+                "last_error": error_text,
+            }
+
+    @staticmethod
+    def _select_workflow_run(runs: tuple[object, ...], preferred_id: str | None):
+        if preferred_id:
+            for run in runs:
+                run_id = getattr(run, "run_id", None) or getattr(run, "operation_id", None)
+                if run_id == preferred_id:
+                    return run
+        return runs[0] if runs else None
+
+    def _workflow_list_text(self, runs: tuple[object, ...]) -> str:
+        if not runs:
+            return "Workflow History:\n- No workflow runs available."
+        lines = ["Workflow History:", "- newest first", f"- {len(runs)} workflow run(s)"]
+        for index, run in enumerate(runs, start=1):
+            lines.append(f"{index}. {self._workflow_run_summary(run)}")
+        return self._safe_text("\n".join(lines))
+
+    def _workflow_run_summary(self, run) -> str:
+        run_id = getattr(run, "run_id", None) or getattr(run, "operation_id", None) or "unknown"
+        workflow = getattr(run, "workflow_name", None) or getattr(run, "workflow_id", None) or "workflow"
+        state = self._state_value(getattr(run, "state", None))
+        started = getattr(run, "started_at", None) or getattr(run, "created_at", None) or "unknown"
+        completed = getattr(run, "completed_at", None) or "not finished"
+        completed_count = getattr(run, "completed_step_count", 0)
+        total_count = getattr(run, "total_step_count", 0)
+        return self._safe_text(
+            f"{run_id} | {workflow} | {state} | started {started} | finished {completed} | steps {completed_count}/{total_count}"
+        )
+
+    def _workflow_run_details(self, run) -> str:
+        lines = [
+            "Workflow Run:",
+            f"- run id: {getattr(run, 'run_id', None) or getattr(run, 'operation_id', None) or 'unknown'}",
+            f"- workflow: {getattr(run, 'workflow_name', None) or getattr(run, 'workflow_id', None) or 'workflow'}",
+            f"- state: {self._state_value(getattr(run, 'state', None))}",
+            f"- objective: {getattr(run, 'objective_summary', None) or 'Workflow objective unavailable.'}",
+            f"- started: {getattr(run, 'started_at', None) or getattr(run, 'created_at', None) or 'unknown'}",
+            f"- finished: {getattr(run, 'completed_at', None) or 'not finished'}",
+            f"- completed steps: {getattr(run, 'completed_step_count', 0)}/{getattr(run, 'total_step_count', 0)}",
+        ]
+        active_step = getattr(run, "active_step_name", None) or getattr(run, "active_step_id", None)
+        if active_step:
+            lines.append(f"- active step: {active_step}")
+        result = getattr(run, "safe_result_summary", None)
+        if result:
+            lines.append(f"- result: {result}")
+        failure = getattr(run, "safe_failure_summary", None)
+        if failure:
+            lines.append(f"- error: {failure}")
+        lines.append("")
+        lines.append("Workflow Steps:")
+        steps = tuple(getattr(run, "steps", ()) or ())
+        if not steps:
+            lines.append("- No workflow steps were recorded.")
+        else:
+            for step in steps:
+                lines.extend(self._workflow_step_lines(step))
+        return self._safe_text("\n".join(lines))
+
+    def _workflow_step_lines(self, step) -> list[str]:
+        index = getattr(step, "step_index", 0)
+        label = getattr(step, "display_name", None) or getattr(step, "step_id", None) or "Workflow step"
+        lines = [
+            f"- {index + 1}. {label}",
+            f"  step id: {getattr(step, 'step_id', None) or 'unknown'}",
+            f"  state: {self._state_value(getattr(step, 'state', None))}",
+            f"  started: {getattr(step, 'started_at', None) or 'not started'}",
+            f"  finished: {getattr(step, 'completed_at', None) or 'not finished'}",
+        ]
+        operation_type = getattr(step, "operation_type", None)
+        if operation_type:
+            lines.append(f"  operation: {operation_type}")
+        result = getattr(step, "safe_result_summary", None)
+        if result:
+            lines.append(f"  result: {result}")
+        error = getattr(step, "safe_error_summary", None)
+        if error:
+            lines.append(f"  error: {error}")
+        if getattr(step, "requires_confirmation", False):
+            lines.append("  requires confirmation: yes")
+        if getattr(step, "preview", False):
+            lines.append("  preview: yes")
+        return lines
+
+    def _empty_workflow_details(self) -> dict[str, object]:
+        details = "Workflow run details:\n- Select a workflow run to view its steps."
+        return {
+            "workflow_details_text": details,
+            "workflow_copy_text": "",
+            "selected_workflow_steps": (),
+            "workflow_load_error": None,
+            "last_error": None,
+        }
+
+    @staticmethod
+    def _state_value(state) -> str:
+        value = getattr(state, "value", state)
+        return str(value or "unknown")
 
     def _apply_history_filters(
         self,
@@ -510,6 +777,17 @@ class DesktopShellViewModel:
                 "Execution history:",
                 "- status: unavailable",
                 "- error: execution_history_unavailable",
+                "- no internal details",
+            ]
+        )
+
+    @classmethod
+    def _safe_workflow_error(cls, _error=None) -> str:
+        return "\n".join(
+            [
+                "Workflow History:",
+                "- status: unavailable",
+                "- error: workflow_history_unavailable",
                 "- no internal details",
             ]
         )
@@ -822,7 +1100,7 @@ class JarvisDesktopShell:
         main = tk.Frame(self.root, bg=self.COLORS["bg"], padx=8, pady=0)
         main.grid(row=1, column=1, sticky="nsew", padx=(0, 16), pady=(0, 16))
         main.grid_columnconfigure(0, weight=1)
-        main.grid_rowconfigure(3, weight=1)
+        main.grid_rowconfigure(4, weight=1)
 
         input_panel = tk.Frame(main, bg=self.COLORS["panel"], padx=12, pady=12)
         input_panel.grid(row=0, column=0, sticky="ew")
@@ -1006,8 +1284,63 @@ class JarvisDesktopShell:
         self.history_details_box.grid(row=0, column=1, sticky="ew", padx=(6, 0))
         self._bind_readonly_text_copy(self.history_details_box)
 
+        workflow_panel = tk.Frame(main, bg=self.COLORS["panel"], padx=10, pady=10)
+        workflow_panel.grid(row=3, column=0, sticky="ew", pady=(0, 8))
+        workflow_panel.grid_columnconfigure(0, weight=1)
+        workflow_panel.grid_columnconfigure(1, weight=1)
+        tk.Label(
+            workflow_panel,
+            text="Workflow History",
+            bg=self.COLORS["panel"],
+            fg=self.COLORS["text"],
+            font=("Segoe UI", 12, "bold"),
+        ).grid(row=0, column=0, sticky="w")
+        tk.Button(
+            workflow_panel,
+            text="Refresh",
+            command=self._on_workflow_refresh,
+            bg=self.COLORS["panel_alt"],
+            fg=self.COLORS["text"],
+            activebackground=self.COLORS["accent"],
+            activeforeground=self.COLORS["text"],
+            relief="flat",
+            padx=10,
+            pady=6,
+        ).grid(row=0, column=2, sticky="e", padx=(8, 4))
+        self.workflow_copy_button = tk.Button(
+            workflow_panel,
+            text="Copy Selected",
+            command=self._on_workflow_copy,
+            bg=self.COLORS["panel_alt"],
+            fg=self.COLORS["text"],
+            activebackground=self.COLORS["accent"],
+            activeforeground=self.COLORS["text"],
+            relief="flat",
+            padx=10,
+            pady=6,
+        )
+        self.workflow_copy_button.grid(row=0, column=3, sticky="e")
+        workflow_content = tk.Frame(workflow_panel, bg=self.COLORS["panel"])
+        workflow_content.grid(row=1, column=0, columnspan=4, sticky="ew", pady=(8, 0))
+        workflow_content.grid_columnconfigure(0, weight=1)
+        workflow_content.grid_columnconfigure(1, weight=1)
+        self.workflow_list = tk.Listbox(
+            workflow_content,
+            height=4,
+            bg=self.COLORS["panel_alt"],
+            fg=self.COLORS["text"],
+            selectbackground=self.COLORS["accent"],
+            relief="flat",
+            exportselection=False,
+        )
+        self.workflow_list.grid(row=0, column=0, sticky="ew", padx=(0, 6))
+        self.workflow_list.bind("<<ListboxSelect>>", self._on_workflow_selected)
+        self.workflow_details_box = self._text_box(workflow_content, height=4)
+        self.workflow_details_box.grid(row=0, column=1, sticky="ew", padx=(6, 0))
+        self._bind_readonly_text_copy(self.workflow_details_box)
+
         split = tk.PanedWindow(main, orient="vertical", bg=self.COLORS["bg"], sashwidth=6)
-        split.grid(row=3, column=0, sticky="nsew")
+        split.grid(row=4, column=0, sticky="nsew")
         self.preview_box = self._text_box(split, height=10)
         self.output_box = self._text_box(split, height=14)
         self.command_list_box = self._text_box(split, height=10)
@@ -1145,6 +1478,7 @@ class JarvisDesktopShell:
         self._set_text(self.output_box, state.output_text)
         self._set_text(self.command_list_box, state.command_list_text)
         self._render_history_state(state)
+        self._render_workflow_state(state)
 
     def _render_history_state(self, state) -> None:
         if self.history_search_var.get() != state.history_search_query:
@@ -1181,6 +1515,30 @@ class JarvisDesktopShell:
         self.history_copy_button.configure(state=copy_state)
         self._set_text(self.history_details_box, state.selected_history_details_text)
 
+    def _render_workflow_state(self, state) -> None:
+        self.workflow_list.delete(0, "end")
+        runs = tuple(getattr(state, "workflow_runs", ()) or ())
+        if runs:
+            for run in runs:
+                self.workflow_list.insert("end", self.view_model._workflow_run_summary(run))
+            selected_id = getattr(state, "selected_workflow_run_id", None)
+            selected_index = 0
+            for index, run in enumerate(runs):
+                run_id = getattr(run, "run_id", None) or getattr(run, "operation_id", None)
+                if run_id == selected_id:
+                    selected_index = index
+                    break
+            self.workflow_list.selection_set(selected_index)
+            self.workflow_list.see(selected_index)
+        else:
+            if getattr(state, "workflow_load_error", None):
+                self.workflow_list.insert("end", "Workflow history unavailable")
+            else:
+                self.workflow_list.insert("end", "No workflow runs available.")
+        copy_state = "normal" if getattr(state, "selected_workflow_run_id", None) else "disabled"
+        self.workflow_copy_button.configure(state=copy_state)
+        self._set_text(self.workflow_details_box, state.workflow_details_text)
+
     @staticmethod
     def _set_text(widget, text: str) -> None:
         widget.configure(state="normal")
@@ -1198,6 +1556,7 @@ class JarvisDesktopShell:
     def _on_execute(self) -> None:
         self.view_model.execute_command(self._command_input())
         self.view_model.refresh_execution_history()
+        self.view_model.refresh_workflow_history()
         self._render_state()
 
     def _on_voice_once(self) -> None:
@@ -1226,6 +1585,7 @@ class JarvisDesktopShell:
         self._voice_worker_active = False
         self.voice_button.configure(state="normal")
         self.view_model.refresh_execution_history()
+        self.view_model.refresh_workflow_history()
         self._render_state()
 
     def _on_status(self) -> None:
@@ -1282,6 +1642,23 @@ class JarvisDesktopShell:
 
     def _on_history_copy(self) -> None:
         text = self.view_model.selected_history_copy_text()
+        if text:
+            self._clipboard_set(text)
+
+    def _on_workflow_refresh(self) -> None:
+        self.view_model.refresh_workflow_history()
+        self._render_state()
+
+    def _on_workflow_selected(self, _event) -> None:
+        selection = self.workflow_list.curselection()
+        if not selection:
+            self.view_model.select_workflow_run(None)
+        else:
+            self.view_model.select_workflow_run(selection[0])
+        self._render_state()
+
+    def _on_workflow_copy(self) -> None:
+        text = self.view_model.selected_workflow_copy_text()
         if text:
             self._clipboard_set(text)
 

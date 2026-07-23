@@ -9,6 +9,13 @@ from memory import LocalMemoryManager
 from voice.one_shot_vosk_real_recognition import OneShotVoskRealRecognitionResult
 from voice.speech_synthesis_backend import SpeechSynthesisResult
 from voice.voice_output_manager import VoiceOutputManager
+from workflows.contracts import (
+    WorkflowHistoryResult,
+    WorkflowRunHistory,
+    WorkflowRunHistoryState,
+    WorkflowStepHistory,
+    WorkflowStepHistoryState,
+)
 
 
 LOCAL_TTS_STATUS_COMMAND = (
@@ -68,6 +75,70 @@ def history_entry(
         user_message=user_message,
         safe_error_summary=safe_error_summary,
         metadata=(("risk_level", "read_only"),),
+    )
+
+
+def workflow_step(
+    step_id,
+    *,
+    index=0,
+    state=WorkflowStepHistoryState.COMPLETED,
+    display_name=None,
+    result="step completed safely",
+    error=None,
+):
+    return WorkflowStepHistory(
+        step_id=step_id,
+        step_index=index,
+        display_name=display_name or f"Step {step_id}",
+        operation_type=f"operation.{step_id}",
+        state=state,
+        started_at=f"2026-07-22T10:0{index}:00+00:00",
+        completed_at=f"2026-07-22T10:0{index}:30+00:00"
+        if state == WorkflowStepHistoryState.COMPLETED
+        else None,
+        safe_result_summary=result if state == WorkflowStepHistoryState.COMPLETED else None,
+        safe_error_summary=error,
+    )
+
+
+def workflow_run(
+    run_id,
+    *,
+    state=WorkflowRunHistoryState.COMPLETED,
+    steps=None,
+    workflow_name="Document review",
+    objective="Review document safely",
+    completed_count=None,
+):
+    safe_steps = tuple(steps or ())
+    return WorkflowRunHistory(
+        run_id=run_id,
+        operation_id=run_id,
+        workflow_id="document_review.local_text",
+        workflow_name=workflow_name,
+        objective_summary=objective,
+        state=state,
+        created_at="2026-07-22T10:00:00+00:00",
+        started_at="2026-07-22T10:00:00+00:00",
+        completed_at="2026-07-22T10:05:00+00:00"
+        if state == WorkflowRunHistoryState.COMPLETED
+        else None,
+        total_step_count=len(safe_steps),
+        completed_step_count=(
+            len(safe_steps)
+            if completed_count is None and state == WorkflowRunHistoryState.COMPLETED
+            else int(completed_count or 0)
+        ),
+        active_step_id=safe_steps[-1].step_id if safe_steps else None,
+        active_step_name=safe_steps[-1].display_name if safe_steps else None,
+        safe_result_summary="workflow completed safely"
+        if state == WorkflowRunHistoryState.COMPLETED
+        else None,
+        safe_failure_summary="workflow failed safely"
+        if state == WorkflowRunHistoryState.FAILED
+        else None,
+        steps=safe_steps,
     )
 
 
@@ -153,6 +224,8 @@ class FakeAppService:
         self.voice_calls = []
         self.list_calls = []
         self.history_calls = []
+        self.workflow_list_calls = []
+        self.workflow_detail_calls = []
         self.history_entries = (
             history_entry(
                 "op-new",
@@ -171,6 +244,23 @@ class FakeAppService:
             ),
         )
         self.history_error = None
+        self.workflow_runs = (
+            workflow_run(
+                "wf-new",
+                steps=(
+                    workflow_step("validate", index=0),
+                    workflow_step("write", index=1),
+                ),
+            ),
+            workflow_run(
+                "wf-old",
+                steps=(workflow_step("read", index=0),),
+                objective="Older workflow",
+            ),
+        )
+        self.workflow_details = {run.run_id: run for run in self.workflow_runs}
+        self.workflow_list_error = None
+        self.workflow_detail_error = None
 
     def status_text_ru(self):
         return "\n".join(
@@ -254,6 +344,47 @@ class FakeAppService:
             max_limit=100,
             empty=not self.history_entries,
             error=None,
+        )
+
+    def recent_workflow_runs(self, limit=None):
+        self.workflow_list_calls.append(limit)
+        if self.workflow_list_error is not None:
+            return WorkflowHistoryResult(
+                ok=False,
+                runs=(),
+                limit=25,
+                max_limit=100,
+                empty=True,
+                error=self.workflow_list_error,
+            )
+        return WorkflowHistoryResult(
+            ok=True,
+            runs=tuple(self.workflow_runs),
+            limit=25 if limit is None else int(limit),
+            max_limit=100,
+            empty=not self.workflow_runs,
+            error=None,
+        )
+
+    def workflow_run_history(self, run_id):
+        self.workflow_detail_calls.append(run_id)
+        if self.workflow_detail_error is not None:
+            return WorkflowHistoryResult(
+                ok=False,
+                runs=(),
+                limit=1,
+                max_limit=100,
+                empty=True,
+                error=self.workflow_detail_error,
+            )
+        run = self.workflow_details.get(run_id)
+        return WorkflowHistoryResult(
+            ok=run is not None,
+            runs=(run,) if run is not None else (),
+            limit=1,
+            max_limit=100,
+            empty=run is None,
+            error=None if run is not None else "workflow_history_unavailable",
         )
 
 
@@ -449,6 +580,240 @@ def test_view_model_builds_initial_state_safely():
     assert "Execution history:" in state.history_list_text
     assert "op-new" in state.selected_history_details_text
     assert state.selected_history_id == "op-new"
+    assert "Workflow History:" in state.workflow_list_text
+    assert state.selected_workflow_run_id == "wf-new"
+    assert "Workflow Steps:" in state.workflow_details_text
+    assert "validate" in state.workflow_details_text
+
+
+def test_workflow_runs_render_through_app_service_dtos():
+    service = FakeAppService()
+    view_model = DesktopShellViewModel(service)
+
+    text = view_model.refresh_workflow_history()
+
+    assert service.workflow_list_calls[-1] is None
+    assert service.workflow_detail_calls[-1] == "wf-new"
+    assert "wf-new | Document review | completed" in text
+    assert "wf-old | Document review | completed" in text
+    assert view_model.state.workflow_runs == service.workflow_runs
+    assert view_model.state.selected_workflow_run_id == "wf-new"
+
+
+def test_selecting_workflow_run_loads_detail_and_ordered_steps():
+    service = FakeAppService()
+    view_model = DesktopShellViewModel(service)
+
+    details = view_model.select_workflow_run(1)
+
+    assert service.workflow_detail_calls[-1] == "wf-old"
+    assert view_model.state.selected_workflow_run_id == "wf-old"
+    assert "Older workflow" in details
+    assert "- 1. Step read" in details
+    assert [step.step_id for step in view_model.state.selected_workflow_steps] == ["read"]
+    assert "validate" not in details
+
+
+def test_workflow_unknown_state_renders_safe_fallback_label():
+    service = FakeAppService()
+    service.workflow_runs = (
+        workflow_run(
+            "wf-unknown",
+            state=WorkflowRunHistoryState.UNKNOWN,
+            steps=(
+                workflow_step(
+                    "unknown-step",
+                    state=WorkflowStepHistoryState.UNKNOWN,
+                    index=0,
+                    error="Traceback RuntimeError C:/Users/User/raw.log",
+                ),
+            ),
+        ),
+    )
+    service.workflow_details = {"wf-unknown": service.workflow_runs[0]}
+
+    view_model = DesktopShellViewModel(service)
+
+    assert "unknown" in view_model.state.workflow_list_text
+    assert "state: unknown" in view_model.state.workflow_details_text
+    assert "Traceback" not in view_model.state.workflow_details_text
+    assert "RuntimeError" not in view_model.state.workflow_details_text
+    assert "C:/Users/User" not in view_model.state.workflow_details_text
+
+
+def test_empty_workflow_run_list_shows_empty_state():
+    service = FakeAppService()
+    service.workflow_runs = ()
+    service.workflow_details = {}
+
+    view_model = DesktopShellViewModel(service)
+
+    assert "No workflow runs available." in view_model.state.workflow_list_text
+    assert "Select a workflow run to view its steps." in view_model.state.workflow_details_text
+    assert view_model.state.selected_workflow_run_id is None
+    assert view_model.selected_workflow_copy_text() == ""
+
+
+def test_workflow_run_with_no_steps_shows_step_empty_state():
+    service = FakeAppService()
+    service.workflow_runs = (workflow_run("wf-empty", steps=()),)
+    service.workflow_details = {"wf-empty": service.workflow_runs[0]}
+
+    view_model = DesktopShellViewModel(service)
+
+    assert "No workflow steps were recorded." in view_model.state.workflow_details_text
+    assert view_model.state.selected_workflow_steps == ()
+
+
+def test_workflow_list_failure_shows_safe_error_without_crash():
+    service = FakeAppService()
+    service.workflow_list_error = RAW_HISTORY_ERROR
+
+    view_model = DesktopShellViewModel(service)
+    text = view_model.refresh_workflow_history()
+
+    assert "workflow_history_unavailable" in text
+    assert "Traceback" not in text
+    assert "RuntimeError" not in text
+    assert "C:/Users/User" not in text
+    assert view_model.state.workflow_runs == ()
+    assert view_model.state.selected_workflow_run_id is None
+
+
+def test_workflow_detail_failure_clears_stale_details_safely():
+    service = FakeAppService()
+    view_model = DesktopShellViewModel(service)
+
+    first_details = view_model.state.workflow_details_text
+    assert "validate" in first_details
+    service.workflow_detail_error = RAW_HISTORY_ERROR
+    details = view_model.select_workflow_run(1)
+
+    assert view_model.state.selected_workflow_run_id == "wf-old"
+    assert "workflow_history_unavailable" in details
+    assert "validate" not in details
+    assert "write" not in details
+    assert "Traceback" not in details
+    assert "RuntimeError" not in details
+    assert "C:/Users/User" not in details
+    assert view_model.state.selected_workflow_steps == ()
+    assert view_model.selected_workflow_copy_text() == ""
+
+
+def test_workflow_refresh_preserves_selection_and_reloads_detail_without_duplicates():
+    service = FakeAppService()
+    view_model = DesktopShellViewModel(service)
+    view_model.select_workflow_run(1)
+    updated = workflow_run(
+        "wf-old",
+        state=WorkflowRunHistoryState.FAILED,
+        steps=(
+            workflow_step("read", index=0),
+            workflow_step(
+                "analyze",
+                index=1,
+                state=WorkflowStepHistoryState.FAILED,
+                error="safe analyze failure",
+            ),
+        ),
+        objective="Updated older workflow",
+        completed_count=1,
+    )
+    service.workflow_runs = (updated, workflow_run("wf-newer", steps=(workflow_step("new", index=0),)))
+    service.workflow_details = {run.run_id: run for run in service.workflow_runs}
+
+    text = view_model.refresh_workflow_history()
+
+    assert view_model.state.selected_workflow_run_id == "wf-old"
+    assert service.workflow_detail_calls[-1] == "wf-old"
+    assert text.count("wf-old") == 1
+    assert [run.run_id for run in view_model.state.workflow_runs] == ["wf-old", "wf-newer"]
+    assert [step.step_id for step in view_model.state.selected_workflow_steps] == [
+        "read",
+        "analyze",
+    ]
+    assert view_model.state.workflow_details_text.count("Step read") == 1
+    assert "state: failed" in view_model.state.workflow_details_text
+
+
+def test_workflow_refresh_clears_selection_when_selected_run_disappears():
+    service = FakeAppService()
+    view_model = DesktopShellViewModel(service)
+    view_model.select_workflow_run(1)
+    service.workflow_runs = (workflow_run("wf-newer", steps=(workflow_step("new", index=0),)),)
+    service.workflow_details = {"wf-newer": service.workflow_runs[0]}
+
+    view_model.refresh_workflow_history()
+
+    assert view_model.state.selected_workflow_run_id == "wf-newer"
+    assert "Older workflow" not in view_model.state.workflow_details_text
+    assert "Step new" in view_model.state.workflow_details_text
+
+    service.workflow_runs = ()
+    service.workflow_details = {}
+    view_model.refresh_workflow_history()
+
+    assert view_model.state.selected_workflow_run_id is None
+    assert "Select a workflow run to view its steps." in view_model.state.workflow_details_text
+    assert view_model.state.selected_workflow_steps == ()
+
+
+def test_workflow_selection_replaces_old_run_details():
+    view_model = DesktopShellViewModel(FakeAppService())
+
+    assert "validate" in view_model.state.workflow_details_text
+    details = view_model.select_workflow_run(1)
+
+    assert "Step read" in details
+    assert "validate" not in details
+    assert "write" not in details
+
+
+def test_workflow_copy_uses_only_safe_projected_content():
+    service = FakeAppService()
+    service.workflow_runs = (
+        workflow_run(
+            "wf-copy",
+            state=WorkflowRunHistoryState.FAILED,
+            steps=(
+                workflow_step(
+                    "fail",
+                    state=WorkflowStepHistoryState.FAILED,
+                    error="Traceback RuntimeError C:/Users/User/raw.log sk-test-1234567890secret",
+                ),
+            ),
+            completed_count=0,
+        ),
+    )
+    service.workflow_details = {"wf-copy": service.workflow_runs[0]}
+    view_model = DesktopShellViewModel(service)
+
+    copied = view_model.selected_workflow_copy_text()
+
+    assert "Workflow Run:" in copied
+    assert "wf-copy" in copied
+    assert "Traceback" not in copied
+    assert "RuntimeError" not in copied
+    assert "C:/Users/User" not in copied
+    assert "sk-test" not in copied
+
+
+def test_workflow_copy_is_unavailable_without_valid_selection():
+    service = FakeAppService()
+    service.workflow_runs = ()
+    service.workflow_details = {}
+    view_model = DesktopShellViewModel(service)
+
+    assert view_model.selected_workflow_copy_text() == ""
+
+
+def test_desktop_workflow_view_does_not_import_runtime_or_journal_directly():
+    source = desktop_shell.__loader__.get_source(desktop_shell.__name__)
+
+    assert "WorkflowRunner" not in source
+    assert "ExecutionJournal" not in source
+    assert "execution_journal" not in source
+    assert ".document_review_runner" not in source
 
 
 def test_view_model_displays_history_entries_newest_first():

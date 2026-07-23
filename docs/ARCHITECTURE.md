@@ -33,8 +33,8 @@ handlers / ActionRouter fallback
 
 The UI is not an execution authority. Desktop Shell code uses
 `JarvisAppService` for status, command listing, preview, explicit execution,
-clarification display, recent execution history, and one-shot voice requests.
-It does not call
+clarification display, recent execution history, workflow history inspection,
+and one-shot voice requests. It does not call
 `CommandProcessor`, `ActionRouter`, provider adapters, memory storage, or
 filesystem adapters directly.
 
@@ -107,6 +107,13 @@ ordered step history, progress counts, timestamps where the runtime has them,
 and safe result or failure summaries. This is a runtime/service contract for
 inspection; TASK-105 does not add workflow persistence, replay, retry,
 deletion, export, or Desktop workflow UI.
+
+Desktop Shell now renders a read-only Workflow History panel through
+`JarvisAppService.recent_workflow_runs()` and
+`JarvisAppService.workflow_run_history()`. The panel stores only safe DTOs for
+rendering, supports manual refresh, selection, ordered step inspection, empty
+and safe error states, and safe copy. It does not import runner/journal
+internals and does not add workflow execution controls.
 
 Confirmation-required operations pause before side effects. Repeated execution
 is not treated as confirmation. Cancellation and idempotency are tracked through
@@ -259,7 +266,7 @@ Future work should stay focused and evidence-based:
 - Desktop Shell action clarity and copy/export UX;
 - future history export, deletion, replay, or persistent journal storage only
   after separately approved design work;
-- Desktop workflow run/step viewing, workflow resume, retry, replay, deletion,
-  editing, and export remain separate future work;
+- workflow resume, retry, replay, deletion, editing, export, persistence
+  redesign, and analytics remain separate future work;
 - installer, mobile, admin/support, and broader portability only after
   separately approved architecture work.

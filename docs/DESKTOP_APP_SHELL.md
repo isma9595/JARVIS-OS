@@ -19,8 +19,8 @@ secure key storage foundation, but this shell still has no key input fields.
 
 The desktop shell uses `JarvisAppService` as its app-facing boundary.
 The shell can show service status, list registry commands, preview command
-risk, execute explicit user commands, and show recent execution history only
-through AppService.
+risk, execute explicit user commands, show recent execution history, and show
+workflow run/step history only through AppService.
 
 TASK-073 adds versioned AppService contracts. The shell may read contract
 status/cards through AppService, but TASK-073 adds no new screens or key input.
@@ -61,6 +61,10 @@ python run_desktop.py
 - Refresh the execution history without restarting the shell.
 - Show safe details for the selected history entry.
 - Copy the selected history entry's safe user-facing summary/details.
+- Display a read-only Workflow History panel from AppService workflow DTOs.
+- Refresh the workflow run list manually.
+- Select a workflow run and inspect its ordered step history.
+- Copy selected workflow run details built from safe projected DTO fields.
 - Display Russian clarification questions and options returned by AppService.
 - Start one explicit one-shot voice request through AppService with the
   `Микрофон` button.
@@ -80,6 +84,8 @@ python run_desktop.py
 - No continuous listening or wake-word service.
 - No history deletion, editing, replay, re-execution, file export, cloud sync,
   or remote history access.
+- No workflow resume, retry, replay, cancellation, deletion, editing, export,
+  workflow creation, or step execution controls.
 
 ## Safety
 
@@ -94,6 +100,15 @@ python run_desktop.py
   already returned by AppService; they do not query journal internals.
 - Copied history text is built from projected user-facing fields, not raw
   journal objects or tracebacks.
+- Workflow history is read-only and uses
+  `JarvisAppService.recent_workflow_runs()` and
+  `JarvisAppService.workflow_run_history()`. The shell does not import
+  `WorkflowRunner`, `ExecutionJournal`, workflow runtime objects, or mutable
+  workflow collections.
+- Workflow History supports empty, no-selection, no-steps, and safe error
+  states. Manual refresh preserves the selected run when it still exists and
+  clears stale details when it does not.
+- Copied workflow text is built from projected run/step DTO fields only.
 - Risky/network commands require explicit command text and Execute.
 - Voice requests require an explicit button press, run in a worker thread, and
   return through the AppService result boundary.
