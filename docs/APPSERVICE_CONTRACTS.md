@@ -27,6 +27,12 @@ rendering. It retrieves recent entries from the existing Execution Journal,
 enforces AppService bounds, projects detached DTOs, and returns safe error
 state when history cannot be loaded.
 
+TASK-105 adds `recent_workflow_runs(limit)` and `workflow_run_history(run_id)`
+for read-only workflow run inspection. They expose current in-memory workflow
+run state and ordered step history through detached DTOs from
+`workflows/contracts.py`; they do not add Desktop UI, persistence, replay,
+retry, deletion, editing, or export behavior.
+
 TASK-078 adds `process_one_shot_voice_request(source)`. It captures one
 explicit local Vosk utterance through the existing one-shot recognition
 boundary, then delegates recognized text to `execute_contract()` so voice input
@@ -76,6 +82,9 @@ addendum. No new desktop screens, key fields, or product UI are added.
 - `AppVoiceRequestResult`
 - `AppExecutionHistoryEntry`
 - `AppExecutionHistoryResult`
+- `WorkflowRunHistory`
+- `WorkflowStepHistory`
+- `WorkflowHistoryResult`
 - `AppContractManifest`
 
 Every contract supports deterministic `to_dict()`. Text-oriented contracts also
@@ -103,6 +112,9 @@ execution handles.
 - Execution history is read-only and does not expose mutable journal storage,
   raw exceptions, tracebacks, secrets, local paths, device details, or policy
   internals.
+- Workflow history is read-only and does not expose mutable runner state,
+  planner internals, raw exceptions, tracebacks, secrets, local paths, or
+  policy internals.
 - Raw microphone audio is not sent to AI providers.
 - Recognized voice text reaches providers only by entering the same text path
   as typed input.
@@ -121,6 +133,8 @@ Future UI should use:
 - `execute_contract(text, source)`
 - `process_one_shot_voice_request(source)`
 - `execution_history(limit)`
+- `recent_workflow_runs(limit)`
+- `workflow_run_history(run_id)`
 
 Future UI should not call `CommandProcessor` or `ActionRouter` directly.
 
@@ -139,6 +153,26 @@ request summary, safe user message, safe error summary, and safe metadata.
 The contract is for viewing, refreshing, selecting, and copying safe summary
 text. It does not support deletion, editing, replay, re-execution, export,
 remote synchronization, or direct journal mutation.
+
+## Workflow History Contract
+
+`WorkflowHistoryResult` reports whether workflow history loading succeeded, the
+bounded limit used, the AppService maximum, empty state, safe error code, and a
+tuple of `WorkflowRunHistory` objects.
+
+`WorkflowRunHistory` is a detached projection of one current workflow run. It
+can include run and operation identifiers, workflow id/name, safe objective
+summary, normalized run state, created/started/completed timestamps where
+available, total/completed step counts, active step, safe result/failure
+summary, cancellation and confirmation-waiting flags, safe metadata, and
+ordered `WorkflowStepHistory` entries.
+
+`WorkflowStepHistory` can include step id, step index, display name, operation
+type, normalized step state, started/completed timestamps where available,
+safe result/error summary, confirmation and preview flags, and safe metadata.
+
+The contract is for future viewing/inspection only. It does not support resume,
+retry, replay, deletion, editing, export, persistence redesign, or Desktop UI.
 
 ## One-Shot Voice Contract
 

@@ -74,7 +74,12 @@ from workflows.document_review import (
     DocumentReviewWorkflowError,
     WORKFLOW_ID as DOCUMENT_REVIEW_WORKFLOW_ID,
 )
-from workflows.contracts import WorkflowRunSnapshot, WorkflowStepResult, WorkflowStepStatus
+from workflows.contracts import (
+    WorkflowHistoryResult,
+    WorkflowRunSnapshot,
+    WorkflowStepResult,
+    WorkflowStepStatus,
+)
 from workflows.runner import WorkflowExecutableStep, WorkflowRunner
 from planner import (
     MultiStepPlanner,
@@ -191,6 +196,8 @@ class JarvisAppService:
 
     DEFAULT_EXECUTION_HISTORY_LIMIT = 50
     MAX_EXECUTION_HISTORY_LIMIT = 100
+    DEFAULT_WORKFLOW_HISTORY_LIMIT = 25
+    MAX_WORKFLOW_HISTORY_LIMIT = 100
 
     PREVIEW_PREFIX_ALIASES = (
         "app preview:",
@@ -2504,6 +2511,49 @@ class JarvisAppService:
     def execution_history_text_ru(self, limit: int | None = None) -> str:
         return self.execution_history(limit).safe_text_ru()
 
+    def recent_workflow_runs(self, limit: int | None = None) -> WorkflowHistoryResult:
+        effective_limit = self._bounded_workflow_history_limit(limit)
+        try:
+            runs = self.document_review_runner.recent_run_histories(effective_limit)
+            return WorkflowHistoryResult(
+                ok=True,
+                runs=runs,
+                limit=effective_limit,
+                max_limit=self.MAX_WORKFLOW_HISTORY_LIMIT,
+                empty=not runs,
+                error=None,
+            )
+        except Exception:
+            return WorkflowHistoryResult(
+                ok=False,
+                runs=(),
+                limit=effective_limit,
+                max_limit=self.MAX_WORKFLOW_HISTORY_LIMIT,
+                empty=True,
+                error="workflow_history_unavailable",
+            )
+
+    def workflow_run_history(self, run_id: str) -> WorkflowHistoryResult:
+        try:
+            run = self.document_review_runner.run_history(str(run_id or ""))
+            return WorkflowHistoryResult(
+                ok=True,
+                runs=(run,),
+                limit=1,
+                max_limit=self.MAX_WORKFLOW_HISTORY_LIMIT,
+                empty=False,
+                error=None,
+            )
+        except Exception:
+            return WorkflowHistoryResult(
+                ok=False,
+                runs=(),
+                limit=1,
+                max_limit=self.MAX_WORKFLOW_HISTORY_LIMIT,
+                empty=True,
+                error="workflow_history_unavailable",
+            )
+
     @classmethod
     def _bounded_history_limit(cls, limit: int | None) -> int:
         if limit is None:
@@ -2515,6 +2565,18 @@ class JarvisAppService:
         if value < 1:
             return 1
         return min(value, cls.MAX_EXECUTION_HISTORY_LIMIT)
+
+    @classmethod
+    def _bounded_workflow_history_limit(cls, limit: int | None) -> int:
+        if limit is None:
+            return cls.DEFAULT_WORKFLOW_HISTORY_LIMIT
+        try:
+            value = int(limit)
+        except (TypeError, ValueError):
+            return cls.DEFAULT_WORKFLOW_HISTORY_LIMIT
+        if value < 1:
+            return 1
+        return min(value, cls.MAX_WORKFLOW_HISTORY_LIMIT)
 
     @classmethod
     def _history_entry_from_operation(

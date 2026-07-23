@@ -6,6 +6,7 @@ from memory import LocalMemoryManager
 from voice.one_shot_vosk_real_recognition import OneShotVoskRealRecognitionResult
 from voice.speech_synthesis_backend import SpeechSynthesisResult
 from voice.voice_output_manager import VoiceOutputManager
+from workflows.contracts import WorkflowRunHistory, WorkflowRunHistoryState
 
 
 LOCAL_TTS_STATUS_COMMAND = (
@@ -416,6 +417,114 @@ def test_execution_history_handles_journal_access_failure_safely():
     assert result.error == "execution_history_unavailable"
     assert "Traceback" not in result.safe_text_ru()
     assert "C:/Users/User" not in result.safe_text_ru()
+
+
+def workflow_history(run_id: str, *, state=WorkflowRunHistoryState.COMPLETED):
+    return WorkflowRunHistory(
+        run_id=run_id,
+        operation_id=run_id,
+        workflow_id="document_review.local_text",
+        workflow_name="Document review",
+        objective_summary=f"objective {run_id}",
+        state=state,
+        created_at=utc_now_iso(),
+        started_at=utc_now_iso(),
+        completed_at=utc_now_iso() if state == WorkflowRunHistoryState.COMPLETED else None,
+        total_step_count=1,
+        completed_step_count=1 if state == WorkflowRunHistoryState.COMPLETED else 0,
+    )
+
+
+def test_recent_workflow_runs_returns_bounded_safe_result_newest_first():
+    class FakeWorkflowRunner:
+        def recent_run_histories(self, limit=None):
+            assert limit == 2
+            return (
+                workflow_history("run-new"),
+                workflow_history("run-old"),
+            )
+
+    service = JarvisAppService(command_processor=FakeCommandProcessor())
+    service.document_review_runner = FakeWorkflowRunner()
+
+    result = service.recent_workflow_runs(limit=2)
+
+    assert result.ok is True
+    assert result.limit == 2
+    assert result.empty is False
+    assert [run.run_id for run in result.runs] == ["run-new", "run-old"]
+    assert result.runs[0].state == WorkflowRunHistoryState.COMPLETED
+
+
+def test_recent_workflow_runs_enforces_default_and_maximum_limits():
+    class FakeWorkflowRunner:
+        def __init__(self):
+            self.limits = []
+
+        def recent_run_histories(self, limit=None):
+            self.limits.append(limit)
+            return ()
+
+    fake = FakeWorkflowRunner()
+    service = JarvisAppService(command_processor=FakeCommandProcessor())
+    service.document_review_runner = fake
+
+    default_result = service.recent_workflow_runs()
+    max_result = service.recent_workflow_runs(limit=999)
+    zero_result = service.recent_workflow_runs(limit=0)
+    invalid_result = service.recent_workflow_runs(limit="not-a-number")
+
+    assert default_result.limit == service.DEFAULT_WORKFLOW_HISTORY_LIMIT
+    assert max_result.limit == service.MAX_WORKFLOW_HISTORY_LIMIT
+    assert zero_result.limit == 1
+    assert invalid_result.limit == service.DEFAULT_WORKFLOW_HISTORY_LIMIT
+    assert fake.limits == [
+        service.DEFAULT_WORKFLOW_HISTORY_LIMIT,
+        service.MAX_WORKFLOW_HISTORY_LIMIT,
+        1,
+        service.DEFAULT_WORKFLOW_HISTORY_LIMIT,
+    ]
+
+
+def test_workflow_run_history_returns_one_run_and_missing_id_is_safe():
+    class FakeWorkflowRunner:
+        def run_history(self, run_id):
+            if run_id == "run-known":
+                return workflow_history("run-known")
+            raise KeyError("Traceback C:/Users/User/private.log")
+
+    service = JarvisAppService(command_processor=FakeCommandProcessor())
+    service.document_review_runner = FakeWorkflowRunner()
+
+    known = service.workflow_run_history("run-known")
+    missing = service.workflow_run_history("missing")
+
+    assert known.ok is True
+    assert known.runs[0].run_id == "run-known"
+    assert missing.ok is False
+    assert missing.runs == ()
+    assert missing.error == "workflow_history_unavailable"
+    assert "Traceback" not in str(missing.to_dict())
+    assert "C:/Users/User" not in str(missing.to_dict())
+
+
+def test_recent_workflow_runs_handles_runner_failure_safely():
+    class BrokenWorkflowRunner:
+        def recent_run_histories(self, limit=None):
+            raise RuntimeError("Traceback backend C:/Users/User/raw.log sk-test-1234567890secret")
+
+    service = JarvisAppService(command_processor=FakeCommandProcessor())
+    service.document_review_runner = BrokenWorkflowRunner()
+
+    result = service.recent_workflow_runs()
+
+    assert result.ok is False
+    assert result.runs == ()
+    assert result.error == "workflow_history_unavailable"
+    text = str(result.to_dict())
+    assert "Traceback" not in text
+    assert "C:/Users/User" not in text
+    assert "sk-test" not in text
 
 
 def test_local_tts_diagnostics_success_projects_voice_metadata():

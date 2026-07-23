@@ -100,6 +100,14 @@ does not mutate, replay, delete, or inspect journal storage internals. Desktop
 history search and status filtering are local presentation behavior over the
 bounded DTO collection already loaded from AppService.
 
+Workflow run history uses the existing in-memory workflow runner state and safe
+journal metadata as its source. `WorkflowRunner` projects read-only
+`WorkflowRunHistory` and `WorkflowStepHistory` DTOs with stable public states,
+ordered step history, progress counts, timestamps where the runtime has them,
+and safe result or failure summaries. This is a runtime/service contract for
+inspection; TASK-105 does not add workflow persistence, replay, retry,
+deletion, export, or Desktop workflow UI.
+
 Confirmation-required operations pause before side effects. Repeated execution
 is not treated as confirmation. Cancellation and idempotency are tracked through
 the same operation boundary.
@@ -128,7 +136,18 @@ planner does not execute arbitrary reflected AppService methods.
 
 `workflows/runner.py` provides a reusable linear `WorkflowRunner` with
 workflow-step status, cancellation, confirmation pauses, operation lifecycle,
-and safe snapshots.
+safe snapshots, and read-only run/step history projection. The history model
+normalizes current internal statuses into stable public states such as
+`pending`, `running`, `waiting_for_confirmation`, `completed`, `failed`,
+`cancelled`, and `blocked`; step history similarly exposes `pending`,
+`running`, `waiting_for_confirmation`, `completed`, `failed`, `cancelled`,
+`skipped`, and `blocked` where supported by current runtime behavior.
+
+The runner keeps this history in memory alongside the active workflow run and
+projects detached DTOs rather than returning mutable runner objects. It mirrors
+safe workflow state metadata to the existing `ExecutionJournal` where possible,
+without changing journal storage or requiring Desktop history to understand
+workflow internals.
 
 `workflows/document_review.py` implements the current local TXT document-review
 workflow. The workflow validates a source file, reads bounded bytes, analyzes
@@ -240,5 +259,7 @@ Future work should stay focused and evidence-based:
 - Desktop Shell action clarity and copy/export UX;
 - future history export, deletion, replay, or persistent journal storage only
   after separately approved design work;
+- Desktop workflow run/step viewing, workflow resume, retry, replay, deletion,
+  editing, and export remain separate future work;
 - installer, mobile, admin/support, and broader portability only after
   separately approved architecture work.

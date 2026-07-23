@@ -4,7 +4,14 @@ import pytest
 
 from core.execution_coordinator import ExecutionCoordinator
 from core.policy_boundary import PolicyDecision, PolicyDecisionType, PolicyRequest
-from workflows.contracts import WorkflowStepDefinition, WorkflowStepResult, WorkflowStepStatus
+from workflows.contracts import (
+    WorkflowRunHistory,
+    WorkflowRunHistoryState,
+    WorkflowStepDefinition,
+    WorkflowStepHistoryState,
+    WorkflowStepResult,
+    WorkflowStepStatus,
+)
 from workflows.runner import WorkflowDefinitionError, WorkflowExecutableStep, WorkflowRunner
 
 
@@ -249,3 +256,281 @@ def test_snapshots_are_serializable_immutable_and_redacted():
     assert "secret" not in str(data)
     with pytest.raises(TypeError):
         snapshot.safe_metadata["new"] = "mutable"
+
+
+def test_run_history_records_successful_steps_in_order_and_detached():
+    coordinator = ExecutionCoordinator()
+    op, token = operation(coordinator)
+    state = RunnerState(calls=[])
+    runner = build_runner(
+        coordinator,
+        AllowPolicy(),
+        [step("one"), step("two"), step("verify", verify=True)],
+    )
+
+    snapshot = runner.start(
+        operation=op,
+        state=state,
+        token=token,
+        safe_metadata={
+            "objective_summary": "Review report at C:/Users/User/private.txt",
+            "workflow_name": "Safe workflow",
+        },
+    )
+    history = runner.run_history(snapshot.operation_id)
+    data = history.to_dict()
+
+    assert history.run_id == op.operation_id
+    assert history.state == WorkflowRunHistoryState.COMPLETED
+    assert history.total_step_count == 3
+    assert history.completed_step_count == 3
+    assert history.progress_percent == 100
+    assert history.started_at is not None
+    assert history.completed_at is not None
+    assert [item.step_id for item in history.steps] == ["one", "two", "verify"]
+    assert [item.state for item in history.steps] == [
+        WorkflowStepHistoryState.COMPLETED,
+        WorkflowStepHistoryState.COMPLETED,
+        WorkflowStepHistoryState.COMPLETED,
+    ]
+    assert "C:/Users/User" not in str(data)
+    with pytest.raises(TypeError):
+        history.metadata["new"] = "mutable"
+    assert isinstance(history.steps, tuple)
+
+
+def test_run_history_records_failed_step_safely_and_later_steps_pending():
+    coordinator = ExecutionCoordinator()
+    op, token = operation(coordinator)
+    state = RunnerState(calls=[])
+    runner = build_runner(
+        coordinator,
+        AllowPolicy(),
+        [step("read"), step("boom", fail=True), step("later")],
+    )
+
+    runner.start(operation=op, state=state, token=token)
+    history = runner.run_history(op.operation_id)
+    text = str(history.to_dict())
+
+    assert history.state == WorkflowRunHistoryState.FAILED
+    assert [item.state for item in history.steps] == [
+        WorkflowStepHistoryState.COMPLETED,
+        WorkflowStepHistoryState.FAILED,
+        WorkflowStepHistoryState.PENDING,
+    ]
+    assert history.safe_failure_summary is not None
+    assert "sk-test" not in text
+    assert "RuntimeError" not in text
+    assert "traceback" not in text.lower()
+
+
+def test_run_history_records_cancellation_without_completing_remaining_steps():
+    coordinator = ExecutionCoordinator()
+    op, token = operation(coordinator)
+    state = RunnerState(calls=[])
+    runner = build_runner(
+        coordinator,
+        AllowPolicy(),
+        [step("read"), step("write", confirm=True), step("verify")],
+    )
+
+    runner.start(operation=op, state=state, token=token)
+    runner.cancel(op.operation_id)
+    history = runner.run_history(op.operation_id)
+
+    assert history.state == WorkflowRunHistoryState.CANCELLED
+    assert history.cancelled is True
+    assert [item.state for item in history.steps] == [
+        WorkflowStepHistoryState.COMPLETED,
+        WorkflowStepHistoryState.CANCELLED,
+        WorkflowStepHistoryState.PENDING,
+    ]
+    assert history.completed_step_count == 1
+
+
+def test_run_history_records_waiting_for_confirmation_and_resume():
+    coordinator = ExecutionCoordinator()
+    op, token = operation(coordinator)
+    state = RunnerState(calls=[])
+    runner = build_runner(
+        coordinator,
+        AllowPolicy(),
+        [step("read"), step("write", confirm=True), step("verify")],
+    )
+
+    runner.start(operation=op, state=state, token=token)
+    waiting = runner.run_history(op.operation_id)
+
+    assert waiting.state == WorkflowRunHistoryState.WAITING_FOR_CONFIRMATION
+    assert waiting.waiting_for_confirmation is True
+    assert waiting.active_step_id == "write"
+    assert [item.state for item in waiting.steps] == [
+        WorkflowStepHistoryState.COMPLETED,
+        WorkflowStepHistoryState.WAITING_FOR_CONFIRMATION,
+        WorkflowStepHistoryState.PENDING,
+    ]
+
+    runner.resume(op.operation_id)
+    completed = runner.run_history(op.operation_id)
+
+    assert completed.state == WorkflowRunHistoryState.COMPLETED
+    assert [item.state for item in completed.steps] == [
+        WorkflowStepHistoryState.COMPLETED,
+        WorkflowStepHistoryState.COMPLETED,
+        WorkflowStepHistoryState.COMPLETED,
+    ]
+    assert state.calls == ["read", "write", "verify"]
+
+
+def test_recent_run_histories_are_newest_first_and_bounded():
+    coordinator = ExecutionCoordinator()
+    runner = build_runner(coordinator, AllowPolicy(), [step("read")])
+    first, first_token = operation(coordinator)
+    second = coordinator.register(
+        source="test",
+        idempotency_key="second",
+        request_fingerprint="second",
+        command_id="workflow.test",
+    )
+
+    runner.start(operation=first, state=RunnerState(calls=[]), token=first_token)
+    runner.start(
+        operation=second.operation,
+        state=RunnerState(calls=[]),
+        token=second.token,
+    )
+
+    histories = runner.recent_run_histories(limit=1)
+
+    assert len(histories) == 1
+    assert histories[0].operation_id == second.operation.operation_id
+
+
+def test_run_history_model_handles_empty_steps_and_missing_fields_safely():
+    history = WorkflowRunHistory(
+        run_id="run-empty",
+        operation_id="op-empty",
+        workflow_id="wf-empty",
+        workflow_name=None,
+        objective_summary="",
+        state=WorkflowRunHistoryState.PENDING,
+        created_at="",
+        started_at=None,
+        completed_at=None,
+        total_step_count=0,
+        completed_step_count=0,
+    )
+
+    assert history.steps == ()
+    assert history.progress_percent == 0
+    assert history.objective_summary == "Workflow objective unavailable."
+
+
+def test_workflow_state_is_mirrored_to_journal_metadata_without_breaking_journal():
+    coordinator = ExecutionCoordinator()
+    op, token = operation(coordinator)
+    state = RunnerState(calls=[])
+    runner = build_runner(coordinator, AllowPolicy(), [step("read")])
+
+    runner.start(operation=op, state=state, token=token)
+    operation_snapshot = coordinator.journal.get(op.operation_id)
+
+    assert operation_snapshot is not None
+    assert operation_snapshot.metadata["workflow_run_id"] == op.operation_id
+    assert operation_snapshot.metadata["workflow_state"] == "completed"
+    assert operation_snapshot.metadata["workflow_total_steps"] == "1"
+
+
+def test_operation_is_marked_running_while_step_executes():
+    coordinator = ExecutionCoordinator()
+    op, token = operation(coordinator)
+    observed_statuses = []
+
+    def action(state: RunnerState, token):
+        observed = coordinator.journal.get(op.operation_id)
+        observed_statuses.append(observed.status.value if observed is not None else None)
+        return WorkflowStepResult(
+            step_id="read",
+            status=WorkflowStepStatus.SUCCEEDED,
+            safe_message="ok",
+        )
+
+    runner = build_runner(
+        coordinator,
+        AllowPolicy(),
+        [
+            WorkflowExecutableStep(
+                WorkflowStepDefinition("read", "Read"),
+                action,
+            )
+        ],
+    )
+
+    runner.start(operation=op, state=RunnerState(calls=[]), token=token)
+
+    assert observed_statuses == ["running"]
+
+
+def test_unknown_or_malformed_workflow_states_project_to_safe_fallbacks():
+    coordinator = ExecutionCoordinator()
+    op, token = operation(coordinator)
+    state = RunnerState(calls=[])
+    runner = build_runner(coordinator, AllowPolicy(), [step("read"), step("write")])
+    runner.start(operation=op, state=state, token=token)
+
+    internal = runner._runs[op.operation_id]
+    raw_detail = "Traceback RuntimeError C:/Users/User/private.txt sk-test-1234567890secret"
+    internal.status = [raw_detail]
+    internal.step_statuses["read"] = [raw_detail]
+    internal.step_statuses.pop("write", None)
+
+    history = runner.run_history(op.operation_id)
+    text = str(history.to_dict())
+
+    assert history.state == WorkflowRunHistoryState.UNKNOWN
+    assert [item.step_id for item in history.steps] == ["read", "write"]
+    assert [item.state for item in history.steps] == [
+        WorkflowStepHistoryState.UNKNOWN,
+        WorkflowStepHistoryState.PENDING,
+    ]
+    assert history.total_step_count == 2
+    assert "Traceback" not in text
+    assert "RuntimeError" not in text
+    assert "C:/Users/User" not in text
+    assert "sk-test" not in text
+
+
+def test_workflow_history_dto_is_detached_from_later_runtime_mutation():
+    coordinator = ExecutionCoordinator()
+    op, token = operation(coordinator)
+    state = RunnerState(calls=[])
+    runner = build_runner(coordinator, AllowPolicy(), [step("read"), step("write")])
+    runner.start(operation=op, state=state, token=token)
+
+    history = runner.run_history(op.operation_id)
+    internal = runner._runs[op.operation_id]
+    internal.completed_step_ids.clear()
+    internal.step_statuses["read"] = WorkflowStepStatus.FAILED
+    internal.results["read"] = WorkflowStepResult(
+        step_id="read",
+        status=WorkflowStepStatus.FAILED,
+        safe_message="mutated after projection",
+        safe_output_metadata={"token": "sk-test-1234567890secret"},
+    )
+    internal.safe_metadata["objective_summary"] = "mutated objective"
+
+    assert history.completed_step_count == 2
+    assert history.objective_summary == "test_workflow"
+    assert [item.step_id for item in history.steps] == ["read", "write"]
+    assert [item.state for item in history.steps] == [
+        WorkflowStepHistoryState.COMPLETED,
+        WorkflowStepHistoryState.COMPLETED,
+    ]
+    with pytest.raises(AttributeError):
+        history.steps.append("new")
+    with pytest.raises(TypeError):
+        history.metadata["objective_summary"] = "changed"
+    refreshed = runner.run_history(op.operation_id)
+    assert refreshed.completed_step_count == 0
+    assert [item.step_id for item in refreshed.steps] == ["read", "write"]

@@ -35,6 +35,11 @@ __all__ = [
     "AppStatusSnapshot",
     "AppStatusCard",
     "AppVoiceRequestResult",
+    "WorkflowHistoryResult",
+    "WorkflowRunHistory",
+    "WorkflowRunHistoryState",
+    "WorkflowStepHistory",
+    "WorkflowStepHistoryState",
     "APP_CONTRACT_SCHEMA_NAME",
     "APP_CONTRACT_VERSION",
     "ConversationIntent",
@@ -136,6 +141,28 @@ def __getattr__(name: str):
             "DesktopShellViewModel": DesktopShellViewModel,
             "JarvisDesktopShell": JarvisDesktopShell,
             "launch_desktop_shell": launch_desktop_shell,
+        }
+    elif name in {
+        "WorkflowHistoryResult",
+        "WorkflowRunHistory",
+        "WorkflowRunHistoryState",
+        "WorkflowStepHistory",
+        "WorkflowStepHistoryState",
+    }:
+        from workflows.contracts import (
+            WorkflowHistoryResult,
+            WorkflowRunHistory,
+            WorkflowRunHistoryState,
+            WorkflowStepHistory,
+            WorkflowStepHistoryState,
+        )
+
+        values = {
+            "WorkflowHistoryResult": WorkflowHistoryResult,
+            "WorkflowRunHistory": WorkflowRunHistory,
+            "WorkflowRunHistoryState": WorkflowRunHistoryState,
+            "WorkflowStepHistory": WorkflowStepHistory,
+            "WorkflowStepHistoryState": WorkflowStepHistoryState,
         }
     elif name in {
         "VerticalIntegrationCheck",

@@ -13,16 +13,26 @@ from threading import RLock
 from typing import Any, Generic, TypeVar
 
 from core.execution_coordinator import CancellationToken, ExecutionCoordinator, OperationCancelled
-from core.execution_journal import ExecutionOperation, ExecutionStatus, TERMINAL_EXECUTION_STATUSES
+from core.execution_journal import (
+    ExecutionOperation,
+    ExecutionStatus,
+    TERMINAL_EXECUTION_STATUSES,
+    utc_now_iso,
+)
 from core.policy_boundary import PolicyDecisionBoundary, PolicyDecisionType, PolicyRequest
 from workflows.contracts import (
     TERMINAL_WORKFLOW_STATUSES,
+    WorkflowRunHistory,
+    WorkflowRunHistoryState,
     WorkflowRunSnapshot,
     WorkflowRunStatus,
+    WorkflowStepHistory,
+    WorkflowStepHistoryState,
     WorkflowStepDefinition,
     WorkflowStepResult,
     WorkflowStepStatus,
     safe_workflow_metadata,
+    safe_workflow_text,
 )
 
 
@@ -55,6 +65,11 @@ class _WorkflowRun(Generic[StateT]):
     completed_step_ids: list[str] = field(default_factory=list)
     results: dict[str, WorkflowStepResult] = field(default_factory=dict)
     safe_metadata: dict[str, object] = field(default_factory=dict)
+    created_at: str = ""
+    started_at: str | None = None
+    completed_at: str | None = None
+    step_started_at: dict[str, str] = field(default_factory=dict)
+    step_completed_at: dict[str, str] = field(default_factory=dict)
 
 
 class WorkflowRunner(Generic[StateT]):
@@ -100,6 +115,7 @@ class WorkflowRunner(Generic[StateT]):
                 steps=self.steps,
                 token=token,
                 safe_metadata=dict(safe_workflow_metadata(safe_metadata)),
+                created_at=operation.created_at or utc_now_iso(),
             )
             self._runs[operation.operation_id] = run
             return self._advance(run, confirmation_present=False)
@@ -121,9 +137,12 @@ class WorkflowRunner(Generic[StateT]):
             if run.current_index < len(run.steps):
                 step_id = run.steps[run.current_index].definition.step_id
                 run.step_statuses[step_id] = WorkflowStepStatus.CANCELLED
+                run.step_started_at.setdefault(step_id, utc_now_iso())
+                run.step_completed_at[step_id] = utc_now_iso()
             run.status = WorkflowRunStatus.CANCELLED
+            run.completed_at = run.completed_at or utc_now_iso()
             self.execution_coordinator.cancel(operation_id, reason=reason)
-            return self._snapshot(run)
+            return self._snapshot_and_record(run)
 
     def snapshot(self, operation_id: str) -> WorkflowRunSnapshot:
         with self._lock:
@@ -137,6 +156,17 @@ class WorkflowRunner(Generic[StateT]):
                     return result
             return None
 
+    def run_history(self, operation_id: str) -> WorkflowRunHistory:
+        with self._lock:
+            return self._history(self._get_run(operation_id))
+
+    def recent_run_histories(self, limit: int | None = 25) -> tuple[WorkflowRunHistory, ...]:
+        with self._lock:
+            runs = tuple(reversed(tuple(self._runs.values())))
+            if limit is not None:
+                runs = runs[: max(0, int(limit))]
+            return tuple(self._history(run) for run in runs)
+
     def _advance(
         self,
         run: _WorkflowRun[StateT],
@@ -146,21 +176,30 @@ class WorkflowRunner(Generic[StateT]):
         operation = self.execution_coordinator.journal.get(run.operation_id)
         if operation is not None and operation.status in TERMINAL_EXECUTION_STATUSES:
             run.status = _workflow_status_from_execution(operation.status)
+            run.completed_at = run.completed_at or operation.updated_at or utc_now_iso()
             return self._snapshot(run)
 
+        run.started_at = run.started_at or utc_now_iso()
         run.status = WorkflowRunStatus.RUNNING
         self.execution_coordinator.mark_running(run.operation_id)
         while run.current_index < len(run.steps):
             if run.token.cancelled:
+                if run.current_index < len(run.steps):
+                    step_id = run.steps[run.current_index].definition.step_id
+                    run.step_statuses[step_id] = WorkflowStepStatus.CANCELLED
+                    run.step_started_at.setdefault(step_id, utc_now_iso())
+                    run.step_completed_at[step_id] = utc_now_iso()
                 run.status = WorkflowRunStatus.CANCELLED
+                run.completed_at = run.completed_at or utc_now_iso()
                 self.execution_coordinator.cancel(run.operation_id)
-                return self._snapshot(run)
+                return self._snapshot_and_record(run)
 
             step = run.steps[run.current_index]
             step_id = step.definition.step_id
             if step_id in run.completed_step_ids:
                 run.current_index += 1
                 continue
+            run.step_started_at.setdefault(step_id, utc_now_iso())
             policy = (
                 step.policy_request(run.state, confirmation_present)
                 if step.policy_request is not None
@@ -181,19 +220,21 @@ class WorkflowRunner(Generic[StateT]):
                     )
                     run.results[step_id] = result
                     run.step_statuses[step_id] = WorkflowStepStatus.FAILED
+                    run.step_completed_at[step_id] = utc_now_iso()
                     run.status = WorkflowRunStatus.DENIED
+                    run.completed_at = run.completed_at or utc_now_iso()
                     self.execution_coordinator.mark_denied(
                         run.operation_id,
                         policy_decision=decision.to_dict(),
                         error_code="workflow_policy_denied",
                     )
-                    return self._snapshot(run)
+                    return self._snapshot_and_record(run)
 
             if step.definition.requires_confirmation and not confirmation_present:
                 run.step_statuses[step_id] = WorkflowStepStatus.AWAITING_CONFIRMATION
                 run.status = WorkflowRunStatus.AWAITING_CONFIRMATION
                 self.execution_coordinator.mark_awaiting_confirmation(run.operation_id)
-                return self._snapshot(run)
+                return self._snapshot_and_record(run)
 
             run.step_statuses[step_id] = WorkflowStepStatus.RUNNING
             try:
@@ -201,8 +242,10 @@ class WorkflowRunner(Generic[StateT]):
             except OperationCancelled:
                 run.step_statuses[step_id] = WorkflowStepStatus.CANCELLED
                 run.status = WorkflowRunStatus.CANCELLED
+                run.step_completed_at[step_id] = utc_now_iso()
+                run.completed_at = run.completed_at or utc_now_iso()
                 self.execution_coordinator.cancel(run.operation_id)
-                return self._snapshot(run)
+                return self._snapshot_and_record(run)
             except Exception:
                 result = WorkflowStepResult(
                     step_id=step_id,
@@ -219,8 +262,16 @@ class WorkflowRunner(Generic[StateT]):
                 )
             run.results[step_id] = result
             run.step_statuses[step_id] = result.status
+            if result.status in {
+                WorkflowStepStatus.SUCCEEDED,
+                WorkflowStepStatus.FAILED,
+                WorkflowStepStatus.CANCELLED,
+                WorkflowStepStatus.SKIPPED,
+            }:
+                run.step_completed_at[step_id] = utc_now_iso()
             if result.status != WorkflowStepStatus.SUCCEEDED:
                 run.status = WorkflowRunStatus.CANCELLED if result.status == WorkflowStepStatus.CANCELLED else WorkflowRunStatus.FAILED
+                run.completed_at = run.completed_at or utc_now_iso()
                 if run.status == WorkflowRunStatus.CANCELLED:
                     self.execution_coordinator.cancel(run.operation_id)
                 else:
@@ -228,14 +279,15 @@ class WorkflowRunner(Generic[StateT]):
                         run.operation_id,
                         error_code=result.error_code or "workflow_step_failed",
                     )
-                return self._snapshot(run)
+                return self._snapshot_and_record(run)
             run.completed_step_ids.append(step_id)
             run.current_index += 1
             confirmation_present = False
 
         run.status = WorkflowRunStatus.SUCCEEDED
+        run.completed_at = run.completed_at or utc_now_iso()
         self.execution_coordinator.mark_succeeded(run.operation_id, summary="workflow_succeeded")
-        return self._snapshot(run)
+        return self._snapshot_and_record(run)
 
     def _snapshot(self, run: _WorkflowRun[StateT]) -> WorkflowRunSnapshot:
         current = run.steps[run.current_index].definition if run.current_index < len(run.steps) else None
@@ -270,6 +322,118 @@ class WorkflowRunner(Generic[StateT]):
         except KeyError as exc:
             raise KeyError(f"workflow operation not found: {operation_id}") from exc
 
+    def _history(self, run: _WorkflowRun[StateT]) -> WorkflowRunHistory:
+        steps = tuple(
+            self._step_history(run, step, index)
+            for index, step in enumerate(run.steps)
+        )
+        active = run.steps[run.current_index].definition if run.current_index < len(run.steps) else None
+        failed = self._latest_non_success_result(run)
+        safe_result = self._latest_success_message(run)
+        return WorkflowRunHistory(
+            run_id=run.operation_id,
+            operation_id=run.operation_id,
+            workflow_id=run.workflow_id,
+            workflow_name=safe_workflow_text(run.safe_metadata.get("workflow_name")),
+            objective_summary=self._objective_summary(run),
+            state=_run_history_state(run.status),
+            created_at=run.created_at or "unknown",
+            started_at=run.started_at,
+            completed_at=run.completed_at,
+            total_step_count=len(run.steps),
+            completed_step_count=len(run.completed_step_ids),
+            active_step_id=active.step_id if active else None,
+            active_step_name=active.display_name_ru if active else None,
+            safe_result_summary=safe_result,
+            safe_failure_summary=(
+                failed.safe_message if failed is not None else None
+            ),
+            cancelled=run.status == WorkflowRunStatus.CANCELLED,
+            waiting_for_confirmation=run.status == WorkflowRunStatus.AWAITING_CONFIRMATION,
+            steps=steps,
+            metadata=run.safe_metadata,
+        )
+
+    def _step_history(
+        self,
+        run: _WorkflowRun[StateT],
+        step: WorkflowExecutableStep[StateT],
+        index: int,
+    ) -> WorkflowStepHistory:
+        definition = step.definition
+        result = run.results.get(definition.step_id)
+        status = run.step_statuses.get(definition.step_id, WorkflowStepStatus.PENDING)
+        safe_error = None
+        safe_result = None
+        if result is not None:
+            if result.status == WorkflowStepStatus.SUCCEEDED:
+                safe_result = result.safe_message
+            else:
+                safe_error = result.safe_message
+        metadata: dict[str, object] = dict(definition.safe_metadata or {})
+        if result is not None:
+            metadata.update(dict(result.safe_output_metadata or {}))
+        operation_type = metadata.get("operation_type") or metadata.get("action_id") or definition.step_id
+        return WorkflowStepHistory(
+            step_id=definition.step_id,
+            step_index=index,
+            display_name=definition.display_name_ru,
+            operation_type=str(operation_type) if operation_type is not None else None,
+            state=_step_history_state(status, result),
+            started_at=run.step_started_at.get(definition.step_id),
+            completed_at=run.step_completed_at.get(definition.step_id),
+            safe_result_summary=safe_result,
+            safe_error_summary=safe_error,
+            requires_confirmation=definition.requires_confirmation or bool(
+                result.requires_confirmation if result is not None else False
+            ),
+            preview=bool(metadata.get("preview") or metadata.get("dry_run")),
+            metadata=metadata,
+        )
+
+    def _snapshot_and_record(self, run: _WorkflowRun[StateT]) -> WorkflowRunSnapshot:
+        self._record_journal_workflow_metadata(run)
+        return self._snapshot(run)
+
+    def _record_journal_workflow_metadata(self, run: _WorkflowRun[StateT]) -> None:
+        operation = self.execution_coordinator.journal.get(run.operation_id)
+        if operation is None:
+            return
+        metadata = dict(operation.metadata or {})
+        active = run.steps[run.current_index].definition if run.current_index < len(run.steps) else None
+        metadata.update(
+            {
+                "workflow_run_id": run.operation_id,
+                "workflow_id": run.workflow_id,
+                "workflow_state": _run_history_state(run.status).value,
+                "workflow_current_step_id": active.step_id if active else None,
+                "workflow_total_steps": len(run.steps),
+                "workflow_completed_steps": len(run.completed_step_ids),
+            }
+        )
+        self.execution_coordinator.journal.update(run.operation_id, metadata=metadata)
+
+    def _objective_summary(self, run: _WorkflowRun[StateT]) -> str:
+        for key in ("objective_summary", "objective", "input_preview", "request_summary"):
+            value = run.safe_metadata.get(key)
+            if value:
+                return safe_workflow_text(value, max_length=220)
+        return run.workflow_id
+
+    def _latest_non_success_result(self, run: _WorkflowRun[StateT]) -> WorkflowStepResult | None:
+        for result in reversed(tuple(run.results.values())):
+            if result.status != WorkflowStepStatus.SUCCEEDED:
+                return result
+        return None
+
+    def _latest_success_message(self, run: _WorkflowRun[StateT]) -> str | None:
+        if run.status != WorkflowRunStatus.SUCCEEDED:
+            return None
+        for result in reversed(tuple(run.results.values())):
+            if result.status == WorkflowStepStatus.SUCCEEDED:
+                return result.safe_message
+        return "workflow_succeeded"
+
 
 def _workflow_status_from_execution(status: ExecutionStatus) -> WorkflowRunStatus:
     if status == ExecutionStatus.SUCCEEDED:
@@ -279,3 +443,40 @@ def _workflow_status_from_execution(status: ExecutionStatus) -> WorkflowRunStatu
     if status == ExecutionStatus.DENIED:
         return WorkflowRunStatus.DENIED
     return WorkflowRunStatus.FAILED
+
+
+def _run_history_state(status: WorkflowRunStatus) -> WorkflowRunHistoryState:
+    states = {
+        WorkflowRunStatus.CREATED: WorkflowRunHistoryState.PENDING,
+        WorkflowRunStatus.RUNNING: WorkflowRunHistoryState.RUNNING,
+        WorkflowRunStatus.AWAITING_CONFIRMATION: WorkflowRunHistoryState.WAITING_FOR_CONFIRMATION,
+        WorkflowRunStatus.SUCCEEDED: WorkflowRunHistoryState.COMPLETED,
+        WorkflowRunStatus.FAILED: WorkflowRunHistoryState.FAILED,
+        WorkflowRunStatus.CANCELLED: WorkflowRunHistoryState.CANCELLED,
+        WorkflowRunStatus.DENIED: WorkflowRunHistoryState.BLOCKED,
+    }
+    try:
+        return states.get(status, WorkflowRunHistoryState.UNKNOWN)
+    except TypeError:
+        return WorkflowRunHistoryState.UNKNOWN
+
+
+def _step_history_state(
+    status: WorkflowStepStatus,
+    result: WorkflowStepResult | None,
+) -> WorkflowStepHistoryState:
+    if result is not None and result.error_code == "policy_denied":
+        return WorkflowStepHistoryState.BLOCKED
+    states = {
+        WorkflowStepStatus.PENDING: WorkflowStepHistoryState.PENDING,
+        WorkflowStepStatus.RUNNING: WorkflowStepHistoryState.RUNNING,
+        WorkflowStepStatus.AWAITING_CONFIRMATION: WorkflowStepHistoryState.WAITING_FOR_CONFIRMATION,
+        WorkflowStepStatus.SUCCEEDED: WorkflowStepHistoryState.COMPLETED,
+        WorkflowStepStatus.FAILED: WorkflowStepHistoryState.FAILED,
+        WorkflowStepStatus.CANCELLED: WorkflowStepHistoryState.CANCELLED,
+        WorkflowStepStatus.SKIPPED: WorkflowStepHistoryState.SKIPPED,
+    }
+    try:
+        return states.get(status, WorkflowStepHistoryState.UNKNOWN)
+    except TypeError:
+        return WorkflowStepHistoryState.UNKNOWN

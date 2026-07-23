@@ -39,6 +39,9 @@ orchestration modules.
 - Deterministic multi-step planner in `planner/`.
 - Reusable workflow runner and local TXT document-review workflow in
   `workflows/`.
+- Read-only workflow run state and ordered step history projection for current
+  in-memory workflow runs. This is a runtime/service foundation only; no
+  Desktop workflow viewer is implemented yet.
 - Windows local filesystem adapter boundary in `platform_adapters/`.
 - Local memory and bounded conversation context in `memory/`.
 - Russian-first language preference with English support in `language/`.
@@ -199,6 +202,9 @@ git diff --check
 - Execution history is read-only in the Desktop Shell; it supports viewing,
   refresh, local filtering/search, selection, and safe copy, not replay,
   editing, deletion, or export.
+- Workflow run history is read-only and projected from existing workflow
+  runtime state with safe DTOs; it does not add resume, retry, replay,
+  deletion, editing, export, or persistence redesign.
 - Network/provider calls are explicit-only.
 - Raw microphone audio remains local; recognized text enters the same
   AppService route as typed input.
@@ -214,6 +220,8 @@ git diff --check
 - Some line-ending normalization is deferred to repository maintenance.
 - Desktop Shell action clarity and broader copy/export controls remain future
   UX work.
+- Desktop workflow run/step viewing is future UI work; TASK-105 only adds the
+  safe runtime and AppService-facing history foundation.
 - Real hardware and external provider checks require explicit manual
   authorization and environment setup.
 - Linux/macOS portability is a future goal, not a current verified support

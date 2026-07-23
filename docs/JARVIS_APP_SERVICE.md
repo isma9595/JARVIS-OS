@@ -26,6 +26,7 @@ AppService provides UI-safe access to:
 - one-shot local voice request projection;
 - local TTS execution metadata projection;
 - recent execution history projection;
+- read-only workflow run and step history projection;
 - provider runtime status metadata.
 
 Desktop Shell uses AppService and should not bypass it.
@@ -65,6 +66,8 @@ Current public methods include these groups:
   `process_one_shot_voice_request_text_ru()`.
 - Execution journal projection: `recent_execution_operations()`,
   `execution_history()`, `execution_history_text_ru()`.
+- Workflow history projection: `recent_workflow_runs()`,
+  `workflow_run_history()`.
 - Memory helpers: `remember_user_fact()`, `recall_user_fact()`,
   `list_user_memories()`, `forget_user_fact()`,
   `request_forget_all_memories()`, `confirm_forget_all_memories()`,
@@ -86,6 +89,9 @@ AppService returns and projects DTOs from `app/app_contracts.py`, including:
 - `AppVoiceRequestResult`
 - `AppExecutionHistoryEntry`
 - `AppExecutionHistoryResult`
+- `WorkflowRunHistory`
+- `WorkflowStepHistory`
+- `WorkflowHistoryResult`
 - `AppContractStatus`
 - `AppStatusCard`
 - `AppCommandCard`
@@ -116,6 +122,11 @@ directly.
 TASK-103 adds Desktop history access through `execution_history()`. The shell
 receives bounded, newest-first `AppExecutionHistoryEntry` DTOs and never reads
 or mutates `ExecutionJournal` internals.
+
+TASK-105 adds a read-only workflow history foundation through
+`recent_workflow_runs()` and `workflow_run_history()`. These methods return
+safe, detached workflow DTOs for future UI use. Desktop Shell does not render a
+workflow run/step viewer yet.
 
 ## Planner Interaction
 
@@ -185,6 +196,13 @@ newest-first rendering order, handles an empty journal, and returns a safe
 failure result if the journal cannot be loaded. It does not create a second
 history store and does not expose mutable `ExecutionOperation` objects.
 
+`recent_workflow_runs(limit)` and `workflow_run_history(run_id)` are read-only
+projections over current workflow runner state. They enforce bounded recent-run
+access, return newest runs first for recent history, expose ordered immutable
+step history, and return `workflow_history_unavailable` on safe access failure.
+They do not mutate workflow state, resume execution, retry failed steps, replay
+commands, delete runs, export data, or add persistence.
+
 ## Confirmation-Required Behavior
 
 Confirmation-required operations pause before side effects. AppService tracks
@@ -211,6 +229,11 @@ DTO projection omits blocked internal metadata keys and sanitizes details that
 look like tracebacks, backend/device failures, local filesystem paths, tokens,
 or raw exception text. A malformed optional journal field is projected with a
 safe fallback or omitted instead of failing the whole history request.
+
+TASK-105 applies the same principle to workflow run and step history. Workflow
+DTOs omit raw exceptions, tracebacks, internal runner objects, mutable planner
+structures, local paths, and secrets. Malformed or missing optional fields are
+projected with stable fallback values where possible.
 
 ## Local TTS Projection
 
@@ -245,6 +268,8 @@ The current implementation has extracted these responsibilities:
   `core/execution_journal.py`;
 - workflow execution:
   `workflows/runner.py`;
+- workflow history projection:
+  `workflows/contracts.py` and `workflows/runner.py`;
 - local filesystem boundary:
   `platform_adapters/local_filesystem.py`;
 - AppService DTOs:
@@ -283,6 +308,7 @@ Future implementation tasks may extract focused services for:
 - local TTS metadata projection;
 - provider runtime status projection;
 - recent execution history projection;
+- workflow history projection;
 - status/card assembly.
 
 These are future opportunities, not current implementation claims. Any
