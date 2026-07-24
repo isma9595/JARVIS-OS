@@ -663,6 +663,42 @@ def test_workflow_cancellation_eligibility_is_projected_safely():
     assert "Traceback" not in result.safe_message
 
 
+def test_workflow_cancellation_non_cancellable_reason_stays_typed_and_safe():
+    class FakeWorkflowRunner:
+        def __init__(self):
+            self.calls = []
+
+        def cancellation_eligibility(self, run_id):
+            return WorkflowCancellationEligibility(
+                eligible=False,
+                run_id=run_id,
+                reason=WorkflowCancellationRejectionReason.NON_CANCELLABLE_STEP,
+                safe_message="Traceback RuntimeError C:/Users/User/raw.log sk-test-1234567890secret",
+            )
+
+        def cancel_workflow_run(self, run_id, *, reason):
+            self.calls.append((run_id, reason))
+            raise AssertionError("cancel must not be called")
+
+    runner = FakeWorkflowRunner()
+    service = JarvisAppService(command_processor=FakeCommandProcessor())
+    service.document_review_runner = runner
+
+    eligibility = service.workflow_cancellation_eligibility("run-active")
+    result = service.cancel_workflow_run("run-active")
+    text = eligibility.safe_message + result.safe_text_ru()
+
+    assert eligibility.eligible is False
+    assert eligibility.reason == WorkflowCancellationRejectionReason.NON_CANCELLABLE_STEP
+    assert result.ok is False
+    assert result.rejection_reason == WorkflowCancellationRejectionReason.NON_CANCELLABLE_STEP
+    assert runner.calls == []
+    assert "Traceback" not in text
+    assert "RuntimeError" not in text
+    assert "C:/Users/User" not in text
+    assert "sk-test" not in text
+
+
 def test_cancel_workflow_run_returns_safe_typed_result_through_policy_gate():
     class FakeWorkflowRunner:
         def __init__(self):

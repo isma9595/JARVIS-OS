@@ -720,6 +720,95 @@ def test_non_resumable_failed_step_is_rejected_before_execution():
     assert resume_registration.operation.operation_id not in runner._runs
 
 
+def test_non_cancellable_active_step_rejects_cancellation_without_side_effects():
+    coordinator = CountingCancellationCoordinator()
+    op, token = operation(coordinator)
+    state = RunnerState(calls=[])
+    runner = build_runner(
+        coordinator,
+        AllowPolicy(),
+        [
+            WorkflowExecutableStep(
+                WorkflowStepDefinition(
+                    "review",
+                    "review",
+                    requires_confirmation=True,
+                    cancellable=False,
+                ),
+                lambda state, token: WorkflowStepResult(
+                    step_id="review",
+                    status=WorkflowStepStatus.SUCCEEDED,
+                    safe_message="ok",
+                ),
+            ),
+            step("publish"),
+        ],
+    )
+    runner.start(operation=op, state=state, token=token)
+
+    eligibility = runner.cancellation_eligibility(op.operation_id)
+    result = runner.cancel_workflow_run(op.operation_id)
+    history_after_rejection = runner.run_history(op.operation_id)
+    journal_after_rejection = coordinator.journal.get(op.operation_id)
+    runner.resume(op.operation_id)
+    final_history = runner.run_history(op.operation_id)
+
+    assert eligibility.eligible is False
+    assert eligibility.reason == WorkflowCancellationRejectionReason.NON_CANCELLABLE_STEP
+    assert result.ok is False
+    assert result.rejection_reason == WorkflowCancellationRejectionReason.NON_CANCELLABLE_STEP
+    assert result.signal_sent is False
+    assert coordinator.cancel_call_count == 0
+    assert history_after_rejection.state == WorkflowRunHistoryState.WAITING_FOR_CONFIRMATION
+    assert [item.state for item in history_after_rejection.steps] == [
+        WorkflowStepHistoryState.WAITING_FOR_CONFIRMATION,
+        WorkflowStepHistoryState.PENDING,
+    ]
+    assert journal_after_rejection is not None
+    assert "workflow_cancellation_requested" not in journal_after_rejection.metadata
+    assert state.calls == ["publish"]
+    assert final_history.state == WorkflowRunHistoryState.COMPLETED
+
+
+def test_malformed_active_step_state_rejects_cancellation_without_signal():
+    coordinator = CountingCancellationCoordinator()
+    op, token = operation(coordinator)
+    runner = build_runner(
+        coordinator,
+        AllowPolicy(),
+        [
+            WorkflowExecutableStep(
+                WorkflowStepDefinition("review", "review", requires_confirmation=True),
+                lambda state, token: WorkflowStepResult(
+                    step_id="review",
+                    status=WorkflowStepStatus.SUCCEEDED,
+                    safe_message="ok",
+                ),
+            )
+        ],
+    )
+    runner.start(operation=op, state=RunnerState(calls=[]), token=token)
+    runner._runs[op.operation_id].step_statuses["review"] = [
+        "Traceback C:/Users/User/raw.log sk-test-1234567890secret"
+    ]
+
+    eligibility = runner.cancellation_eligibility(op.operation_id)
+    result = runner.cancel_workflow_run(op.operation_id)
+    text = eligibility.to_dict().__repr__() + result.safe_text_ru()
+    journal = coordinator.journal.get(op.operation_id)
+
+    assert eligibility.eligible is False
+    assert eligibility.reason == WorkflowCancellationRejectionReason.UNKNOWN_STATE
+    assert result.ok is False
+    assert result.rejection_reason == WorkflowCancellationRejectionReason.UNKNOWN_STATE
+    assert coordinator.cancel_call_count == 0
+    assert journal is not None
+    assert "workflow_cancellation_requested" not in journal.metadata
+    assert "Traceback" not in text
+    assert "C:/Users/User" not in text
+    assert "sk-test" not in text
+
+
 def test_duplicate_resume_requests_create_at_most_one_resumed_attempt():
     coordinator = ExecutionCoordinator()
     source_op, source_token = operation(coordinator)
@@ -782,6 +871,233 @@ def test_duplicate_resume_requests_create_at_most_one_resumed_attempt():
     assert second.status == WorkflowResumeStatus.CONFLICT
     assert second.rejection_reason == WorkflowResumeRejectionReason.ALREADY_RESUMED
     assert len(resume_started) == 1
+
+
+def test_concurrent_resume_requests_create_one_resumed_attempt_and_cleanup():
+    coordinator = ExecutionCoordinator()
+    source_op, source_token = operation(coordinator)
+    first_resume = coordinator.register(
+        source="test",
+        idempotency_key="resume-concurrent-one",
+        request_fingerprint="resume-concurrent-one",
+        command_id="workflow.resume",
+    )
+    second_resume = coordinator.register(
+        source="test",
+        idempotency_key="resume-concurrent-two",
+        request_fingerprint="resume-concurrent-two",
+        command_id="workflow.resume",
+    )
+    state = RunnerState(calls=[])
+    attempts = {"boom": 0}
+
+    def fail_once(step_id):
+        def action(state: RunnerState, token):
+            state.calls.append(step_id)
+            if step_id == "boom":
+                attempts["boom"] += 1
+                if attempts["boom"] == 1:
+                    return WorkflowStepResult(
+                        step_id=step_id,
+                        status=WorkflowStepStatus.FAILED,
+                        safe_message="failed safely",
+                        error_code="failed",
+                    )
+            return WorkflowStepResult(
+                step_id=step_id,
+                status=WorkflowStepStatus.SUCCEEDED,
+                safe_message="ok",
+            )
+
+        return WorkflowExecutableStep(WorkflowStepDefinition(step_id, step_id), action)
+
+    runner = build_runner(coordinator, AllowPolicy(), [fail_once("read"), fail_once("boom")])
+    runner.start(operation=source_op, state=state, token=source_token)
+    source_before = runner.run_history(source_op.operation_id)
+    barrier = Barrier(3)
+    results = []
+
+    def request_resume(registration):
+        barrier.wait(2)
+        results.append(
+            runner.resume_from_run(
+                source_operation_id=source_op.operation_id,
+                operation=registration.operation,
+                token=registration.token,
+            )
+        )
+
+    first = Thread(target=lambda: request_resume(first_resume), daemon=True)
+    second = Thread(target=lambda: request_resume(second_resume), daemon=True)
+    first.start()
+    second.start()
+    barrier.wait(2)
+    first.join(2)
+    second.join(2)
+    source_after = runner.run_history(source_op.operation_id)
+    started = [result for result in results if result.ok]
+    rejected = [result for result in results if not result.ok]
+    resume_started = [
+        operation
+        for operation in coordinator.recent_operations(None)
+        if operation.metadata.get("workflow_resume_status") == "started"
+    ]
+
+    assert len(started) == 1
+    assert len(rejected) == 1
+    assert rejected[0].status == WorkflowResumeStatus.CONFLICT
+    assert rejected[0].rejection_reason == WorkflowResumeRejectionReason.ALREADY_RESUMED
+    assert [step.to_dict() for step in source_after.steps] == [
+        step.to_dict() for step in source_before.steps
+    ]
+    assert source_after.state == source_before.state
+    assert len(resume_started) == 1
+    assert runner._resuming_sources == set()
+
+
+def test_resume_launch_failure_releases_reservation_for_later_attempt():
+    class FailingResumeCoordinator(ExecutionCoordinator):
+        def __init__(self):
+            super().__init__()
+            self.fail_operation_id = None
+
+        def mark_running(self, operation_id: str):
+            if operation_id == self.fail_operation_id:
+                raise RuntimeError("Traceback C:/Users/User/raw.log sk-test-1234567890secret")
+            return super().mark_running(operation_id)
+
+    coordinator = FailingResumeCoordinator()
+    source_op, source_token = operation(coordinator)
+    failed_resume = coordinator.register(
+        source="test",
+        idempotency_key="resume-fails",
+        request_fingerprint="resume-fails",
+        command_id="workflow.resume",
+    )
+    later_resume = coordinator.register(
+        source="test",
+        idempotency_key="resume-later",
+        request_fingerprint="resume-later",
+        command_id="workflow.resume",
+    )
+    state = RunnerState(calls=[])
+    attempts = {"boom": 0}
+
+    def action(step_id):
+        def _run(state: RunnerState, token):
+            state.calls.append(step_id)
+            if step_id == "boom":
+                attempts["boom"] += 1
+                if attempts["boom"] == 1:
+                    return WorkflowStepResult(
+                        step_id=step_id,
+                        status=WorkflowStepStatus.FAILED,
+                        safe_message="failed safely",
+                        error_code="failed",
+                    )
+            return WorkflowStepResult(
+                step_id=step_id,
+                status=WorkflowStepStatus.SUCCEEDED,
+                safe_message="ok",
+            )
+
+        return WorkflowExecutableStep(WorkflowStepDefinition(step_id, step_id), _run)
+
+    runner = build_runner(coordinator, AllowPolicy(), [action("read"), action("boom")])
+    runner.start(operation=source_op, state=state, token=source_token)
+    coordinator.fail_operation_id = failed_resume.operation.operation_id
+
+    failed = runner.resume_from_run(
+        source_operation_id=source_op.operation_id,
+        operation=failed_resume.operation,
+        token=failed_resume.token,
+    )
+    coordinator.fail_operation_id = None
+    later = runner.resume_from_run(
+        source_operation_id=source_op.operation_id,
+        operation=later_resume.operation,
+        token=later_resume.token,
+    )
+
+    assert failed.ok is False
+    assert failed.rejection_reason == WorkflowResumeRejectionReason.LAUNCH_FAILED
+    assert runner._resuming_sources == set()
+    assert later.ok is True
+    assert later.resumed_run_id == later_resume.operation.operation_id
+
+
+def test_resume_attempt_is_cancel_target_and_source_history_stays_distinct():
+    coordinator = CountingCancellationCoordinator()
+    source_op, source_token = operation(coordinator)
+    resume_registration = coordinator.register(
+        source="test",
+        idempotency_key="resume-cancel-target",
+        request_fingerprint="resume-cancel-target",
+        command_id="workflow.resume",
+    )
+    state = RunnerState(calls=[])
+    attempts = {"boom": 0}
+    entered = Event()
+
+    def maybe_fail(step_id):
+        def action(state: RunnerState, token):
+            state.calls.append(step_id)
+            if step_id == "boom":
+                attempts["boom"] += 1
+                if attempts["boom"] == 1:
+                    return WorkflowStepResult(
+                        step_id=step_id,
+                        status=WorkflowStepStatus.FAILED,
+                        safe_message="failed safely",
+                        error_code="failed",
+                    )
+                entered.set()
+                while not token.cancelled:
+                    pass
+                token.raise_if_cancelled()
+            return WorkflowStepResult(
+                step_id=step_id,
+                status=WorkflowStepStatus.SUCCEEDED,
+                safe_message="ok",
+            )
+
+        return WorkflowExecutableStep(WorkflowStepDefinition(step_id, step_id), action)
+
+    runner = build_runner(
+        coordinator,
+        AllowPolicy(),
+        [maybe_fail("read"), maybe_fail("boom"), step("later")],
+    )
+    runner.start(operation=source_op, state=state, token=source_token)
+    source_before = runner.run_history(source_op.operation_id)
+    worker = Thread(
+        target=lambda: runner.resume_from_run(
+            source_operation_id=source_op.operation_id,
+            operation=resume_registration.operation,
+            token=resume_registration.token,
+        ),
+        daemon=True,
+    )
+    worker.start()
+    assert entered.wait(2)
+
+    source_cancel = runner.cancel_workflow_run(source_op.operation_id)
+    resumed_cancel = runner.cancel_workflow_run(resume_registration.operation.operation_id)
+    worker.join(2)
+    source_after = runner.run_history(source_op.operation_id)
+    resumed = runner.run_history(resume_registration.operation.operation_id)
+
+    assert source_cancel.ok is False
+    assert source_cancel.rejection_reason == WorkflowCancellationRejectionReason.FAILED_INACTIVE
+    assert resumed_cancel.ok is True
+    assert resumed_cancel.status == WorkflowCancellationStatus.ACCEPTED
+    assert source_after.state == source_before.state
+    assert [step.to_dict() for step in source_after.steps] == [
+        step.to_dict() for step in source_before.steps
+    ]
+    assert resumed.resumed_from_run_id == source_op.operation_id
+    assert resumed.state == WorkflowRunHistoryState.CANCELLED
+    assert coordinator.cancel_call_count == 1
 
 
 def active_cancellation_step(step_id, entered: Event):

@@ -48,6 +48,12 @@ uses the existing cooperative cancellation boundary where supported, preserves
 completed-step history, prevents later steps after accepted cancellation, and
 does not force-kill running work or roll back side effects.
 
+TASK-109 keeps these public method names stable and adds the
+`non_cancellable_step` typed cancellation rejection reason for active workflow
+steps declared with `WorkflowStepDefinition.cancellable=False`. The mutation
+path revalidates central eligibility and does not send a coordinator
+cancellation signal when that reason applies.
+
 TASK-078 adds `process_one_shot_voice_request(source)`. It captures one
 explicit local Vosk utterance through the existing one-shot recognition
 boundary, then delegates recognized text to `execute_contract()` so voice input

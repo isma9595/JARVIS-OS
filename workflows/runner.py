@@ -909,6 +909,32 @@ class WorkflowRunner(Generic[StateT]):
                 reason=WorkflowCancellationRejectionReason.NOT_ACTIVE,
                 message="Workflow run is not active.",
             )
+        current_step = self._current_step(run)
+        if current_step is None:
+            return _cancellation_eligibility(
+                False,
+                run.operation_id,
+                reason=WorkflowCancellationRejectionReason.UNKNOWN_STATE,
+                message="Workflow active step is not cancellable.",
+            )
+        step_status = run.step_statuses.get(
+            current_step.definition.step_id,
+            WorkflowStepStatus.PENDING,
+        )
+        if not isinstance(step_status, WorkflowStepStatus):
+            return _cancellation_eligibility(
+                False,
+                run.operation_id,
+                reason=WorkflowCancellationRejectionReason.UNKNOWN_STATE,
+                message="Workflow active step state is not cancellable.",
+            )
+        if not current_step.definition.cancellable:
+            return _cancellation_eligibility(
+                False,
+                run.operation_id,
+                reason=WorkflowCancellationRejectionReason.NON_CANCELLABLE_STEP,
+                message="Workflow active step is not cancellable.",
+            )
         operation = self.execution_coordinator.journal.get(run.operation_id)
         if operation is None:
             return _cancellation_eligibility(
@@ -922,6 +948,14 @@ class WorkflowRunner(Generic[StateT]):
             run.operation_id,
             message="Workflow run can receive a cancellation request.",
         )
+
+    def _current_step(
+        self,
+        run: _WorkflowRun[StateT],
+    ) -> WorkflowExecutableStep[StateT] | None:
+        if run.current_index < 0 or run.current_index >= len(run.steps):
+            return None
+        return run.steps[run.current_index]
 
     def _first_unfinished_step_index(self, run: _WorkflowRun[StateT]) -> int | None:
         completed = set(run.completed_step_ids)

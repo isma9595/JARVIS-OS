@@ -106,6 +106,7 @@ class WorkflowCancellationRejectionReason(Enum):
     MALFORMED_STATE = "malformed_state"
     UNKNOWN_STATE = "unknown_state"
     ACTIVE_OWNER_UNAVAILABLE = "active_owner_unavailable"
+    NON_CANCELLABLE_STEP = "non_cancellable_step"
     SIGNAL_FAILED = "signal_failed"
     CONCURRENT_LIFECYCLE_CONFLICT = "concurrent_lifecycle_conflict"
     POLICY_DENIED = "policy_denied"

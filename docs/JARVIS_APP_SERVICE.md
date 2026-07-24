@@ -147,6 +147,12 @@ AppService evaluates policy and delegates to the central workflow cancellation
 boundary. Desktop does not pass a step id, cancellation token, runtime object,
 or mutable workflow state.
 
+TASK-109 keeps that AppService contract unchanged while hardening the central
+workflow policy. Non-cancellable active workflow steps now project a typed,
+safe cancellation rejection through the existing eligibility/result DTOs, and
+AppService still delegates policy decisions to the workflow runner rather than
+duplicating them.
+
 ## Planner Interaction
 
 Planner-specific AppService orchestration is delegated to

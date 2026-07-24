@@ -51,6 +51,9 @@ orchestration modules.
   runs through AppService, with centralized eligibility checks, cooperative
   cancellation signalling, duplicate-request protection, and preserved
   completed-step history.
+- Workflow lifecycle hardening that enforces non-cancellable active steps in
+  the central workflow cancellation policy and closes the TASK-105 through
+  TASK-109 workflow subsystem milestone.
 - Windows local filesystem adapter boundary in `platform_adapters/`.
 - Local memory and bounded conversation context in `memory/`.
 - Russian-first language preference with English support in `language/`.
@@ -219,7 +222,8 @@ git diff --check
   attempt.
 - Workflow cancellation is explicit, policy-gated, AppService-mediated, and
   cooperative. It does not roll back completed work or force-kill running
-  work; once accepted, later workflow steps are not started.
+  work, and rejects non-cancellable active steps centrally; once accepted, later
+  workflow steps are not started.
 - Desktop workflow history supports viewing, manual refresh, selection, ordered
   step inspection, safe copy, explicit resume for eligible runs, and explicit
   cancellation for eligible active runs only.

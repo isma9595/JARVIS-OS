@@ -137,6 +137,14 @@ steps from starting after the request is accepted. Completed, inactive failed,
 already-cancelled, malformed, unknown, or ownership-missing runs return safe
 typed rejection results.
 
+TASK-109 hardens the same workflow lifecycle boundary. The central
+`WorkflowRunner` cancellation policy now honors
+`WorkflowStepDefinition.cancellable`; a non-cancellable active step rejects
+cancellation safely before any coordinator signal, cancellation reservation, or
+cancellation journal metadata is written. Resume duplicate protection is covered
+under true concurrency, and cancellation targets the active resumed attempt
+rather than its historical source run.
+
 Confirmation-required operations pause before side effects. Repeated execution
 is not treated as confirmation. Cancellation and idempotency are tracked through
 the same operation boundary.
@@ -190,6 +198,12 @@ workflow runs. Cancellation does not introduce forced thread/process
 termination, rollback, arbitrary step cancellation, or workflow deletion.
 Accepted cancellation records safe cancellation metadata through the existing
 journal/history projection and leaves source/resumed run identities distinct.
+TASK-109 closes the current workflow subsystem milestone after bounded lifecycle
+hardening. The current runner invariant is that workflow state is serialized by
+the runner lock during `step.action(...)`; history and eligibility reads may
+wait for an active step boundary. That lock behavior is documented as an
+accepted current invariant, not a new workflow feature. Future workflow
+expansion requires a new explicitly approved milestone.
 
 `workflows/document_review.py` implements the current local TXT document-review
 workflow. The workflow validates a source file, reads bounded bytes, analyzes

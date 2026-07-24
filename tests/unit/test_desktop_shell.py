@@ -1135,6 +1135,28 @@ def test_workflow_cancellation_unavailable_without_selection_and_double_click_gu
     assert service.workflow_cancellation_calls == []
 
 
+def test_workflow_cancellation_non_cancellable_projection_disables_cancel():
+    service = FakeAppService()
+    run = workflow_run(
+        "wf-active",
+        state=WorkflowRunHistoryState.RUNNING,
+        steps=(workflow_step("running", index=0, state=WorkflowStepHistoryState.RUNNING),),
+        completed_count=0,
+        cancellation_eligible=False,
+        cancellation_reason=WorkflowCancellationRejectionReason.NON_CANCELLABLE_STEP,
+    )
+    service.workflow_runs = (run,)
+    service.workflow_details = {"wf-active": run}
+    view_model = DesktopShellViewModel(service)
+
+    text = view_model.cancel_selected_workflow_run(confirmed=True)
+
+    assert view_model.state.workflow_cancellation_available is False
+    assert "non_cancellable_step" in view_model.state.workflow_cancellation_text
+    assert "non_cancellable_step" in text
+    assert service.workflow_cancellation_calls == []
+
+
 def test_desktop_workflow_cancel_uses_only_run_id_and_no_runtime_data():
     service = FakeAppService()
     service.workflow_runs = (

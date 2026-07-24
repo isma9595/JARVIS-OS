@@ -128,6 +128,8 @@ python run_desktop.py
   `WorkflowRunner`, `ExecutionCoordinator`, `ExecutionJournal`, cancellation
   tokens, or mutable workflow runtime state directly. Cancellation is
   cooperative; it does not promise immediate force termination or rollback.
+  Non-cancellable active workflow steps are rejected by the AppService/domain
+  projection, not by Desktop-specific step interpretation.
 - Risky/network commands require explicit command text and Execute.
 - Voice requests require an explicit button press, run in a worker thread, and
   return through the AppService result boundary.
