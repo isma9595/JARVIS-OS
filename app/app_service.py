@@ -76,6 +76,10 @@ from workflows.document_review import (
 )
 from workflows.contracts import (
     WorkflowHistoryResult,
+    WorkflowResumeEligibility,
+    WorkflowResumeRejectionReason,
+    WorkflowResumeResult,
+    WorkflowResumeStatus,
     WorkflowRunSnapshot,
     WorkflowStepResult,
     WorkflowStepStatus,
@@ -2552,6 +2556,133 @@ class JarvisAppService:
                 max_limit=self.MAX_WORKFLOW_HISTORY_LIMIT,
                 empty=True,
                 error="workflow_history_unavailable",
+            )
+
+    def workflow_resume_eligibility(self, run_id: str) -> WorkflowResumeEligibility:
+        try:
+            return self.document_review_runner.resume_eligibility(str(run_id or ""))
+        except Exception:
+            return WorkflowResumeEligibility(
+                eligible=False,
+                source_run_id=str(run_id or ""),
+                reason=WorkflowResumeRejectionReason.INTERNAL_ERROR,
+                safe_message="Workflow resume eligibility is unavailable.",
+            )
+
+    def resume_workflow_run(self, run_id: str) -> WorkflowResumeResult:
+        source_run_id = safe_journal_text(str(run_id or ""), max_length=80)
+        if not source_run_id:
+            return WorkflowResumeResult(
+                ok=False,
+                status=WorkflowResumeStatus.REJECTED,
+                source_run_id="",
+                rejection_reason=WorkflowResumeRejectionReason.NOT_FOUND,
+                safe_message="Workflow run was not found.",
+            )
+        try:
+            eligibility = self.document_review_runner.resume_eligibility(source_run_id)
+        except Exception:
+            return WorkflowResumeResult(
+                ok=False,
+                status=WorkflowResumeStatus.REJECTED,
+                source_run_id=source_run_id,
+                rejection_reason=WorkflowResumeRejectionReason.INTERNAL_ERROR,
+                safe_message="Workflow resume eligibility is unavailable.",
+            )
+        if not eligibility.eligible:
+            return WorkflowResumeResult(
+                ok=False,
+                status=WorkflowResumeStatus.REJECTED,
+                source_run_id=source_run_id,
+                rejection_reason=eligibility.reason,
+                safe_message=eligibility.safe_message,
+            )
+
+        policy = self.policy_boundary.evaluate(
+            PolicyRequest(
+                source=AppCommandSource.DESKTOP_UI.value,
+                command_id="workflow.resume",
+                action_id="workflow.resume",
+                intent_kind="workflow_control",
+                risk="confirmation_required",
+                required_capabilities=(PolicyCapability.FILE_READ.value, PolicyCapability.FILE_WRITE.value),
+                confirmation_present=True,
+                metadata={
+                    "normalized_text": "workflow resume",
+                    "workflow_id": DOCUMENT_REVIEW_WORKFLOW_ID,
+                    "workflow_run_id": source_run_id,
+                },
+            )
+        )
+        if policy.decision == PolicyDecisionType.DENY:
+            return WorkflowResumeResult(
+                ok=False,
+                status=WorkflowResumeStatus.REJECTED,
+                source_run_id=source_run_id,
+                resume_step_id=eligibility.resume_step_id,
+                resume_step_index=eligibility.resume_step_index,
+                rejection_reason=WorkflowResumeRejectionReason.POLICY_DENIED,
+                safe_message=policy.user_message,
+            )
+
+        fingerprint = self.execution_coordinator.create_request_fingerprint(
+            source=AppCommandSource.DESKTOP_UI.value,
+            text=f"workflow resume {source_run_id}",
+            command_id="workflow.resume",
+            action_id="workflow.resume",
+        )
+        registration = self.execution_coordinator.register(
+            source=AppCommandSource.DESKTOP_UI.value,
+            idempotency_key=f"workflow-resume:{source_run_id}",
+            request_fingerprint=fingerprint,
+            command_id="workflow.resume",
+            action_id="workflow.resume",
+            metadata={
+                "workflow_id": DOCUMENT_REVIEW_WORKFLOW_ID,
+                "workflow_resume_source_run_id": source_run_id,
+                "workflow_resume_start_step_id": eligibility.resume_step_id or "",
+                "workflow_resume_start_step_index": (
+                    eligibility.resume_step_index
+                    if eligibility.resume_step_index is not None
+                    else ""
+                ),
+            },
+        )
+        operation = registration.operation
+        self.execution_coordinator.set_policy_decision(operation.operation_id, policy.to_dict())
+        if registration.duplicate or registration.conflict:
+            return WorkflowResumeResult(
+                ok=False,
+                status=WorkflowResumeStatus.CONFLICT,
+                source_run_id=source_run_id,
+                resumed_run_id=operation.operation_id,
+                resume_step_id=eligibility.resume_step_id,
+                resume_step_index=eligibility.resume_step_index,
+                rejection_reason=WorkflowResumeRejectionReason.CONCURRENT_RESUME_CONFLICT,
+                safe_message="Workflow resume request is already in progress.",
+            )
+
+        try:
+            self.document_review_runner.policy_boundary = self.policy_boundary
+            return self.document_review_runner.resume_from_run(
+                source_operation_id=source_run_id,
+                operation=operation,
+                token=registration.token,
+            )
+        except Exception:
+            self.execution_coordinator.mark_failed(
+                operation.operation_id,
+                error_code="workflow_resume_failed",
+            )
+            return WorkflowResumeResult(
+                ok=False,
+                status=WorkflowResumeStatus.FAILED,
+                source_run_id=source_run_id,
+                resumed_run_id=operation.operation_id,
+                resume_step_id=eligibility.resume_step_id,
+                resume_step_index=eligibility.resume_step_index,
+                rejection_reason=WorkflowResumeRejectionReason.INTERNAL_ERROR,
+                safe_message="Workflow resume failed safely.",
             )
 
     @classmethod

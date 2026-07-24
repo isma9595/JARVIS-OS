@@ -36,9 +36,13 @@ class DesktopShellState:
     workflow_details_text: str
     workflow_copy_text: str
     workflow_runs: tuple[object, ...]
+    selected_workflow_run: object | None
     selected_workflow_steps: tuple[object, ...]
     workflow_loading: bool
     workflow_load_error: str | None
+    workflow_resume_text: str
+    workflow_resume_available: bool
+    workflow_resume_in_progress: bool
     last_error: str | None
     ui_ready: bool
     safe_mode: bool
@@ -99,9 +103,13 @@ class DesktopShellViewModel:
             workflow_details_text=workflow["workflow_details_text"],
             workflow_copy_text=workflow["workflow_copy_text"],
             workflow_runs=workflow["workflow_runs"],
+            selected_workflow_run=workflow["selected_workflow_run"],
             selected_workflow_steps=workflow["selected_workflow_steps"],
             workflow_loading=workflow["workflow_loading"],
             workflow_load_error=workflow["workflow_load_error"],
+            workflow_resume_text=workflow["workflow_resume_text"],
+            workflow_resume_available=workflow["workflow_resume_available"],
+            workflow_resume_in_progress=False,
             last_error=None,
             ui_ready=True,
             safe_mode=True,
@@ -271,9 +279,13 @@ class DesktopShellViewModel:
             workflow_details_text=workflow["workflow_details_text"],
             workflow_copy_text=workflow["workflow_copy_text"],
             workflow_runs=workflow["workflow_runs"],
+            selected_workflow_run=workflow["selected_workflow_run"],
             selected_workflow_steps=workflow["selected_workflow_steps"],
             workflow_loading=workflow["workflow_loading"],
             workflow_load_error=workflow["workflow_load_error"],
+            workflow_resume_text=workflow["workflow_resume_text"],
+            workflow_resume_available=workflow["workflow_resume_available"],
+            workflow_resume_in_progress=False,
             last_error=workflow["last_error"],
         )
         return self.state.workflow_list_text
@@ -290,7 +302,10 @@ class DesktopShellViewModel:
                 selected_workflow_run_id=None,
                 workflow_details_text=details,
                 workflow_copy_text="",
+                selected_workflow_run=None,
                 selected_workflow_steps=(),
+                workflow_resume_text="Resume unavailable: no workflow run selected.",
+                workflow_resume_available=False,
                 last_error=None,
             )
             return details
@@ -301,8 +316,11 @@ class DesktopShellViewModel:
             selected_workflow_run_id=str(run_id or ""),
             workflow_details_text=details["workflow_details_text"],
             workflow_copy_text=details["workflow_copy_text"],
+            selected_workflow_run=details["selected_workflow_run"],
             selected_workflow_steps=details["selected_workflow_steps"],
             workflow_load_error=details["workflow_load_error"],
+            workflow_resume_text=details["workflow_resume_text"],
+            workflow_resume_available=details["workflow_resume_available"],
             last_error=details["last_error"],
         )
         return self.state.workflow_details_text
@@ -312,6 +330,85 @@ class DesktopShellViewModel:
             return ""
         text = self.state.workflow_copy_text or self.state.workflow_details_text
         return self._safe_text(text)
+
+    def workflow_resume_confirmation_text(self) -> str:
+        run = self.state.selected_workflow_run
+        if run is None or not self.state.workflow_resume_available:
+            return self.state.workflow_resume_text
+        run_id = getattr(run, "run_id", None) or getattr(run, "operation_id", None) or "unknown"
+        step_id = getattr(run, "resume_step_id", None) or "first unfinished step"
+        return self._safe_text(
+            "\n".join(
+                [
+                    "Resume workflow run?",
+                    f"- run id: {run_id}",
+                    "- completed steps will not be rerun",
+                    f"- resume from: {step_id}",
+                    "- a distinct resumed attempt will be created",
+                ]
+            )
+        )
+
+    def resume_selected_workflow_run(self, *, confirmed: bool) -> str:
+        if self.state.workflow_resume_in_progress:
+            text = "Workflow resume is already in progress."
+            self.state = self._replace(workflow_resume_text=text, last_error=text)
+            return text
+        run = self.state.selected_workflow_run
+        run_id = (
+            getattr(run, "run_id", None) or getattr(run, "operation_id", None)
+            if run is not None
+            else None
+        )
+        if not run_id:
+            text = "Resume unavailable: no workflow run selected."
+            self.state = self._replace(
+                workflow_resume_text=text,
+                workflow_resume_available=False,
+                last_error=None,
+            )
+            return text
+        if not self.state.workflow_resume_available:
+            text = self.state.workflow_resume_text or "Resume unavailable for this workflow run."
+            self.state = self._replace(workflow_resume_text=text, last_error=None)
+            return text
+        if not confirmed:
+            text = "Workflow resume cancelled."
+            self.state = self._replace(workflow_resume_text=text, last_error=None)
+            return text
+        self.state = self._replace(workflow_resume_in_progress=True)
+        try:
+            result = self.app_service.resume_workflow_run(str(run_id))
+            text = self._format_workflow_resume_result(result)
+            preferred_id = getattr(result, "resumed_run_id", None) or str(run_id)
+            workflow = self._load_workflow_state(preferred_selected_id=preferred_id)
+            self.state = self._replace(
+                workflow_list_text=workflow["workflow_list_text"],
+                selected_workflow_run_id=workflow["selected_workflow_run_id"],
+                workflow_details_text=workflow["workflow_details_text"],
+                workflow_copy_text=workflow["workflow_copy_text"],
+                workflow_runs=workflow["workflow_runs"],
+                selected_workflow_run=workflow["selected_workflow_run"],
+                selected_workflow_steps=workflow["selected_workflow_steps"],
+                workflow_loading=workflow["workflow_loading"],
+                workflow_load_error=workflow["workflow_load_error"],
+                workflow_resume_text=text,
+                workflow_resume_available=workflow["workflow_resume_available"],
+                workflow_resume_in_progress=False,
+                output_text=text,
+                last_error=None if getattr(result, "ok", False) else text,
+            )
+            return text
+        except Exception:
+            text = "Workflow resume failed safely."
+            self.state = self._replace(
+                workflow_resume_text=text,
+                workflow_resume_available=False,
+                workflow_resume_in_progress=False,
+                output_text=text,
+                last_error=text,
+            )
+            return text
 
     def update_history_search(self, query: str | None) -> str:
         history = self._apply_history_filters(
@@ -410,9 +507,12 @@ class DesktopShellViewModel:
                     "workflow_details_text": error_text,
                     "workflow_copy_text": "",
                     "workflow_runs": (),
+                    "selected_workflow_run": None,
                     "selected_workflow_steps": (),
                     "workflow_loading": False,
                     "workflow_load_error": error_text,
+                    "workflow_resume_text": "Resume unavailable: workflow history could not be loaded.",
+                    "workflow_resume_available": False,
                     "last_error": error_text,
                 }
             runs = tuple(getattr(result, "runs", ()) or ())
@@ -436,9 +536,12 @@ class DesktopShellViewModel:
                 "workflow_details_text": details["workflow_details_text"],
                 "workflow_copy_text": details["workflow_copy_text"],
                 "workflow_runs": runs,
+                "selected_workflow_run": details["selected_workflow_run"],
                 "selected_workflow_steps": details["selected_workflow_steps"],
                 "workflow_loading": False,
                 "workflow_load_error": details["workflow_load_error"],
+                "workflow_resume_text": details["workflow_resume_text"],
+                "workflow_resume_available": details["workflow_resume_available"],
                 "last_error": details["last_error"],
             }
         except Exception:
@@ -449,9 +552,12 @@ class DesktopShellViewModel:
                 "workflow_details_text": error_text,
                 "workflow_copy_text": "",
                 "workflow_runs": (),
+                "selected_workflow_run": None,
                 "selected_workflow_steps": (),
                 "workflow_loading": False,
                 "workflow_load_error": error_text,
+                "workflow_resume_text": "Resume unavailable: workflow history could not be loaded.",
+                "workflow_resume_available": False,
                 "last_error": error_text,
             }
 
@@ -465,8 +571,11 @@ class DesktopShellViewModel:
                 return {
                     "workflow_details_text": error_text,
                     "workflow_copy_text": "",
+                    "selected_workflow_run": None,
                     "selected_workflow_steps": (),
                     "workflow_load_error": error_text,
+                    "workflow_resume_text": "Resume unavailable: workflow details could not be loaded.",
+                    "workflow_resume_available": False,
                     "last_error": error_text,
                 }
             runs = tuple(getattr(result, "runs", ()) or ())
@@ -477,8 +586,11 @@ class DesktopShellViewModel:
             return {
                 "workflow_details_text": details,
                 "workflow_copy_text": details,
+                "selected_workflow_run": run,
                 "selected_workflow_steps": tuple(getattr(run, "steps", ()) or ()),
                 "workflow_load_error": None,
+                "workflow_resume_text": self._workflow_resume_text(run),
+                "workflow_resume_available": bool(getattr(run, "resume_eligible", False)),
                 "last_error": None,
             }
         except Exception:
@@ -486,8 +598,11 @@ class DesktopShellViewModel:
             return {
                 "workflow_details_text": error_text,
                 "workflow_copy_text": "",
+                "selected_workflow_run": None,
                 "selected_workflow_steps": (),
                 "workflow_load_error": error_text,
+                "workflow_resume_text": "Resume unavailable: workflow details could not be loaded.",
+                "workflow_resume_available": False,
                 "last_error": error_text,
             }
 
@@ -530,7 +645,16 @@ class DesktopShellViewModel:
             f"- started: {getattr(run, 'started_at', None) or getattr(run, 'created_at', None) or 'unknown'}",
             f"- finished: {getattr(run, 'completed_at', None) or 'not finished'}",
             f"- completed steps: {getattr(run, 'completed_step_count', 0)}/{getattr(run, 'total_step_count', 0)}",
+            f"- resume available: {'yes' if getattr(run, 'resume_eligible', False) else 'no'}",
         ]
+        if getattr(run, "resumed_from_run_id", None):
+            lines.append(f"- resumed from: {getattr(run, 'resumed_from_run_id')}")
+        resume_step = getattr(run, "resume_step_id", None)
+        if resume_step:
+            lines.append(f"- resume step: {resume_step}")
+        reason = self._resume_reason_value(getattr(run, "resume_rejection_reason", None))
+        if reason and reason != "none":
+            lines.append(f"- resume reason: {reason}")
         active_step = getattr(run, "active_step_name", None) or getattr(run, "active_step_id", None)
         if active_step:
             lines.append(f"- active step: {active_step}")
@@ -580,8 +704,11 @@ class DesktopShellViewModel:
         return {
             "workflow_details_text": details,
             "workflow_copy_text": "",
+            "selected_workflow_run": None,
             "selected_workflow_steps": (),
             "workflow_load_error": None,
+            "workflow_resume_text": "Resume unavailable: no workflow run selected.",
+            "workflow_resume_available": False,
             "last_error": None,
         }
 
@@ -589,6 +716,20 @@ class DesktopShellViewModel:
     def _state_value(state) -> str:
         value = getattr(state, "value", state)
         return str(value or "unknown")
+
+    def _workflow_resume_text(self, run) -> str:
+        if getattr(run, "resume_eligible", False):
+            step_id = getattr(run, "resume_step_id", None) or "first unfinished step"
+            return self._safe_text(f"Resume available from {step_id}.")
+        reason = self._resume_reason_value(getattr(run, "resume_rejection_reason", None))
+        if reason and reason != "none":
+            return self._safe_text(f"Resume unavailable: {reason}.")
+        return "Resume unavailable for this workflow run."
+
+    @staticmethod
+    def _resume_reason_value(reason) -> str:
+        value = getattr(reason, "value", reason)
+        return str(value or "none")
 
     def _apply_history_filters(
         self,
@@ -945,6 +1086,31 @@ class DesktopShellViewModel:
         if text_result is not None:
             lines.append("Ответ:")
             lines.append(getattr(text_result, "output_text", ""))
+        return self._safe_text("\n".join(lines))
+
+    def _format_workflow_resume_result(self, result) -> str:
+        status = self._state_value(getattr(result, "status", None))
+        reason = self._resume_reason_value(getattr(result, "rejection_reason", None))
+        lines = [
+            "Workflow resume:",
+            f"- ok: {'yes' if getattr(result, 'ok', False) else 'no'}",
+            "- source: desktop_ui",
+            f"- status: {status}",
+            f"- source run id: {getattr(result, 'source_run_id', None) or 'unknown'}",
+            f"- resumed run id: {getattr(result, 'resumed_run_id', None) or 'none'}",
+            f"- execution started: {'yes' if getattr(result, 'execution_started', False) else 'no'}",
+            f"- rejection reason: {reason}",
+            "- executed through AppService: yes",
+            "- completed steps rerun: no",
+            "- no secrets",
+        ]
+        if getattr(result, "resume_step_id", None):
+            lines.append(f"- resume step id: {getattr(result, 'resume_step_id')}")
+        if getattr(result, "resume_step_index", None) is not None:
+            lines.append(f"- resume step index: {getattr(result, 'resume_step_index')}")
+        message = getattr(result, "safe_message", None)
+        if message:
+            lines.append(f"- message: {message}")
         return self._safe_text("\n".join(lines))
 
     def _replace(self, **changes) -> DesktopShellState:
@@ -1307,6 +1473,19 @@ class JarvisDesktopShell:
             padx=10,
             pady=6,
         ).grid(row=0, column=2, sticky="e", padx=(8, 4))
+        self.workflow_resume_button = tk.Button(
+            workflow_panel,
+            text="Resume",
+            command=self._on_workflow_resume,
+            bg=self.COLORS["panel_alt"],
+            fg=self.COLORS["text"],
+            activebackground=self.COLORS["accent"],
+            activeforeground=self.COLORS["text"],
+            relief="flat",
+            padx=10,
+            pady=6,
+        )
+        self.workflow_resume_button.grid(row=0, column=3, sticky="e", padx=(0, 4))
         self.workflow_copy_button = tk.Button(
             workflow_panel,
             text="Copy Selected",
@@ -1319,9 +1498,9 @@ class JarvisDesktopShell:
             padx=10,
             pady=6,
         )
-        self.workflow_copy_button.grid(row=0, column=3, sticky="e")
+        self.workflow_copy_button.grid(row=0, column=4, sticky="e")
         workflow_content = tk.Frame(workflow_panel, bg=self.COLORS["panel"])
-        workflow_content.grid(row=1, column=0, columnspan=4, sticky="ew", pady=(8, 0))
+        workflow_content.grid(row=1, column=0, columnspan=5, sticky="ew", pady=(8, 0))
         workflow_content.grid_columnconfigure(0, weight=1)
         workflow_content.grid_columnconfigure(1, weight=1)
         self.workflow_list = tk.Listbox(
@@ -1537,6 +1716,13 @@ class JarvisDesktopShell:
                 self.workflow_list.insert("end", "No workflow runs available.")
         copy_state = "normal" if getattr(state, "selected_workflow_run_id", None) else "disabled"
         self.workflow_copy_button.configure(state=copy_state)
+        resume_state = (
+            "normal"
+            if getattr(state, "workflow_resume_available", False)
+            and not getattr(state, "workflow_resume_in_progress", False)
+            else "disabled"
+        )
+        self.workflow_resume_button.configure(state=resume_state)
         self._set_text(self.workflow_details_box, state.workflow_details_text)
 
     @staticmethod
@@ -1661,6 +1847,23 @@ class JarvisDesktopShell:
         text = self.view_model.selected_workflow_copy_text()
         if text:
             self._clipboard_set(text)
+
+    def _on_workflow_resume(self) -> None:
+        confirmation_text = self.view_model.workflow_resume_confirmation_text()
+        if not self._confirm_workflow_resume(confirmation_text):
+            self.view_model.resume_selected_workflow_run(confirmed=False)
+            self._render_state()
+            return
+        self.view_model.resume_selected_workflow_run(confirmed=True)
+        self._render_state()
+
+    def _confirm_workflow_resume(self, text: str) -> bool:
+        try:
+            from tkinter import messagebox
+
+            return bool(messagebox.askyesno("Workflow Resume", self.view_model._safe_text(text)))
+        except Exception:
+            return False
 
 
 def launch_desktop_shell() -> bool:

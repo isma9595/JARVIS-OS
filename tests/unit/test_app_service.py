@@ -6,7 +6,14 @@ from memory import LocalMemoryManager
 from voice.one_shot_vosk_real_recognition import OneShotVoskRealRecognitionResult
 from voice.speech_synthesis_backend import SpeechSynthesisResult
 from voice.voice_output_manager import VoiceOutputManager
-from workflows.contracts import WorkflowRunHistory, WorkflowRunHistoryState
+from workflows.contracts import (
+    WorkflowResumeEligibility,
+    WorkflowResumeRejectionReason,
+    WorkflowResumeResult,
+    WorkflowResumeStatus,
+    WorkflowRunHistory,
+    WorkflowRunHistoryState,
+)
 
 
 LOCAL_TTS_STATUS_COMMAND = (
@@ -523,6 +530,111 @@ def test_recent_workflow_runs_handles_runner_failure_safely():
     assert result.error == "workflow_history_unavailable"
     text = str(result.to_dict())
     assert "Traceback" not in text
+    assert "C:/Users/User" not in text
+    assert "sk-test" not in text
+
+
+def test_workflow_resume_eligibility_is_projected_safely():
+    class FakeWorkflowRunner:
+        def resume_eligibility(self, run_id):
+            assert run_id == "run-failed"
+            return WorkflowResumeEligibility(
+                eligible=True,
+                source_run_id=run_id,
+                resume_step_id="write_output",
+                resume_step_index=2,
+                safe_message="Workflow can resume safely.",
+            )
+
+    service = JarvisAppService(command_processor=FakeCommandProcessor())
+    service.document_review_runner = FakeWorkflowRunner()
+
+    result = service.workflow_resume_eligibility("run-failed")
+
+    assert result.eligible is True
+    assert result.resume_step_id == "write_output"
+    assert result.reason == WorkflowResumeRejectionReason.NONE
+
+
+def test_resume_workflow_run_returns_safe_typed_result_and_registers_operation():
+    class FakeWorkflowRunner:
+        def __init__(self):
+            self.calls = []
+
+        def resume_eligibility(self, run_id):
+            return WorkflowResumeEligibility(
+                eligible=True,
+                source_run_id=run_id,
+                resume_step_id="write_output",
+                resume_step_index=4,
+                safe_message="eligible",
+            )
+
+        def resume_from_run(self, *, source_operation_id, operation, token):
+            self.calls.append((source_operation_id, operation.operation_id, token.operation_id))
+            return WorkflowResumeResult(
+                ok=True,
+                status=WorkflowResumeStatus.STARTED,
+                source_run_id=source_operation_id,
+                resumed_run_id=operation.operation_id,
+                resume_step_id="write_output",
+                resume_step_index=4,
+                execution_started=True,
+                safe_message="Workflow resume started.",
+            )
+
+    fake = FakeWorkflowRunner()
+    service = JarvisAppService(command_processor=FakeCommandProcessor())
+    service.document_review_runner = fake
+
+    result = service.resume_workflow_run("run-failed")
+    operation = service.execution_coordinator.journal.get(result.resumed_run_id)
+
+    assert result.ok is True
+    assert result.status == WorkflowResumeStatus.STARTED
+    assert result.execution_started is True
+    assert fake.calls == [("run-failed", result.resumed_run_id, result.resumed_run_id)]
+    assert operation is not None
+    assert operation.command_id == "workflow.resume"
+    assert operation.metadata["workflow_resume_source_run_id"] == "run-failed"
+    assert "sk-test" not in result.safe_text_ru()
+
+
+def test_resume_workflow_run_rejects_ineligible_and_sanitizes_failures():
+    class IneligibleRunner:
+        def resume_eligibility(self, run_id):
+            return WorkflowResumeEligibility(
+                eligible=False,
+                source_run_id=run_id,
+                reason=WorkflowResumeRejectionReason.WORKFLOW_DEFINITION_INCOMPATIBLE,
+                safe_message="Traceback RuntimeError C:/Users/User/raw.log sk-test-1234567890secret",
+            )
+
+    class ExplodingRunner:
+        def resume_eligibility(self, run_id):
+            return WorkflowResumeEligibility(
+                eligible=True,
+                source_run_id=run_id,
+                resume_step_id="boom",
+                resume_step_index=1,
+            )
+
+        def resume_from_run(self, **_kwargs):
+            raise RuntimeError("Traceback RuntimeError C:/Users/User/raw.log sk-test-1234567890secret")
+
+    service = JarvisAppService(command_processor=FakeCommandProcessor())
+    service.document_review_runner = IneligibleRunner()
+    rejected = service.resume_workflow_run("run-bad")
+    service.document_review_runner = ExplodingRunner()
+    failed = service.resume_workflow_run("run-explodes")
+    text = rejected.safe_text_ru() + failed.safe_text_ru()
+
+    assert rejected.ok is False
+    assert rejected.rejection_reason == WorkflowResumeRejectionReason.WORKFLOW_DEFINITION_INCOMPATIBLE
+    assert failed.ok is False
+    assert failed.rejection_reason == WorkflowResumeRejectionReason.INTERNAL_ERROR
+    assert "Traceback" not in text
+    assert "RuntimeError" not in text
     assert "C:/Users/User" not in text
     assert "sk-test" not in text
 

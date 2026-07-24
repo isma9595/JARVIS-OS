@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from hashlib import sha256
 from threading import RLock
 from typing import Any, Generic, TypeVar
 
@@ -26,6 +27,10 @@ from workflows.contracts import (
     WorkflowRunHistoryState,
     WorkflowRunSnapshot,
     WorkflowRunStatus,
+    WorkflowResumeEligibility,
+    WorkflowResumeRejectionReason,
+    WorkflowResumeResult,
+    WorkflowResumeStatus,
     WorkflowStepHistory,
     WorkflowStepHistoryState,
     WorkflowStepDefinition,
@@ -95,6 +100,8 @@ class WorkflowRunner(Generic[StateT]):
         self.execution_coordinator = execution_coordinator
         self.policy_boundary = policy_boundary
         self._runs: dict[str, _WorkflowRun[StateT]] = {}
+        self._resume_attempts: dict[str, str] = {}
+        self._resuming_sources: set[str] = set()
         self._lock = RLock()
 
     def start(
@@ -114,11 +121,144 @@ class WorkflowRunner(Generic[StateT]):
                 state=state,
                 steps=self.steps,
                 token=token,
-                safe_metadata=dict(safe_workflow_metadata(safe_metadata)),
+                safe_metadata=self._run_metadata(safe_metadata),
                 created_at=operation.created_at or utc_now_iso(),
             )
             self._runs[operation.operation_id] = run
             return self._advance(run, confirmation_present=False)
+
+    def resume_eligibility(self, operation_id: str) -> WorkflowResumeEligibility:
+        with self._lock:
+            try:
+                run = self._get_run(operation_id)
+            except KeyError:
+                return _resume_eligibility(
+                    False,
+                    operation_id,
+                    reason=WorkflowResumeRejectionReason.NOT_FOUND,
+                    message="Workflow run was not found.",
+                )
+            return self._resume_eligibility_for_run(run)
+
+    def resume_from_run(
+        self,
+        *,
+        source_operation_id: str,
+        operation: ExecutionOperation,
+        token: CancellationToken,
+    ) -> WorkflowResumeResult:
+        with self._lock:
+            try:
+                source = self._get_run(source_operation_id)
+            except KeyError:
+                return _resume_result(
+                    False,
+                    WorkflowResumeStatus.REJECTED,
+                    source_operation_id,
+                    reason=WorkflowResumeRejectionReason.NOT_FOUND,
+                    message="Workflow run was not found.",
+                )
+            if source.operation_id in self._resuming_sources:
+                return _resume_result(
+                    False,
+                    WorkflowResumeStatus.CONFLICT,
+                    source.operation_id,
+                    reason=WorkflowResumeRejectionReason.ALREADY_RESUMING,
+                    message="Workflow run is already being resumed.",
+                )
+            if source.operation_id in self._resume_attempts:
+                return _resume_result(
+                    False,
+                    WorkflowResumeStatus.CONFLICT,
+                    source.operation_id,
+                    resumed_run_id=self._resume_attempts[source.operation_id],
+                    reason=WorkflowResumeRejectionReason.ALREADY_RESUMED,
+                    message="Workflow run already has a resumed attempt.",
+                )
+            eligibility = self._resume_eligibility_for_run(source)
+            if not eligibility.eligible:
+                return _resume_result(
+                    False,
+                    WorkflowResumeStatus.REJECTED,
+                    source.operation_id,
+                    reason=eligibility.reason,
+                    message=eligibility.safe_message,
+                )
+            if operation.operation_id in self._runs:
+                return _resume_result(
+                    False,
+                    WorkflowResumeStatus.CONFLICT,
+                    source.operation_id,
+                    resumed_run_id=operation.operation_id,
+                    reason=WorkflowResumeRejectionReason.CONCURRENT_RESUME_CONFLICT,
+                    message="Resume attempt already exists.",
+                )
+
+            self._resuming_sources.add(source.operation_id)
+            self._resume_attempts[source.operation_id] = operation.operation_id
+            try:
+                resumed = _WorkflowRun(
+                    workflow_id=self.workflow_id,
+                    operation_id=operation.operation_id,
+                    state=source.state,
+                    steps=self.steps,
+                    token=token,
+                    current_index=eligibility.resume_step_index or 0,
+                    completed_step_ids=list(source.completed_step_ids),
+                    results=dict(source.results),
+                    step_statuses=dict(source.step_statuses),
+                    step_started_at=dict(source.step_started_at),
+                    step_completed_at=dict(source.step_completed_at),
+                    safe_metadata=self._resume_metadata(source, eligibility, operation),
+                    created_at=operation.created_at or utc_now_iso(),
+                )
+                self._runs[operation.operation_id] = resumed
+                self._record_resume_metadata(
+                    source_run_id=source.operation_id,
+                    resumed_run_id=operation.operation_id,
+                    resume_step_id=eligibility.resume_step_id,
+                    resume_step_index=eligibility.resume_step_index,
+                    status=WorkflowResumeStatus.STARTED,
+                    reason=WorkflowResumeRejectionReason.NONE,
+                )
+                self._advance(resumed, confirmation_present=True)
+                return _resume_result(
+                    True,
+                    WorkflowResumeStatus.STARTED,
+                    source.operation_id,
+                    resumed_run_id=operation.operation_id,
+                    resume_step_id=eligibility.resume_step_id,
+                    resume_step_index=eligibility.resume_step_index,
+                    execution_started=True,
+                    message="Workflow resume started.",
+                )
+            except Exception:
+                self._runs.pop(operation.operation_id, None)
+                self._resume_attempts.pop(source.operation_id, None)
+                self._record_resume_metadata(
+                    source_run_id=source.operation_id,
+                    resumed_run_id=operation.operation_id,
+                    resume_step_id=eligibility.resume_step_id,
+                    resume_step_index=eligibility.resume_step_index,
+                    status=WorkflowResumeStatus.FAILED,
+                    reason=WorkflowResumeRejectionReason.LAUNCH_FAILED,
+                )
+                self.execution_coordinator.mark_failed(
+                    operation.operation_id,
+                    error_code="workflow_resume_launch_failed",
+                )
+                return _resume_result(
+                    False,
+                    WorkflowResumeStatus.FAILED,
+                    source.operation_id,
+                    resumed_run_id=operation.operation_id,
+                    resume_step_id=eligibility.resume_step_id,
+                    resume_step_index=eligibility.resume_step_index,
+                    reason=WorkflowResumeRejectionReason.LAUNCH_FAILED,
+                    message="Workflow resume could not be started safely.",
+                )
+            finally:
+                self._resuming_sources.discard(source.operation_id)
 
     def resume(self, operation_id: str) -> WorkflowRunSnapshot:
         with self._lock:
@@ -330,6 +470,7 @@ class WorkflowRunner(Generic[StateT]):
         active = run.steps[run.current_index].definition if run.current_index < len(run.steps) else None
         failed = self._latest_non_success_result(run)
         safe_result = self._latest_success_message(run)
+        eligibility = self._resume_eligibility_for_run(run)
         return WorkflowRunHistory(
             run_id=run.operation_id,
             operation_id=run.operation_id,
@@ -352,6 +493,15 @@ class WorkflowRunner(Generic[StateT]):
             waiting_for_confirmation=run.status == WorkflowRunStatus.AWAITING_CONFIRMATION,
             steps=steps,
             metadata=run.safe_metadata,
+            resume_eligible=eligibility.eligible,
+            resume_rejection_reason=eligibility.reason,
+            resume_step_id=eligibility.resume_step_id,
+            resume_step_index=eligibility.resume_step_index,
+            resumed_from_run_id=(
+                str(run.safe_metadata.get("resume_source_run_id"))
+                if run.safe_metadata.get("resume_source_run_id")
+                else None
+            ),
         )
 
     def _step_history(
@@ -411,7 +561,198 @@ class WorkflowRunner(Generic[StateT]):
                 "workflow_completed_steps": len(run.completed_step_ids),
             }
         )
+        for key in (
+            "resume_source_run_id",
+            "resume_start_step_id",
+            "resume_start_step_index",
+            "resume_attempt",
+        ):
+            if key in run.safe_metadata:
+                metadata[key] = run.safe_metadata[key]
         self.execution_coordinator.journal.update(run.operation_id, metadata=metadata)
+
+    def _run_metadata(self, metadata: dict[str, object] | None) -> dict[str, object]:
+        safe = dict(safe_workflow_metadata(metadata))
+        safe["workflow_definition_fingerprint"] = self._definition_fingerprint()
+        return safe
+
+    def _resume_metadata(
+        self,
+        source: _WorkflowRun[StateT],
+        eligibility: WorkflowResumeEligibility,
+        operation: ExecutionOperation,
+    ) -> dict[str, object]:
+        metadata = dict(source.safe_metadata)
+        metadata.update(
+            {
+                "resume_attempt": True,
+                "resume_source_run_id": source.operation_id,
+                "resume_start_step_id": eligibility.resume_step_id or "",
+                "resume_start_step_index": eligibility.resume_step_index
+                if eligibility.resume_step_index is not None
+                else "",
+                "resumed_run_id": operation.operation_id,
+                "workflow_definition_fingerprint": self._definition_fingerprint(),
+            }
+        )
+        return dict(safe_workflow_metadata(metadata))
+
+    def _definition_fingerprint(self) -> str:
+        payload = "|".join(
+            (
+                self.workflow_id,
+                *(
+                    ":".join(
+                        (
+                            step.definition.step_id,
+                            "confirm" if step.definition.requires_confirmation else "no_confirm",
+                            "resumable" if step.definition.resumable else "non_resumable",
+                        )
+                    )
+                    for step in self.steps
+                ),
+            )
+        )
+        return "sha256:" + sha256(payload.encode("utf-8")).hexdigest()
+
+    def _resume_eligibility_for_run(
+        self,
+        run: _WorkflowRun[StateT],
+    ) -> WorkflowResumeEligibility:
+        if run.operation_id in self._resuming_sources:
+            return _resume_eligibility(
+                False,
+                run.operation_id,
+                reason=WorkflowResumeRejectionReason.ALREADY_RESUMING,
+                message="Workflow run is already being resumed.",
+            )
+        if run.operation_id in self._resume_attempts:
+            return _resume_eligibility(
+                False,
+                run.operation_id,
+                reason=WorkflowResumeRejectionReason.ALREADY_RESUMED,
+                message="Workflow run already has a resumed attempt.",
+            )
+        if not isinstance(run.status, WorkflowRunStatus):
+            return _resume_eligibility(
+                False,
+                run.operation_id,
+                reason=WorkflowResumeRejectionReason.MALFORMED_STATE,
+                message="Workflow run state is not resumable.",
+            )
+        if run.status == WorkflowRunStatus.SUCCEEDED:
+            return _resume_eligibility(
+                False,
+                run.operation_id,
+                reason=WorkflowResumeRejectionReason.ALREADY_COMPLETED,
+                message="Completed workflow runs cannot be resumed.",
+            )
+        if run.status in {
+            WorkflowRunStatus.CREATED,
+            WorkflowRunStatus.RUNNING,
+            WorkflowRunStatus.AWAITING_CONFIRMATION,
+        }:
+            return _resume_eligibility(
+                False,
+                run.operation_id,
+                reason=WorkflowResumeRejectionReason.ACTIVE_RUN,
+                message="Active workflow runs cannot be resumed.",
+            )
+        if run.status != WorkflowRunStatus.FAILED:
+            return _resume_eligibility(
+                False,
+                run.operation_id,
+                reason=WorkflowResumeRejectionReason.CONTINUATION_STATE_UNAVAILABLE,
+                message="Workflow run does not have a safe continuation state.",
+            )
+        if not run.steps:
+            return _resume_eligibility(
+                False,
+                run.operation_id,
+                reason=WorkflowResumeRejectionReason.WORKFLOW_DEFINITION_MISSING,
+                message="Workflow definition is unavailable.",
+            )
+        if run.safe_metadata.get("workflow_definition_fingerprint") != self._definition_fingerprint():
+            return _resume_eligibility(
+                False,
+                run.operation_id,
+                reason=WorkflowResumeRejectionReason.WORKFLOW_DEFINITION_INCOMPATIBLE,
+                message="Workflow definition is not compatible with the recorded run.",
+            )
+        resume_index = self._first_unfinished_step_index(run)
+        if resume_index is None:
+            return _resume_eligibility(
+                False,
+                run.operation_id,
+                reason=WorkflowResumeRejectionReason.NO_UNFINISHED_STEPS,
+                message="Workflow run has no unfinished steps.",
+            )
+        step = run.steps[resume_index]
+        step_id = step.definition.step_id
+        status = run.step_statuses.get(step_id, WorkflowStepStatus.PENDING)
+        if not isinstance(status, WorkflowStepStatus):
+            return _resume_eligibility(
+                False,
+                run.operation_id,
+                reason=WorkflowResumeRejectionReason.UNKNOWN_STEP_STATE,
+                message="Workflow step state is not resumable.",
+            )
+        if status not in {WorkflowStepStatus.FAILED, WorkflowStepStatus.PENDING}:
+            return _resume_eligibility(
+                False,
+                run.operation_id,
+                reason=WorkflowResumeRejectionReason.CONTINUATION_STATE_UNAVAILABLE,
+                message="Workflow step does not have a safe continuation state.",
+            )
+        if not step.definition.resumable:
+            return _resume_eligibility(
+                False,
+                run.operation_id,
+                reason=WorkflowResumeRejectionReason.NON_RESUMABLE_STEP,
+                message="Workflow step is not resumable.",
+            )
+        return _resume_eligibility(
+            True,
+            run.operation_id,
+            resume_step_id=step_id,
+            resume_step_index=resume_index,
+            message="Workflow run can be resumed from the first unfinished step.",
+        )
+
+    def _first_unfinished_step_index(self, run: _WorkflowRun[StateT]) -> int | None:
+        completed = set(run.completed_step_ids)
+        for index, step in enumerate(run.steps):
+            if step.definition.step_id not in completed:
+                return index
+        return None
+
+    def _record_resume_metadata(
+        self,
+        *,
+        source_run_id: str,
+        resumed_run_id: str | None,
+        resume_step_id: str | None,
+        resume_step_index: int | None,
+        status: WorkflowResumeStatus,
+        reason: WorkflowResumeRejectionReason,
+    ) -> None:
+        operation = self.execution_coordinator.journal.get(resumed_run_id or "")
+        if operation is None:
+            return
+        metadata = dict(operation.metadata or {})
+        metadata.update(
+            {
+                "workflow_resume_source_run_id": source_run_id,
+                "workflow_resume_run_id": resumed_run_id or "",
+                "workflow_resume_start_step_id": resume_step_id or "",
+                "workflow_resume_start_step_index": (
+                    resume_step_index if resume_step_index is not None else ""
+                ),
+                "workflow_resume_status": status.value,
+                "workflow_resume_rejection_reason": reason.value,
+            }
+        )
+        self.execution_coordinator.journal.update(operation.operation_id, metadata=metadata)
 
     def _objective_summary(self, run: _WorkflowRun[StateT]) -> str:
         for key in ("objective_summary", "objective", "input_preview", "request_summary"):
@@ -480,3 +821,47 @@ def _step_history_state(
         return states.get(status, WorkflowStepHistoryState.UNKNOWN)
     except TypeError:
         return WorkflowStepHistoryState.UNKNOWN
+
+
+def _resume_eligibility(
+    eligible: bool,
+    source_run_id: str,
+    *,
+    resume_step_id: str | None = None,
+    resume_step_index: int | None = None,
+    reason: WorkflowResumeRejectionReason = WorkflowResumeRejectionReason.NONE,
+    message: str,
+) -> WorkflowResumeEligibility:
+    return WorkflowResumeEligibility(
+        eligible=eligible,
+        source_run_id=source_run_id,
+        resume_step_id=resume_step_id,
+        resume_step_index=resume_step_index,
+        reason=reason if not eligible else WorkflowResumeRejectionReason.NONE,
+        safe_message=message,
+    )
+
+
+def _resume_result(
+    ok: bool,
+    status: WorkflowResumeStatus,
+    source_run_id: str,
+    *,
+    resumed_run_id: str | None = None,
+    resume_step_id: str | None = None,
+    resume_step_index: int | None = None,
+    execution_started: bool = False,
+    reason: WorkflowResumeRejectionReason = WorkflowResumeRejectionReason.NONE,
+    message: str,
+) -> WorkflowResumeResult:
+    return WorkflowResumeResult(
+        ok=ok,
+        status=status,
+        source_run_id=source_run_id,
+        resumed_run_id=resumed_run_id,
+        resume_step_id=resume_step_id,
+        resume_step_index=resume_step_index,
+        execution_started=execution_started,
+        rejection_reason=reason if not ok else WorkflowResumeRejectionReason.NONE,
+        safe_message=message,
+    )

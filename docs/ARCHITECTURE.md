@@ -113,7 +113,18 @@ Desktop Shell now renders a read-only Workflow History panel through
 `JarvisAppService.workflow_run_history()`. The panel stores only safe DTOs for
 rendering, supports manual refresh, selection, ordered step inspection, empty
 and safe error states, and safe copy. It does not import runner/journal
-internals and does not add workflow execution controls.
+internals.
+
+TASK-107 adds an explicit safe workflow resume action for eligible selected
+runs. Desktop still does not control `WorkflowRunner` or mutable runtime state;
+it reads AppService-projected eligibility, asks for user confirmation, then
+calls `JarvisAppService.resume_workflow_run(run_id)`. Resume eligibility is
+centralized in the workflow/AppService boundary, not inferred by the UI.
+Eligible resume creates a distinct linked attempt, validates the current
+workflow definition fingerprint against the recorded run, starts at the first
+safe unfinished step, and preserves completed steps without replaying them.
+Ineligible, duplicate, incompatible, malformed, or launch-failure cases return
+safe typed rejection results.
 
 Confirmation-required operations pause before side effects. Repeated execution
 is not treated as confirmation. Cancellation and idempotency are tracked through
@@ -155,6 +166,13 @@ projects detached DTOs rather than returning mutable runner objects. It mirrors
 safe workflow state metadata to the existing `ExecutionJournal` where possible,
 without changing journal storage or requiring Desktop history to understand
 workflow internals.
+
+The runner also owns the TASK-107 resume safety model for the current in-memory
+workflow runs. Resume does not redesign workflow storage, does not persist
+recovery across application restarts, and does not expose arbitrary replay or
+user-selected step execution. Compatibility is checked using stable workflow
+step identity/order metadata captured with the run. A resumed attempt has its
+own operation/run id and safe metadata linking it to the source run.
 
 `workflows/document_review.py` implements the current local TXT document-review
 workflow. The workflow validates a source file, reads bounded bytes, analyzes
@@ -266,7 +284,7 @@ Future work should stay focused and evidence-based:
 - Desktop Shell action clarity and copy/export UX;
 - future history export, deletion, replay, or persistent journal storage only
   after separately approved design work;
-- workflow resume, retry, replay, deletion, editing, export, persistence
-  redesign, and analytics remain separate future work;
+- workflow retry, replay, deletion, editing, export, persistence redesign,
+  restart-persistent recovery, and analytics remain separate future work;
 - installer, mobile, admin/support, and broader portability only after
   separately approved architecture work.

@@ -68,6 +68,8 @@ Current public methods include these groups:
   `execution_history()`, `execution_history_text_ru()`.
 - Workflow history projection: `recent_workflow_runs()`,
   `workflow_run_history()`.
+- Workflow resume: `workflow_resume_eligibility()`,
+  `resume_workflow_run()`.
 - Memory helpers: `remember_user_fact()`, `recall_user_fact()`,
   `list_user_memories()`, `forget_user_fact()`,
   `request_forget_all_memories()`, `confirm_forget_all_memories()`,
@@ -128,6 +130,13 @@ TASK-105 adds a read-only workflow history foundation through
 safe, detached workflow DTOs. TASK-106 adds Desktop Shell rendering for those
 DTOs without allowing the shell to inspect `WorkflowRunner`, `ExecutionJournal`,
 or mutable workflow runtime state directly.
+
+TASK-107 adds explicit safe workflow resume through AppService. The Desktop
+Shell reads projected eligibility from workflow history DTOs and calls
+`resume_workflow_run(run_id)` only after explicit confirmation. AppService
+evaluates policy, registers a normal operation, and delegates to the central
+workflow resume boundary. Desktop does not pass a step index, runtime object,
+or mutable workflow state.
 
 ## Planner Interaction
 
@@ -201,8 +210,17 @@ history store and does not expose mutable `ExecutionOperation` objects.
 projections over current workflow runner state. They enforce bounded recent-run
 access, return newest runs first for recent history, expose ordered immutable
 step history, and return `workflow_history_unavailable` on safe access failure.
-They do not mutate workflow state, resume execution, retry failed steps, replay
-commands, delete runs, export data, or add persistence.
+They do not retry failed steps, replay commands, delete runs, export data, or
+add persistence.
+
+`workflow_resume_eligibility(run_id)` and `resume_workflow_run(run_id)` expose
+the narrow TASK-107 resume contract. Resume is allowed only for centrally
+eligible workflow runs, starts at the first safe unfinished step, does not rerun
+completed steps by default, validates workflow definition compatibility,
+creates a distinct linked resumed attempt, and returns `WorkflowResumeResult`
+with safe status/rejection fields. It does not support arbitrary replay,
+user-selected start steps, retry of completed steps, workflow editing,
+deletion, export, or restart-persistent recovery.
 
 Desktop Shell consumes these methods for its Workflow History panel. The panel
 performs presentation-only selection, refresh, ordered step display, and safe
@@ -275,6 +293,8 @@ The current implementation has extracted these responsibilities:
   `workflows/runner.py`;
 - workflow history projection:
   `workflows/contracts.py` and `workflows/runner.py`;
+- workflow resume eligibility and attempt creation:
+  `workflows/contracts.py` and `workflows/runner.py`;
 - local filesystem boundary:
   `platform_adapters/local_filesystem.py`;
 - AppService DTOs:
@@ -314,6 +334,7 @@ Future implementation tasks may extract focused services for:
 - provider runtime status projection;
 - recent execution history projection;
 - workflow history projection;
+- workflow resume projection and AppService command registration;
 - status/card assembly.
 
 These are future opportunities, not current implementation claims. Any

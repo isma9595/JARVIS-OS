@@ -7,6 +7,8 @@ from core.policy_boundary import PolicyDecision, PolicyDecisionType, PolicyReque
 from workflows.contracts import (
     WorkflowRunHistory,
     WorkflowRunHistoryState,
+    WorkflowResumeRejectionReason,
+    WorkflowResumeStatus,
     WorkflowStepDefinition,
     WorkflowStepHistoryState,
     WorkflowStepResult,
@@ -534,3 +536,228 @@ def test_workflow_history_dto_is_detached_from_later_runtime_mutation():
     refreshed = runner.run_history(op.operation_id)
     assert refreshed.completed_step_count == 0
     assert [item.step_id for item in refreshed.steps] == ["read", "write"]
+
+
+def test_failed_run_resumes_from_first_unfinished_step_without_replaying_completed():
+    coordinator = ExecutionCoordinator()
+    source_op, source_token = operation(coordinator)
+    resume_registration = coordinator.register(
+        source="test",
+        idempotency_key="resume",
+        request_fingerprint="resume",
+        command_id="workflow.resume",
+    )
+    state = RunnerState(calls=[])
+    attempts = {"three": 0}
+
+    def fail_once(step_id):
+        def action(state: RunnerState, token):
+            token.raise_if_cancelled()
+            state.calls.append(step_id)
+            if step_id == "three":
+                attempts["three"] += 1
+                if attempts["three"] == 1:
+                    return WorkflowStepResult(
+                        step_id=step_id,
+                        status=WorkflowStepStatus.FAILED,
+                        safe_message="step failed safely",
+                        error_code="step_failed",
+                    )
+            return WorkflowStepResult(
+                step_id=step_id,
+                status=WorkflowStepStatus.SUCCEEDED,
+                safe_message="ok",
+            )
+
+        return WorkflowExecutableStep(WorkflowStepDefinition(step_id, step_id), action)
+
+    runner = build_runner(
+        coordinator,
+        AllowPolicy(),
+        [fail_once("one"), fail_once("two"), fail_once("three"), fail_once("four")],
+    )
+    runner.start(operation=source_op, state=state, token=source_token)
+    original_before = runner.run_history(source_op.operation_id)
+
+    result = runner.resume_from_run(
+        source_operation_id=source_op.operation_id,
+        operation=resume_registration.operation,
+        token=resume_registration.token,
+    )
+
+    original_after = runner.run_history(source_op.operation_id)
+    resumed = runner.run_history(resume_registration.operation.operation_id)
+    assert result.ok is True
+    assert result.status == WorkflowResumeStatus.STARTED
+    assert result.resume_step_id == "three"
+    assert result.resumed_run_id == resume_registration.operation.operation_id
+    assert state.calls == ["one", "two", "three", "three", "four"]
+    assert [step.to_dict() for step in original_after.steps] == [
+        step.to_dict() for step in original_before.steps
+    ]
+    assert original_after.state == original_before.state
+    assert original_after.resume_rejection_reason == WorkflowResumeRejectionReason.ALREADY_RESUMED
+    assert [step.state for step in resumed.steps] == [
+        WorkflowStepHistoryState.COMPLETED,
+        WorkflowStepHistoryState.COMPLETED,
+        WorkflowStepHistoryState.COMPLETED,
+        WorkflowStepHistoryState.COMPLETED,
+    ]
+    assert resumed.resumed_from_run_id == source_op.operation_id
+
+
+def test_resume_rejects_completed_malformed_unknown_and_incompatible_runs_safely():
+    coordinator = ExecutionCoordinator()
+    completed_op, completed_token = operation(coordinator)
+    malformed_registration = coordinator.register(
+        source="test",
+        idempotency_key="malformed",
+        request_fingerprint="malformed",
+        command_id="workflow.test",
+    )
+    incompatible_registration = coordinator.register(
+        source="test",
+        idempotency_key="incompatible",
+        request_fingerprint="incompatible",
+        command_id="workflow.test",
+    )
+    completed_runner = build_runner(coordinator, AllowPolicy(), [step("done")])
+    completed_runner.start(
+        operation=completed_op,
+        state=RunnerState(calls=[]),
+        token=completed_token,
+    )
+    completed = completed_runner.resume_eligibility(completed_op.operation_id)
+
+    runner = build_runner(coordinator, AllowPolicy(), [step("read"), step("boom", fail=True)])
+    runner.start(
+        operation=malformed_registration.operation,
+        state=RunnerState(calls=[]),
+        token=malformed_registration.token,
+    )
+    internal = runner._runs[malformed_registration.operation.operation_id]
+    internal.status = ["Traceback C:/Users/User/raw.log sk-test-1234567890secret"]
+    internal.step_statuses["boom"] = ["RuntimeError backend"]
+    malformed = runner.resume_eligibility(malformed_registration.operation.operation_id)
+
+    runner.start(
+        operation=incompatible_registration.operation,
+        state=RunnerState(calls=[]),
+        token=incompatible_registration.token,
+    )
+    runner.steps = tuple(reversed(runner.steps))
+    incompatible = runner.resume_eligibility(incompatible_registration.operation.operation_id)
+    text = str((completed.to_dict(), malformed.to_dict(), incompatible.to_dict()))
+
+    assert completed.reason == WorkflowResumeRejectionReason.ALREADY_COMPLETED
+    assert malformed.reason == WorkflowResumeRejectionReason.MALFORMED_STATE
+    assert incompatible.reason == WorkflowResumeRejectionReason.WORKFLOW_DEFINITION_INCOMPATIBLE
+    assert "Traceback" not in text
+    assert "RuntimeError" not in text
+    assert "C:/Users/User" not in text
+    assert "sk-test" not in text
+
+
+def test_non_resumable_failed_step_is_rejected_before_execution():
+    coordinator = ExecutionCoordinator()
+    source_op, source_token = operation(coordinator)
+    resume_registration = coordinator.register(
+        source="test",
+        idempotency_key="resume-non-resumable",
+        request_fingerprint="resume-non-resumable",
+        command_id="workflow.resume",
+    )
+    state = RunnerState(calls=[])
+    runner = build_runner(
+        coordinator,
+        AllowPolicy(),
+        [
+            step("read"),
+            WorkflowExecutableStep(
+                WorkflowStepDefinition("boom", "boom", resumable=False),
+                lambda state, token: WorkflowStepResult(
+                    step_id="boom",
+                    status=WorkflowStepStatus.FAILED,
+                    safe_message="failed safely",
+                    error_code="failed",
+                ),
+            ),
+            step("later"),
+        ],
+    )
+    runner.start(operation=source_op, state=state, token=source_token)
+
+    result = runner.resume_from_run(
+        source_operation_id=source_op.operation_id,
+        operation=resume_registration.operation,
+        token=resume_registration.token,
+    )
+
+    assert result.ok is False
+    assert result.rejection_reason == WorkflowResumeRejectionReason.NON_RESUMABLE_STEP
+    assert state.calls == ["read"]
+    assert resume_registration.operation.operation_id not in runner._runs
+
+
+def test_duplicate_resume_requests_create_at_most_one_resumed_attempt():
+    coordinator = ExecutionCoordinator()
+    source_op, source_token = operation(coordinator)
+    first_resume = coordinator.register(
+        source="test",
+        idempotency_key="resume-one",
+        request_fingerprint="resume-one",
+        command_id="workflow.resume",
+    )
+    second_resume = coordinator.register(
+        source="test",
+        idempotency_key="resume-two",
+        request_fingerprint="resume-two",
+        command_id="workflow.resume",
+    )
+    state = RunnerState(calls=[])
+    attempts = {"boom": 0}
+
+    def action(step_id):
+        def _run(state: RunnerState, token):
+            state.calls.append(step_id)
+            if step_id == "boom":
+                attempts["boom"] += 1
+                if attempts["boom"] == 1:
+                    return WorkflowStepResult(
+                        step_id=step_id,
+                        status=WorkflowStepStatus.FAILED,
+                        safe_message="failed safely",
+                        error_code="failed",
+                    )
+            return WorkflowStepResult(
+                step_id=step_id,
+                status=WorkflowStepStatus.SUCCEEDED,
+                safe_message="ok",
+            )
+
+        return WorkflowExecutableStep(WorkflowStepDefinition(step_id, step_id), _run)
+
+    runner = build_runner(coordinator, AllowPolicy(), [action("read"), action("boom")])
+    runner.start(operation=source_op, state=state, token=source_token)
+
+    first = runner.resume_from_run(
+        source_operation_id=source_op.operation_id,
+        operation=first_resume.operation,
+        token=first_resume.token,
+    )
+    second = runner.resume_from_run(
+        source_operation_id=source_op.operation_id,
+        operation=second_resume.operation,
+        token=second_resume.token,
+    )
+    resume_started = [
+        operation
+        for operation in coordinator.recent_operations(None)
+        if operation.metadata.get("workflow_resume_status") == "started"
+    ]
+
+    assert first.ok is True
+    assert second.ok is False
+    assert second.status == WorkflowResumeStatus.CONFLICT
+    assert second.rejection_reason == WorkflowResumeRejectionReason.ALREADY_RESUMED
+    assert len(resume_started) == 1

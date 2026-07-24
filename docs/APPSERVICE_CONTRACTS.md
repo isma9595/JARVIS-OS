@@ -33,6 +33,14 @@ run state and ordered step history through detached DTOs from
 `workflows/contracts.py`; they do not add Desktop UI, persistence, replay,
 retry, deletion, editing, or export behavior.
 
+TASK-107 adds `workflow_resume_eligibility(run_id)` and
+`resume_workflow_run(run_id)`. Resume is explicit, policy-gated, bounded to
+eligible current in-memory workflow runs, and returns typed safe DTOs. It
+creates a distinct linked resumed attempt, validates workflow definition
+compatibility, starts from the first safe unfinished step, and does not rerun
+completed steps by default. It is not arbitrary replay, retry of completed
+steps, workflow editing, deletion, export, or restart-persistent recovery.
+
 TASK-078 adds `process_one_shot_voice_request(source)`. It captures one
 explicit local Vosk utterance through the existing one-shot recognition
 boundary, then delegates recognized text to `execute_contract()` so voice input
@@ -85,6 +93,8 @@ addendum. No new desktop screens, key fields, or product UI are added.
 - `WorkflowRunHistory`
 - `WorkflowStepHistory`
 - `WorkflowHistoryResult`
+- `WorkflowResumeEligibility`
+- `WorkflowResumeResult`
 - `AppContractManifest`
 
 Every contract supports deterministic `to_dict()`. Text-oriented contracts also
@@ -135,6 +145,8 @@ Future UI should use:
 - `execution_history(limit)`
 - `recent_workflow_runs(limit)`
 - `workflow_run_history(run_id)`
+- `workflow_resume_eligibility(run_id)`
+- `resume_workflow_run(run_id)`
 
 Future UI should not call `CommandProcessor` or `ActionRouter` directly.
 
@@ -164,15 +176,25 @@ tuple of `WorkflowRunHistory` objects.
 can include run and operation identifiers, workflow id/name, safe objective
 summary, normalized run state, created/started/completed timestamps where
 available, total/completed step counts, active step, safe result/failure
-summary, cancellation and confirmation-waiting flags, safe metadata, and
-ordered `WorkflowStepHistory` entries.
+summary, cancellation and confirmation-waiting flags, resume eligibility
+fields, safe metadata, and ordered `WorkflowStepHistory` entries.
 
 `WorkflowStepHistory` can include step id, step index, display name, operation
 type, normalized step state, started/completed timestamps where available,
 safe result/error summary, confirmation and preview flags, and safe metadata.
 
-The contract is for future viewing/inspection only. It does not support resume,
-retry, replay, deletion, editing, export, persistence redesign, or Desktop UI.
+`WorkflowResumeEligibility` reports whether a source run is eligible, the safe
+resume step when available, and a stable rejection reason when it is not.
+
+`WorkflowResumeResult` reports resume status, source run id, resumed run id
+when created, resume step id/index, whether execution was started, and a stable
+safe rejection reason/message. It does not expose exceptions, tracebacks,
+workflow runtime objects, raw metadata dictionaries, secrets, or filesystem
+paths.
+
+The workflow contracts support viewing and explicit safe resume only. They do
+not support arbitrary replay, retry of completed steps, deletion, editing,
+export, persistence redesign, or restart-persistent recovery.
 
 ## One-Shot Voice Contract
 

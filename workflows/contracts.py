@@ -59,6 +59,33 @@ class WorkflowStepHistoryState(Enum):
     UNKNOWN = "unknown"
 
 
+class WorkflowResumeStatus(Enum):
+    STARTED = "started"
+    REJECTED = "rejected"
+    CONFLICT = "conflict"
+    FAILED = "failed"
+
+
+class WorkflowResumeRejectionReason(Enum):
+    NONE = "none"
+    NOT_FOUND = "not_found"
+    ALREADY_COMPLETED = "already_completed"
+    ACTIVE_RUN = "active_run"
+    ALREADY_RESUMING = "already_resuming"
+    ALREADY_RESUMED = "already_resumed"
+    NO_UNFINISHED_STEPS = "no_unfinished_steps"
+    MALFORMED_STATE = "malformed_state"
+    UNKNOWN_STEP_STATE = "unknown_step_state"
+    WORKFLOW_DEFINITION_MISSING = "workflow_definition_missing"
+    WORKFLOW_DEFINITION_INCOMPATIBLE = "workflow_definition_incompatible"
+    NON_RESUMABLE_STEP = "non_resumable_step"
+    CONTINUATION_STATE_UNAVAILABLE = "continuation_state_unavailable"
+    CONCURRENT_RESUME_CONFLICT = "concurrent_resume_conflict"
+    LAUNCH_FAILED = "launch_failed"
+    POLICY_DENIED = "policy_denied"
+    INTERNAL_ERROR = "internal_error"
+
+
 TERMINAL_WORKFLOW_STATUSES = {
     WorkflowRunStatus.SUCCEEDED,
     WorkflowRunStatus.FAILED,
@@ -75,6 +102,7 @@ class WorkflowStepDefinition:
     cancellable: bool = True
     verification_step: bool = False
     safe_metadata: Mapping[str, object] = MappingProxyType({})
+    resumable: bool = True
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "step_id", safe_journal_text(self.step_id, max_length=80))
@@ -251,6 +279,13 @@ class WorkflowRunHistory:
     safe_failure_summary: str | None = None
     cancelled: bool = False
     waiting_for_confirmation: bool = False
+    resume_eligible: bool = False
+    resume_rejection_reason: WorkflowResumeRejectionReason = (
+        WorkflowResumeRejectionReason.NONE
+    )
+    resume_step_id: str | None = None
+    resume_step_index: int | None = None
+    resumed_from_run_id: str | None = None
     steps: tuple[WorkflowStepHistory, ...] = ()
     metadata: Mapping[str, object] = MappingProxyType({})
 
@@ -323,6 +358,26 @@ class WorkflowRunHistory:
             else None,
         )
         object.__setattr__(self, "steps", tuple(self.steps))
+        object.__setattr__(
+            self,
+            "resume_step_id",
+            safe_workflow_text(self.resume_step_id, max_length=80)
+            if self.resume_step_id is not None
+            else None,
+        )
+        if self.resume_step_index is not None:
+            object.__setattr__(
+                self,
+                "resume_step_index",
+                max(0, int(self.resume_step_index)),
+            )
+        object.__setattr__(
+            self,
+            "resumed_from_run_id",
+            safe_workflow_text(self.resumed_from_run_id, max_length=80)
+            if self.resumed_from_run_id is not None
+            else None,
+        )
         object.__setattr__(self, "metadata", safe_workflow_history_metadata(self.metadata))
 
     @property
@@ -399,6 +454,109 @@ class WorkflowHistoryResult:
                 ],
             ]
         )
+
+
+@dataclass(frozen=True)
+class WorkflowResumeEligibility:
+    eligible: bool
+    source_run_id: str
+    resume_step_id: str | None = None
+    resume_step_index: int | None = None
+    reason: WorkflowResumeRejectionReason = WorkflowResumeRejectionReason.NONE
+    safe_message: str = "Workflow resume eligibility evaluated."
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "source_run_id",
+            safe_workflow_text(self.source_run_id, max_length=80),
+        )
+        object.__setattr__(
+            self,
+            "resume_step_id",
+            safe_workflow_text(self.resume_step_id, max_length=80)
+            if self.resume_step_id is not None
+            else None,
+        )
+        if self.resume_step_index is not None:
+            object.__setattr__(
+                self,
+                "resume_step_index",
+                max(0, int(self.resume_step_index)),
+            )
+        object.__setattr__(
+            self,
+            "safe_message",
+            safe_workflow_text(self.safe_message, max_length=160),
+        )
+
+    def to_dict(self) -> dict[str, object]:
+        return _contract_dict(self)
+
+
+@dataclass(frozen=True)
+class WorkflowResumeResult:
+    ok: bool
+    status: WorkflowResumeStatus
+    source_run_id: str
+    resumed_run_id: str | None = None
+    resume_step_id: str | None = None
+    resume_step_index: int | None = None
+    execution_started: bool = False
+    rejection_reason: WorkflowResumeRejectionReason = WorkflowResumeRejectionReason.NONE
+    safe_message: str = "Workflow resume result unavailable."
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "source_run_id",
+            safe_workflow_text(self.source_run_id, max_length=80),
+        )
+        object.__setattr__(
+            self,
+            "resumed_run_id",
+            safe_workflow_text(self.resumed_run_id, max_length=80)
+            if self.resumed_run_id is not None
+            else None,
+        )
+        object.__setattr__(
+            self,
+            "resume_step_id",
+            safe_workflow_text(self.resume_step_id, max_length=80)
+            if self.resume_step_id is not None
+            else None,
+        )
+        if self.resume_step_index is not None:
+            object.__setattr__(
+                self,
+                "resume_step_index",
+                max(0, int(self.resume_step_index)),
+            )
+        object.__setattr__(
+            self,
+            "safe_message",
+            safe_workflow_text(self.safe_message, max_length=220),
+        )
+
+    def to_dict(self) -> dict[str, object]:
+        return _contract_dict(self)
+
+    def safe_text_ru(self) -> str:
+        lines = [
+            "Workflow resume:",
+            f"- status: {self.status.value}",
+            f"- source run id: {self.source_run_id or 'unknown'}",
+            f"- resumed run id: {self.resumed_run_id or 'none'}",
+            f"- execution started: {'yes' if self.execution_started else 'no'}",
+            f"- rejection reason: {self.rejection_reason.value}",
+            f"- message: {safe_workflow_text(self.safe_message, max_length=220)}",
+            "- no secrets",
+        ]
+        if self.resume_step_id is not None:
+            lines.append(f"- resume step id: {self.resume_step_id}")
+        if self.resume_step_index is not None:
+            lines.append(f"- resume step index: {self.resume_step_index}")
+        return "\n".join(lines)
 
 
 def _contract_dict(value: object) -> dict[str, object]:

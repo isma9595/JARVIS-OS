@@ -43,6 +43,10 @@ orchestration modules.
   in-memory workflow runs.
 - Desktop Workflow History panel that reads recent workflow runs and selected
   run details through AppService-safe DTOs only.
+- Explicit safe workflow resume for eligible failed/interrupted in-memory
+  workflow runs through AppService, with centralized eligibility checks,
+  definition compatibility validation, duplicate-request protection, and a
+  distinct linked resumed attempt.
 - Windows local filesystem adapter boundary in `platform_adapters/`.
 - Local memory and bounded conversation context in `memory/`.
 - Russian-first language preference with English support in `language/`.
@@ -204,10 +208,13 @@ git diff --check
   refresh, local filtering/search, selection, and safe copy, not replay,
   editing, deletion, or export.
 - Workflow run history is read-only and projected from existing workflow
-  runtime state with safe DTOs; it does not add resume, retry, replay,
-  deletion, editing, export, or persistence redesign.
+  runtime state with safe DTOs.
+- Workflow resume is explicit, policy-gated, and AppService-mediated. It starts
+  at the first safe unfinished step, does not rerun completed steps by default,
+  preserves the source run history, and creates a distinct linked resumed
+  attempt.
 - Desktop workflow history supports viewing, manual refresh, selection, ordered
-  step inspection, and safe copy only.
+  step inspection, safe copy, and explicit resume for eligible runs only.
 - Network/provider calls are explicit-only.
 - Raw microphone audio remains local; recognized text enters the same
   AppService route as typed input.
@@ -223,8 +230,9 @@ git diff --check
 - Some line-ending normalization is deferred to repository maintenance.
 - Desktop Shell action clarity and broader copy/export controls remain future
   UX work.
-- Workflow resume, retry, replay, deletion, editing, export, persistence
-  redesign, and advanced workflow analytics remain future work.
+- Workflow retry, replay, deletion, editing, export, persistence redesign,
+  restart-persistent recovery, and advanced workflow analytics remain future
+  work.
 - Real hardware and external provider checks require explicit manual
   authorization and environment setup.
 - Linux/macOS portability is a future goal, not a current verified support

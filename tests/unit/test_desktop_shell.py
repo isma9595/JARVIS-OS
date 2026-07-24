@@ -11,6 +11,9 @@ from voice.speech_synthesis_backend import SpeechSynthesisResult
 from voice.voice_output_manager import VoiceOutputManager
 from workflows.contracts import (
     WorkflowHistoryResult,
+    WorkflowResumeRejectionReason,
+    WorkflowResumeResult,
+    WorkflowResumeStatus,
     WorkflowRunHistory,
     WorkflowRunHistoryState,
     WorkflowStepHistory,
@@ -110,6 +113,11 @@ def workflow_run(
     workflow_name="Document review",
     objective="Review document safely",
     completed_count=None,
+    resume_eligible=False,
+    resume_reason=WorkflowResumeRejectionReason.NONE,
+    resume_step_id=None,
+    resume_step_index=None,
+    resumed_from_run_id=None,
 ):
     safe_steps = tuple(steps or ())
     return WorkflowRunHistory(
@@ -138,6 +146,11 @@ def workflow_run(
         safe_failure_summary="workflow failed safely"
         if state == WorkflowRunHistoryState.FAILED
         else None,
+        resume_eligible=resume_eligible,
+        resume_rejection_reason=resume_reason,
+        resume_step_id=resume_step_id,
+        resume_step_index=resume_step_index,
+        resumed_from_run_id=resumed_from_run_id,
         steps=safe_steps,
     )
 
@@ -226,6 +239,7 @@ class FakeAppService:
         self.history_calls = []
         self.workflow_list_calls = []
         self.workflow_detail_calls = []
+        self.workflow_resume_calls = []
         self.history_entries = (
             history_entry(
                 "op-new",
@@ -261,6 +275,7 @@ class FakeAppService:
         self.workflow_details = {run.run_id: run for run in self.workflow_runs}
         self.workflow_list_error = None
         self.workflow_detail_error = None
+        self.workflow_resume_result = None
 
     def status_text_ru(self):
         return "\n".join(
@@ -385,6 +400,21 @@ class FakeAppService:
             max_limit=100,
             empty=run is None,
             error=None if run is not None else "workflow_history_unavailable",
+        )
+
+    def resume_workflow_run(self, run_id):
+        self.workflow_resume_calls.append(run_id)
+        if self.workflow_resume_result is not None:
+            return self.workflow_resume_result
+        return WorkflowResumeResult(
+            ok=True,
+            status=WorkflowResumeStatus.STARTED,
+            source_run_id=run_id,
+            resumed_run_id="wf-resumed",
+            resume_step_id="write",
+            resume_step_index=1,
+            execution_started=True,
+            safe_message="Workflow resume started.",
         )
 
 
@@ -814,6 +844,134 @@ def test_desktop_workflow_view_does_not_import_runtime_or_journal_directly():
     assert "ExecutionJournal" not in source
     assert "execution_journal" not in source
     assert ".document_review_runner" not in source
+
+
+def test_workflow_resume_availability_comes_from_projected_dto():
+    service = FakeAppService()
+    service.workflow_runs = (
+        workflow_run(
+            "wf-failed",
+            state=WorkflowRunHistoryState.FAILED,
+            steps=(workflow_step("read", index=0), workflow_step("write", index=1)),
+            completed_count=1,
+            resume_eligible=True,
+            resume_step_id="write",
+            resume_step_index=1,
+        ),
+        workflow_run(
+            "wf-complete",
+            resume_eligible=False,
+            resume_reason=WorkflowResumeRejectionReason.ALREADY_COMPLETED,
+            steps=(workflow_step("done", index=0),),
+        ),
+    )
+    service.workflow_details = {run.run_id: run for run in service.workflow_runs}
+    view_model = DesktopShellViewModel(service)
+
+    assert view_model.state.workflow_resume_available is True
+    assert "resume available: yes" in view_model.state.workflow_details_text
+    view_model.select_workflow_run(1)
+    assert view_model.state.workflow_resume_available is False
+    assert "already_completed" in view_model.state.workflow_resume_text
+
+
+def test_workflow_resume_confirmation_cancellation_makes_no_appservice_call():
+    service = FakeAppService()
+    service.workflow_runs = (
+        workflow_run(
+            "wf-failed",
+            state=WorkflowRunHistoryState.FAILED,
+            steps=(workflow_step("write", index=0, state=WorkflowStepHistoryState.FAILED),),
+            completed_count=0,
+            resume_eligible=True,
+            resume_step_id="write",
+            resume_step_index=0,
+        ),
+    )
+    service.workflow_details = {"wf-failed": service.workflow_runs[0]}
+    view_model = DesktopShellViewModel(service)
+
+    text = view_model.resume_selected_workflow_run(confirmed=False)
+
+    assert text == "Workflow resume cancelled."
+    assert service.workflow_resume_calls == []
+
+
+def test_workflow_resume_confirmation_acceptance_calls_appservice_once_and_refreshes():
+    service = FakeAppService()
+    source = workflow_run(
+        "wf-failed",
+        state=WorkflowRunHistoryState.FAILED,
+        steps=(workflow_step("write", index=0, state=WorkflowStepHistoryState.FAILED),),
+        completed_count=0,
+        resume_eligible=True,
+        resume_step_id="write",
+        resume_step_index=0,
+    )
+    resumed = workflow_run(
+        "wf-resumed",
+        steps=(workflow_step("write", index=0), workflow_step("verify", index=1)),
+        resumed_from_run_id="wf-failed",
+    )
+    service.workflow_runs = (source,)
+    service.workflow_details = {"wf-failed": source}
+    view_model = DesktopShellViewModel(service)
+    service.workflow_runs = (resumed, source)
+    service.workflow_details = {"wf-resumed": resumed, "wf-failed": source}
+
+    text = view_model.resume_selected_workflow_run(confirmed=True)
+
+    assert service.workflow_resume_calls == ["wf-failed"]
+    assert "- status: started" in text
+    assert "- completed steps rerun: no" in text
+    assert view_model.state.selected_workflow_run_id == "wf-resumed"
+    assert "resumed from: wf-failed" in view_model.state.workflow_details_text
+    assert "Step verify" in view_model.state.workflow_details_text
+
+
+def test_workflow_resume_rejection_and_exceptions_are_safe_and_keep_view_usable():
+    service = FakeAppService()
+    source = workflow_run(
+        "wf-failed",
+        state=WorkflowRunHistoryState.FAILED,
+        steps=(workflow_step("write", index=0, state=WorkflowStepHistoryState.FAILED),),
+        completed_count=0,
+        resume_eligible=True,
+        resume_step_id="write",
+        resume_step_index=0,
+    )
+    service.workflow_runs = (source,)
+    service.workflow_details = {"wf-failed": source}
+    service.workflow_resume_result = WorkflowResumeResult(
+        ok=False,
+        status=WorkflowResumeStatus.REJECTED,
+        source_run_id="wf-failed",
+        rejection_reason=WorkflowResumeRejectionReason.WORKFLOW_DEFINITION_INCOMPATIBLE,
+        safe_message="Traceback RuntimeError C:/Users/User/raw.log sk-test-1234567890secret",
+    )
+    view_model = DesktopShellViewModel(service)
+
+    text = view_model.resume_selected_workflow_run(confirmed=True)
+
+    assert service.workflow_resume_calls == ["wf-failed"]
+    assert "workflow_definition_incompatible" in text
+    assert "Traceback" not in text
+    assert "RuntimeError" not in text
+    assert "C:/Users/User" not in text
+    assert "sk-test" not in text
+    assert view_model.state.selected_workflow_run_id == "wf-failed"
+
+
+def test_workflow_resume_unavailable_without_selection_and_double_click_guard():
+    view_model = DesktopShellViewModel(FakeAppService())
+    view_model.select_workflow_run(None)
+
+    no_selection = view_model.resume_selected_workflow_run(confirmed=True)
+    view_model.state = view_model._replace(workflow_resume_in_progress=True)
+    pending = view_model.resume_selected_workflow_run(confirmed=True)
+
+    assert "no workflow run selected" in no_selection
+    assert pending == "Workflow resume is already in progress."
 
 
 def test_view_model_displays_history_entries_newest_first():
