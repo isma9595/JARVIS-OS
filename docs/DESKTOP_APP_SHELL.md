@@ -21,7 +21,8 @@ The desktop shell uses `JarvisAppService` as its app-facing boundary.
 The shell can show service status, list registry commands, preview command
 risk, execute explicit user commands, show recent execution history, and show
 workflow run/step history only through AppService. Workflow resume, when
-available, is also invoked only through AppService.
+available, is also invoked only through AppService. Workflow cancellation, when
+available for an active run, is also invoked only through AppService.
 
 TASK-073 adds versioned AppService contracts. The shell may read contract
 status/cards through AppService, but TASK-073 adds no new screens or key input.
@@ -68,6 +69,8 @@ python run_desktop.py
 - Copy selected workflow run details built from safe projected DTO fields.
 - Resume an eligible selected workflow run after explicit confirmation through
   AppService.
+- Cancel an eligible active workflow run after explicit confirmation through
+  AppService.
 - Display Russian clarification questions and options returned by AppService.
 - Start one explicit one-shot voice request through AppService with the
   `Микрофон` button.
@@ -87,8 +90,9 @@ python run_desktop.py
 - No continuous listening or wake-word service.
 - No history deletion, editing, replay, re-execution, file export, cloud sync,
   or remote history access.
-- No workflow retry, replay, cancellation, deletion, editing, export, workflow
-  creation, arbitrary start-step selection, or step execution controls.
+- No workflow retry, replay, deletion, editing, export, workflow creation,
+  arbitrary start-step selection, per-step cancellation, force-stop, rollback,
+  or step execution controls.
 
 ## Safety
 
@@ -117,6 +121,13 @@ python run_desktop.py
   `JarvisAppService.resume_workflow_run()`, prevents duplicate clicks while the
   request is in progress, refreshes history after the result, and never calls
   `WorkflowRunner` or `ExecutionJournal` directly.
+- Workflow cancellation availability comes from AppService/domain policy
+  projection. The shell asks for explicit confirmation, calls
+  `JarvisAppService.cancel_workflow_run()`, prevents duplicate clicks while the
+  request is in progress, refreshes history after the result, and never calls
+  `WorkflowRunner`, `ExecutionCoordinator`, `ExecutionJournal`, cancellation
+  tokens, or mutable workflow runtime state directly. Cancellation is
+  cooperative; it does not promise immediate force termination or rollback.
 - Risky/network commands require explicit command text and Execute.
 - Voice requests require an explicit button press, run in a worker thread, and
   return through the AppService result boundary.

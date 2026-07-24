@@ -1,10 +1,13 @@
 from dataclasses import asdict, dataclass
+from threading import Barrier, Event, Thread
 
 import pytest
 
 from core.execution_coordinator import ExecutionCoordinator
 from core.policy_boundary import PolicyDecision, PolicyDecisionType, PolicyRequest
 from workflows.contracts import (
+    WorkflowCancellationRejectionReason,
+    WorkflowCancellationStatus,
     WorkflowRunHistory,
     WorkflowRunHistoryState,
     WorkflowResumeRejectionReason,
@@ -45,6 +48,24 @@ class DenyPolicy:
             user_message="denied safely",
             safe_to_execute=False,
         )
+
+
+class CountingCancellationCoordinator(ExecutionCoordinator):
+    def __init__(self):
+        super().__init__()
+        self.cancel_call_count = 0
+
+    def cancel(self, operation_id: str, *, reason: str = "cancelled"):
+        before = self.journal.get(operation_id)
+        result = super().cancel(operation_id, reason=reason)
+        if before is not None and before.status.value not in {
+            "succeeded",
+            "failed",
+            "cancelled",
+            "denied",
+        }:
+            self.cancel_call_count += 1
+        return result
 
 
 def operation(coordinator: ExecutionCoordinator):
@@ -761,3 +782,163 @@ def test_duplicate_resume_requests_create_at_most_one_resumed_attempt():
     assert second.status == WorkflowResumeStatus.CONFLICT
     assert second.rejection_reason == WorkflowResumeRejectionReason.ALREADY_RESUMED
     assert len(resume_started) == 1
+
+
+def active_cancellation_step(step_id, entered: Event):
+    def action(state: RunnerState, token):
+        state.calls.append(step_id)
+        entered.set()
+        while not token.cancelled:
+            pass
+        token.raise_if_cancelled()
+
+    return WorkflowExecutableStep(WorkflowStepDefinition(step_id, step_id), action)
+
+
+def test_active_workflow_cancellation_prevents_later_steps_and_preserves_completed():
+    coordinator = CountingCancellationCoordinator()
+    op, token = operation(coordinator)
+    entered = Event()
+    state = RunnerState(calls=[])
+    runner = build_runner(
+        coordinator,
+        AllowPolicy(),
+        [
+            step("one"),
+            active_cancellation_step("two", entered),
+            step("three"),
+            step("four"),
+        ],
+    )
+    worker = Thread(
+        target=lambda: runner.start(operation=op, state=state, token=token),
+        daemon=True,
+    )
+    worker.start()
+    assert entered.wait(2)
+
+    result = runner.cancel_workflow_run(op.operation_id, reason="workflow_cancelled_by_test")
+    worker.join(2)
+    history = runner.run_history(op.operation_id)
+    journal = coordinator.journal.get(op.operation_id)
+
+    assert result.ok is True
+    assert result.status == WorkflowCancellationStatus.ACCEPTED
+    assert result.cancellation_accepted is True
+    assert result.signal_sent is True
+    assert state.calls == ["one", "two"]
+    assert history.state == WorkflowRunHistoryState.CANCELLED
+    assert history.completed_step_count == 1
+    assert [item.state for item in history.steps] == [
+        WorkflowStepHistoryState.COMPLETED,
+        WorkflowStepHistoryState.CANCELLED,
+        WorkflowStepHistoryState.PENDING,
+        WorkflowStepHistoryState.PENDING,
+    ]
+    assert history.resume_eligible is False
+    assert history.resume_rejection_reason == WorkflowResumeRejectionReason.ACTIVE_RUN
+    assert journal is not None
+    assert journal.metadata["workflow_cancellation_requested"] == "true"
+    assert journal.metadata["workflow_cancellation_status"] == "accepted"
+
+
+def test_duplicate_workflow_cancellation_requests_signal_once_and_record_once():
+    coordinator = CountingCancellationCoordinator()
+    op, token = operation(coordinator)
+    entered = Event()
+    state = RunnerState(calls=[])
+    runner = build_runner(
+        coordinator,
+        AllowPolicy(),
+        [step("one"), active_cancellation_step("two", entered), step("three")],
+    )
+    worker = Thread(
+        target=lambda: runner.start(operation=op, state=state, token=token),
+        daemon=True,
+    )
+    worker.start()
+    assert entered.wait(2)
+
+    barrier = Barrier(3)
+    results = []
+
+    def request_cancel():
+        barrier.wait(2)
+        results.append(runner.cancel_workflow_run(op.operation_id))
+
+    first = Thread(target=request_cancel, daemon=True)
+    second = Thread(target=request_cancel, daemon=True)
+    first.start()
+    second.start()
+    barrier.wait(2)
+    first.join(2)
+    second.join(2)
+    worker.join(2)
+    history = runner.run_history(op.operation_id)
+    journal = coordinator.journal.get(op.operation_id)
+
+    assert sorted(result.status.value for result in results) == [
+        WorkflowCancellationStatus.ACCEPTED.value,
+        WorkflowCancellationStatus.ALREADY_REQUESTED.value,
+    ]
+    assert coordinator.cancel_call_count == 1
+    assert state.calls == ["one", "two"]
+    assert history.state == WorkflowRunHistoryState.CANCELLED
+    assert journal is not None
+    assert journal.metadata["workflow_cancellation_requested"] == "true"
+    assert journal.metadata["workflow_cancellation_status"] == "accepted"
+
+
+def test_completion_and_cancellation_race_produces_one_terminal_state():
+    completed_coordinator = ExecutionCoordinator()
+    completed_op, completed_token = operation(completed_coordinator)
+    completed_state = RunnerState(calls=[])
+    completed_runner = build_runner(completed_coordinator, AllowPolicy(), [step("one")])
+    completed_runner.start(
+        operation=completed_op,
+        state=completed_state,
+        token=completed_token,
+    )
+
+    completed_result = completed_runner.cancel_workflow_run(completed_op.operation_id)
+    completed_history = completed_runner.run_history(completed_op.operation_id)
+    completed_journal = completed_coordinator.journal.get(completed_op.operation_id)
+
+    assert completed_result.ok is False
+    assert completed_result.status == WorkflowCancellationStatus.COMPLETED
+    assert completed_result.rejection_reason == WorkflowCancellationRejectionReason.ALREADY_COMPLETED
+    assert completed_history.state == WorkflowRunHistoryState.COMPLETED
+    assert completed_journal is not None
+    assert completed_journal.status.value == "succeeded"
+    assert "workflow_cancellation_requested" not in completed_journal.metadata
+
+    cancelled_coordinator = CountingCancellationCoordinator()
+    active_op, active_token = operation(cancelled_coordinator)
+    entered = Event()
+    active_state = RunnerState(calls=[])
+    active_runner = build_runner(
+        cancelled_coordinator,
+        AllowPolicy(),
+        [step("one"), active_cancellation_step("two", entered), step("three")],
+    )
+    worker = Thread(
+        target=lambda: active_runner.start(
+            operation=active_op,
+            state=active_state,
+            token=active_token,
+        ),
+        daemon=True,
+    )
+    worker.start()
+    assert entered.wait(2)
+    cancelled_result = active_runner.cancel_workflow_run(active_op.operation_id)
+    worker.join(2)
+    cancelled_history = active_runner.run_history(active_op.operation_id)
+    cancelled_journal = cancelled_coordinator.journal.get(active_op.operation_id)
+
+    assert cancelled_result.ok is True
+    assert cancelled_history.state == WorkflowRunHistoryState.CANCELLED
+    assert active_state.calls == ["one", "two"]
+    assert cancelled_journal is not None
+    assert cancelled_journal.status.value == "cancelled"
+    assert cancelled_journal.metadata["workflow_state"] == "cancelled"

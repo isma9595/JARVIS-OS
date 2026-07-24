@@ -126,6 +126,17 @@ safe unfinished step, and preserves completed steps without replaying them.
 Ineligible, duplicate, incompatible, malformed, or launch-failure cases return
 safe typed rejection results.
 
+TASK-108 adds explicit safe workflow cancellation for eligible active selected
+runs. Desktop reads AppService-projected cancellation eligibility, asks for user
+confirmation, then calls `JarvisAppService.cancel_workflow_run(run_id)`.
+Cancellation eligibility and duplicate-request protection live in the
+workflow/AppService boundary, not in the UI. Cancellation is cooperative: it
+signals the existing operation cancellation token where supported, preserves
+completed steps, does not roll back side effects, and prevents later workflow
+steps from starting after the request is accepted. Completed, inactive failed,
+already-cancelled, malformed, unknown, or ownership-missing runs return safe
+typed rejection results.
+
 Confirmation-required operations pause before side effects. Repeated execution
 is not treated as confirmation. Cancellation and idempotency are tracked through
 the same operation boundary.
@@ -173,6 +184,12 @@ recovery across application restarts, and does not expose arbitrary replay or
 user-selected step execution. Compatibility is checked using stable workflow
 step identity/order metadata captured with the run. A resumed attempt has its
 own operation/run id and safe metadata linking it to the source run.
+
+The runner also owns the TASK-108 cancellation safety model for current active
+workflow runs. Cancellation does not introduce forced thread/process
+termination, rollback, arbitrary step cancellation, or workflow deletion.
+Accepted cancellation records safe cancellation metadata through the existing
+journal/history projection and leaves source/resumed run identities distinct.
 
 `workflows/document_review.py` implements the current local TXT document-review
 workflow. The workflow validates a source file, reads bounded bytes, analyzes

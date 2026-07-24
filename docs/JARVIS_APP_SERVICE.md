@@ -70,6 +70,8 @@ Current public methods include these groups:
   `workflow_run_history()`.
 - Workflow resume: `workflow_resume_eligibility()`,
   `resume_workflow_run()`.
+- Workflow cancellation: `workflow_cancellation_eligibility()`,
+  `cancel_workflow_run()`.
 - Memory helpers: `remember_user_fact()`, `recall_user_fact()`,
   `list_user_memories()`, `forget_user_fact()`,
   `request_forget_all_memories()`, `confirm_forget_all_memories()`,
@@ -136,6 +138,13 @@ Shell reads projected eligibility from workflow history DTOs and calls
 `resume_workflow_run(run_id)` only after explicit confirmation. AppService
 evaluates policy, registers a normal operation, and delegates to the central
 workflow resume boundary. Desktop does not pass a step index, runtime object,
+or mutable workflow state.
+
+TASK-108 adds explicit safe workflow cancellation through AppService. The
+Desktop Shell reads projected cancellation eligibility from workflow history
+DTOs and calls `cancel_workflow_run(run_id)` only after explicit confirmation.
+AppService evaluates policy and delegates to the central workflow cancellation
+boundary. Desktop does not pass a step id, cancellation token, runtime object,
 or mutable workflow state.
 
 ## Planner Interaction
@@ -222,6 +231,15 @@ with safe status/rejection fields. It does not support arbitrary replay,
 user-selected start steps, retry of completed steps, workflow editing,
 deletion, export, or restart-persistent recovery.
 
+`workflow_cancellation_eligibility(run_id)` and `cancel_workflow_run(run_id)`
+expose the narrow TASK-108 cancellation contract. Cancellation is allowed only
+for centrally eligible active workflow runs, is policy-gated, signals the
+existing cooperative cancellation boundary where supported, preserves completed
+steps, prevents later steps after accepted cancellation, and returns
+`WorkflowCancellationResult` with safe status/rejection fields. It does not
+force-kill work, roll back side effects, cancel arbitrary steps, delete runs,
+export data, or redesign persistence.
+
 Desktop Shell consumes these methods for its Workflow History panel. The panel
 performs presentation-only selection, refresh, ordered step display, and safe
 copy over the returned DTOs.
@@ -257,6 +275,12 @@ TASK-105 applies the same principle to workflow run and step history. Workflow
 DTOs omit raw exceptions, tracebacks, internal runner objects, mutable planner
 structures, local paths, and secrets. Malformed or missing optional fields are
 projected with stable fallback values where possible.
+
+TASK-108 applies the same principle to workflow cancellation results and
+eligibility. Cancellation DTOs expose stable status and rejection codes plus
+safe messages only; they do not expose cancellation token objects, thread
+identifiers, raw exceptions, tracebacks, local paths, secrets, or arbitrary
+runtime metadata.
 
 ## Local TTS Projection
 

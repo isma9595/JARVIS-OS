@@ -43,6 +43,9 @@ class DesktopShellState:
     workflow_resume_text: str
     workflow_resume_available: bool
     workflow_resume_in_progress: bool
+    workflow_cancellation_text: str
+    workflow_cancellation_available: bool
+    workflow_cancellation_in_progress: bool
     last_error: str | None
     ui_ready: bool
     safe_mode: bool
@@ -110,6 +113,9 @@ class DesktopShellViewModel:
             workflow_resume_text=workflow["workflow_resume_text"],
             workflow_resume_available=workflow["workflow_resume_available"],
             workflow_resume_in_progress=False,
+            workflow_cancellation_text=workflow["workflow_cancellation_text"],
+            workflow_cancellation_available=workflow["workflow_cancellation_available"],
+            workflow_cancellation_in_progress=False,
             last_error=None,
             ui_ready=True,
             safe_mode=True,
@@ -286,6 +292,9 @@ class DesktopShellViewModel:
             workflow_resume_text=workflow["workflow_resume_text"],
             workflow_resume_available=workflow["workflow_resume_available"],
             workflow_resume_in_progress=False,
+            workflow_cancellation_text=workflow["workflow_cancellation_text"],
+            workflow_cancellation_available=workflow["workflow_cancellation_available"],
+            workflow_cancellation_in_progress=False,
             last_error=workflow["last_error"],
         )
         return self.state.workflow_list_text
@@ -306,6 +315,8 @@ class DesktopShellViewModel:
                 selected_workflow_steps=(),
                 workflow_resume_text="Resume unavailable: no workflow run selected.",
                 workflow_resume_available=False,
+                workflow_cancellation_text="Cancel unavailable: no workflow run selected.",
+                workflow_cancellation_available=False,
                 last_error=None,
             )
             return details
@@ -321,6 +332,8 @@ class DesktopShellViewModel:
             workflow_load_error=details["workflow_load_error"],
             workflow_resume_text=details["workflow_resume_text"],
             workflow_resume_available=details["workflow_resume_available"],
+            workflow_cancellation_text=details["workflow_cancellation_text"],
+            workflow_cancellation_available=details["workflow_cancellation_available"],
             last_error=details["last_error"],
         )
         return self.state.workflow_details_text
@@ -395,6 +408,8 @@ class DesktopShellViewModel:
                 workflow_resume_text=text,
                 workflow_resume_available=workflow["workflow_resume_available"],
                 workflow_resume_in_progress=False,
+                workflow_cancellation_text=workflow["workflow_cancellation_text"],
+                workflow_cancellation_available=workflow["workflow_cancellation_available"],
                 output_text=text,
                 last_error=None if getattr(result, "ok", False) else text,
             )
@@ -405,6 +420,88 @@ class DesktopShellViewModel:
                 workflow_resume_text=text,
                 workflow_resume_available=False,
                 workflow_resume_in_progress=False,
+                output_text=text,
+                last_error=text,
+            )
+            return text
+
+    def workflow_cancellation_confirmation_text(self) -> str:
+        run = self.state.selected_workflow_run
+        if run is None or not self.state.workflow_cancellation_available:
+            return self.state.workflow_cancellation_text
+        run_id = getattr(run, "run_id", None) or getattr(run, "operation_id", None) or "unknown"
+        return self._safe_text(
+            "\n".join(
+                [
+                    "Cancel workflow run?",
+                    f"- run id: {run_id}",
+                    "- completed work will not be undone",
+                    "- the running step may need time to stop safely",
+                    "- later steps will not start after cancellation is accepted",
+                ]
+            )
+        )
+
+    def cancel_selected_workflow_run(self, *, confirmed: bool) -> str:
+        if self.state.workflow_cancellation_in_progress:
+            text = "Workflow cancellation is already in progress."
+            self.state = self._replace(workflow_cancellation_text=text, last_error=text)
+            return text
+        run = self.state.selected_workflow_run
+        run_id = (
+            getattr(run, "run_id", None) or getattr(run, "operation_id", None)
+            if run is not None
+            else None
+        )
+        if not run_id:
+            text = "Cancel unavailable: no workflow run selected."
+            self.state = self._replace(
+                workflow_cancellation_text=text,
+                workflow_cancellation_available=False,
+                last_error=None,
+            )
+            return text
+        if not self.state.workflow_cancellation_available:
+            text = (
+                self.state.workflow_cancellation_text
+                or "Cancel unavailable for this workflow run."
+            )
+            self.state = self._replace(workflow_cancellation_text=text, last_error=None)
+            return text
+        if not confirmed:
+            text = "Workflow cancellation cancelled."
+            self.state = self._replace(workflow_cancellation_text=text, last_error=None)
+            return text
+        self.state = self._replace(workflow_cancellation_in_progress=True)
+        try:
+            result = self.app_service.cancel_workflow_run(str(run_id))
+            text = self._format_workflow_cancellation_result(result)
+            workflow = self._load_workflow_state(preferred_selected_id=str(run_id))
+            self.state = self._replace(
+                workflow_list_text=workflow["workflow_list_text"],
+                selected_workflow_run_id=workflow["selected_workflow_run_id"],
+                workflow_details_text=workflow["workflow_details_text"],
+                workflow_copy_text=workflow["workflow_copy_text"],
+                workflow_runs=workflow["workflow_runs"],
+                selected_workflow_run=workflow["selected_workflow_run"],
+                selected_workflow_steps=workflow["selected_workflow_steps"],
+                workflow_loading=workflow["workflow_loading"],
+                workflow_load_error=workflow["workflow_load_error"],
+                workflow_resume_text=workflow["workflow_resume_text"],
+                workflow_resume_available=workflow["workflow_resume_available"],
+                workflow_cancellation_text=text,
+                workflow_cancellation_available=workflow["workflow_cancellation_available"],
+                workflow_cancellation_in_progress=False,
+                output_text=text,
+                last_error=None if getattr(result, "ok", False) else text,
+            )
+            return text
+        except Exception:
+            text = "Workflow cancellation failed safely."
+            self.state = self._replace(
+                workflow_cancellation_text=text,
+                workflow_cancellation_available=False,
+                workflow_cancellation_in_progress=False,
                 output_text=text,
                 last_error=text,
             )
@@ -513,6 +610,8 @@ class DesktopShellViewModel:
                     "workflow_load_error": error_text,
                     "workflow_resume_text": "Resume unavailable: workflow history could not be loaded.",
                     "workflow_resume_available": False,
+                    "workflow_cancellation_text": "Cancel unavailable: workflow history could not be loaded.",
+                    "workflow_cancellation_available": False,
                     "last_error": error_text,
                 }
             runs = tuple(getattr(result, "runs", ()) or ())
@@ -542,6 +641,8 @@ class DesktopShellViewModel:
                 "workflow_load_error": details["workflow_load_error"],
                 "workflow_resume_text": details["workflow_resume_text"],
                 "workflow_resume_available": details["workflow_resume_available"],
+                "workflow_cancellation_text": details["workflow_cancellation_text"],
+                "workflow_cancellation_available": details["workflow_cancellation_available"],
                 "last_error": details["last_error"],
             }
         except Exception:
@@ -558,6 +659,8 @@ class DesktopShellViewModel:
                 "workflow_load_error": error_text,
                 "workflow_resume_text": "Resume unavailable: workflow history could not be loaded.",
                 "workflow_resume_available": False,
+                "workflow_cancellation_text": "Cancel unavailable: workflow history could not be loaded.",
+                "workflow_cancellation_available": False,
                 "last_error": error_text,
             }
 
@@ -576,6 +679,8 @@ class DesktopShellViewModel:
                     "workflow_load_error": error_text,
                     "workflow_resume_text": "Resume unavailable: workflow details could not be loaded.",
                     "workflow_resume_available": False,
+                    "workflow_cancellation_text": "Cancel unavailable: workflow details could not be loaded.",
+                    "workflow_cancellation_available": False,
                     "last_error": error_text,
                 }
             runs = tuple(getattr(result, "runs", ()) or ())
@@ -591,6 +696,10 @@ class DesktopShellViewModel:
                 "workflow_load_error": None,
                 "workflow_resume_text": self._workflow_resume_text(run),
                 "workflow_resume_available": bool(getattr(run, "resume_eligible", False)),
+                "workflow_cancellation_text": self._workflow_cancellation_text(run),
+                "workflow_cancellation_available": bool(
+                    getattr(run, "cancellation_eligible", False)
+                ),
                 "last_error": None,
             }
         except Exception:
@@ -603,6 +712,8 @@ class DesktopShellViewModel:
                 "workflow_load_error": error_text,
                 "workflow_resume_text": "Resume unavailable: workflow details could not be loaded.",
                 "workflow_resume_available": False,
+                "workflow_cancellation_text": "Cancel unavailable: workflow details could not be loaded.",
+                "workflow_cancellation_available": False,
                 "last_error": error_text,
             }
 
@@ -646,6 +757,7 @@ class DesktopShellViewModel:
             f"- finished: {getattr(run, 'completed_at', None) or 'not finished'}",
             f"- completed steps: {getattr(run, 'completed_step_count', 0)}/{getattr(run, 'total_step_count', 0)}",
             f"- resume available: {'yes' if getattr(run, 'resume_eligible', False) else 'no'}",
+            f"- cancel available: {'yes' if getattr(run, 'cancellation_eligible', False) else 'no'}",
         ]
         if getattr(run, "resumed_from_run_id", None):
             lines.append(f"- resumed from: {getattr(run, 'resumed_from_run_id')}")
@@ -655,6 +767,11 @@ class DesktopShellViewModel:
         reason = self._resume_reason_value(getattr(run, "resume_rejection_reason", None))
         if reason and reason != "none":
             lines.append(f"- resume reason: {reason}")
+        cancellation_reason = self._cancellation_reason_value(
+            getattr(run, "cancellation_rejection_reason", None)
+        )
+        if cancellation_reason and cancellation_reason != "none":
+            lines.append(f"- cancellation reason: {cancellation_reason}")
         active_step = getattr(run, "active_step_name", None) or getattr(run, "active_step_id", None)
         if active_step:
             lines.append(f"- active step: {active_step}")
@@ -709,6 +826,8 @@ class DesktopShellViewModel:
             "workflow_load_error": None,
             "workflow_resume_text": "Resume unavailable: no workflow run selected.",
             "workflow_resume_available": False,
+            "workflow_cancellation_text": "Cancel unavailable: no workflow run selected.",
+            "workflow_cancellation_available": False,
             "last_error": None,
         }
 
@@ -728,6 +847,21 @@ class DesktopShellViewModel:
 
     @staticmethod
     def _resume_reason_value(reason) -> str:
+        value = getattr(reason, "value", reason)
+        return str(value or "none")
+
+    def _workflow_cancellation_text(self, run) -> str:
+        if getattr(run, "cancellation_eligible", False):
+            return "Cancel available for this active workflow run."
+        reason = self._cancellation_reason_value(
+            getattr(run, "cancellation_rejection_reason", None)
+        )
+        if reason and reason != "none":
+            return self._safe_text(f"Cancel unavailable: {reason}.")
+        return "Cancel unavailable for this workflow run."
+
+    @staticmethod
+    def _cancellation_reason_value(reason) -> str:
         value = getattr(reason, "value", reason)
         return str(value or "none")
 
@@ -1113,6 +1247,29 @@ class DesktopShellViewModel:
             lines.append(f"- message: {message}")
         return self._safe_text("\n".join(lines))
 
+    def _format_workflow_cancellation_result(self, result) -> str:
+        status = self._state_value(getattr(result, "status", None))
+        reason = self._cancellation_reason_value(getattr(result, "rejection_reason", None))
+        current_state = self._state_value(getattr(result, "current_state", None))
+        lines = [
+            "Workflow cancellation:",
+            f"- ok: {'yes' if getattr(result, 'ok', False) else 'no'}",
+            "- source: desktop_ui",
+            f"- status: {status}",
+            f"- run id: {getattr(result, 'run_id', None) or 'unknown'}",
+            f"- cancellation accepted: {'yes' if getattr(result, 'cancellation_accepted', False) else 'no'}",
+            f"- signal sent: {'yes' if getattr(result, 'signal_sent', False) else 'no'}",
+            f"- current state: {current_state}",
+            f"- rejection reason: {reason}",
+            "- completed work undone: no",
+            "- later steps start after accepted cancellation: no",
+            "- no secrets",
+        ]
+        message = getattr(result, "safe_message", None)
+        if message:
+            lines.append(f"- message: {message}")
+        return self._safe_text("\n".join(lines))
+
     def _replace(self, **changes) -> DesktopShellState:
         values = self.state.__dict__.copy() if hasattr(self, "state") else {}
         values.update(changes)
@@ -1486,6 +1643,19 @@ class JarvisDesktopShell:
             pady=6,
         )
         self.workflow_resume_button.grid(row=0, column=3, sticky="e", padx=(0, 4))
+        self.workflow_cancel_button = tk.Button(
+            workflow_panel,
+            text="Cancel",
+            command=self._on_workflow_cancel,
+            bg=self.COLORS["panel_alt"],
+            fg=self.COLORS["text"],
+            activebackground=self.COLORS["accent"],
+            activeforeground=self.COLORS["text"],
+            relief="flat",
+            padx=10,
+            pady=6,
+        )
+        self.workflow_cancel_button.grid(row=0, column=4, sticky="e", padx=(0, 4))
         self.workflow_copy_button = tk.Button(
             workflow_panel,
             text="Copy Selected",
@@ -1498,9 +1668,9 @@ class JarvisDesktopShell:
             padx=10,
             pady=6,
         )
-        self.workflow_copy_button.grid(row=0, column=4, sticky="e")
+        self.workflow_copy_button.grid(row=0, column=5, sticky="e")
         workflow_content = tk.Frame(workflow_panel, bg=self.COLORS["panel"])
-        workflow_content.grid(row=1, column=0, columnspan=5, sticky="ew", pady=(8, 0))
+        workflow_content.grid(row=1, column=0, columnspan=6, sticky="ew", pady=(8, 0))
         workflow_content.grid_columnconfigure(0, weight=1)
         workflow_content.grid_columnconfigure(1, weight=1)
         self.workflow_list = tk.Listbox(
@@ -1723,6 +1893,13 @@ class JarvisDesktopShell:
             else "disabled"
         )
         self.workflow_resume_button.configure(state=resume_state)
+        cancel_state = (
+            "normal"
+            if getattr(state, "workflow_cancellation_available", False)
+            and not getattr(state, "workflow_cancellation_in_progress", False)
+            else "disabled"
+        )
+        self.workflow_cancel_button.configure(state=cancel_state)
         self._set_text(self.workflow_details_box, state.workflow_details_text)
 
     @staticmethod
@@ -1857,11 +2034,28 @@ class JarvisDesktopShell:
         self.view_model.resume_selected_workflow_run(confirmed=True)
         self._render_state()
 
+    def _on_workflow_cancel(self) -> None:
+        confirmation_text = self.view_model.workflow_cancellation_confirmation_text()
+        if not self._confirm_workflow_cancel(confirmation_text):
+            self.view_model.cancel_selected_workflow_run(confirmed=False)
+            self._render_state()
+            return
+        self.view_model.cancel_selected_workflow_run(confirmed=True)
+        self._render_state()
+
     def _confirm_workflow_resume(self, text: str) -> bool:
         try:
             from tkinter import messagebox
 
             return bool(messagebox.askyesno("Workflow Resume", self.view_model._safe_text(text)))
+        except Exception:
+            return False
+
+    def _confirm_workflow_cancel(self, text: str) -> bool:
+        try:
+            from tkinter import messagebox
+
+            return bool(messagebox.askyesno("Workflow Cancellation", self.view_model._safe_text(text)))
         except Exception:
             return False
 

@@ -76,6 +76,10 @@ from workflows.document_review import (
 )
 from workflows.contracts import (
     WorkflowHistoryResult,
+    WorkflowCancellationEligibility,
+    WorkflowCancellationRejectionReason,
+    WorkflowCancellationResult,
+    WorkflowCancellationStatus,
     WorkflowResumeEligibility,
     WorkflowResumeRejectionReason,
     WorkflowResumeResult,
@@ -2683,6 +2687,93 @@ class JarvisAppService:
                 resume_step_index=eligibility.resume_step_index,
                 rejection_reason=WorkflowResumeRejectionReason.INTERNAL_ERROR,
                 safe_message="Workflow resume failed safely.",
+            )
+
+    def workflow_cancellation_eligibility(self, run_id: str) -> WorkflowCancellationEligibility:
+        try:
+            return self.document_review_runner.cancellation_eligibility(str(run_id or ""))
+        except Exception:
+            return WorkflowCancellationEligibility(
+                eligible=False,
+                run_id=str(run_id or ""),
+                reason=WorkflowCancellationRejectionReason.INTERNAL_ERROR,
+                safe_message="Workflow cancellation eligibility is unavailable.",
+            )
+
+    def cancel_workflow_run(self, run_id: str) -> WorkflowCancellationResult:
+        workflow_run_id = safe_journal_text(str(run_id or ""), max_length=80)
+        if not workflow_run_id:
+            return WorkflowCancellationResult(
+                ok=False,
+                status=WorkflowCancellationStatus.REJECTED,
+                run_id="",
+                rejection_reason=WorkflowCancellationRejectionReason.NOT_FOUND,
+                safe_message="Workflow run was not found.",
+            )
+        try:
+            eligibility = self.document_review_runner.cancellation_eligibility(workflow_run_id)
+        except Exception:
+            return WorkflowCancellationResult(
+                ok=False,
+                status=WorkflowCancellationStatus.REJECTED,
+                run_id=workflow_run_id,
+                rejection_reason=WorkflowCancellationRejectionReason.INTERNAL_ERROR,
+                safe_message="Workflow cancellation eligibility is unavailable.",
+            )
+        if not eligibility.eligible:
+            status = (
+                WorkflowCancellationStatus.ALREADY_CANCELLED
+                if eligibility.reason == WorkflowCancellationRejectionReason.ALREADY_CANCELLED
+                else WorkflowCancellationStatus.COMPLETED
+                if eligibility.reason == WorkflowCancellationRejectionReason.ALREADY_COMPLETED
+                else WorkflowCancellationStatus.REJECTED
+            )
+            return WorkflowCancellationResult(
+                ok=False,
+                status=status,
+                run_id=workflow_run_id,
+                rejection_reason=eligibility.reason,
+                safe_message=eligibility.safe_message,
+            )
+
+        policy = self.policy_boundary.evaluate(
+            PolicyRequest(
+                source=AppCommandSource.DESKTOP_UI.value,
+                command_id="workflow.cancel",
+                action_id="workflow.cancel",
+                intent_kind="workflow_control",
+                risk="confirmation_required",
+                required_capabilities=(PolicyCapability.FILE_READ.value,),
+                confirmation_present=True,
+                metadata={
+                    "normalized_text": "workflow cancel",
+                    "workflow_id": DOCUMENT_REVIEW_WORKFLOW_ID,
+                    "workflow_run_id": workflow_run_id,
+                },
+            )
+        )
+        if policy.decision == PolicyDecisionType.DENY:
+            return WorkflowCancellationResult(
+                ok=False,
+                status=WorkflowCancellationStatus.REJECTED,
+                run_id=workflow_run_id,
+                rejection_reason=WorkflowCancellationRejectionReason.POLICY_DENIED,
+                safe_message=policy.user_message or "Workflow cancellation was denied by policy.",
+            )
+
+        try:
+            result = self.document_review_runner.cancel_workflow_run(
+                workflow_run_id,
+                reason="workflow_cancelled_by_user",
+            )
+            return result
+        except Exception:
+            return WorkflowCancellationResult(
+                ok=False,
+                status=WorkflowCancellationStatus.FAILED,
+                run_id=workflow_run_id,
+                rejection_reason=WorkflowCancellationRejectionReason.INTERNAL_ERROR,
+                safe_message="Workflow cancellation failed safely.",
             )
 
     @classmethod

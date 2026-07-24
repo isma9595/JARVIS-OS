@@ -86,6 +86,32 @@ class WorkflowResumeRejectionReason(Enum):
     INTERNAL_ERROR = "internal_error"
 
 
+class WorkflowCancellationStatus(Enum):
+    ACCEPTED = "accepted"
+    ALREADY_REQUESTED = "already_requested"
+    ALREADY_CANCELLED = "already_cancelled"
+    REJECTED = "rejected"
+    COMPLETED = "completed"
+    FAILED = "failed"
+
+
+class WorkflowCancellationRejectionReason(Enum):
+    NONE = "none"
+    NOT_FOUND = "not_found"
+    NOT_ACTIVE = "not_active"
+    ALREADY_COMPLETED = "already_completed"
+    FAILED_INACTIVE = "failed_inactive"
+    ALREADY_CANCELLED = "already_cancelled"
+    ALREADY_REQUESTED = "already_requested"
+    MALFORMED_STATE = "malformed_state"
+    UNKNOWN_STATE = "unknown_state"
+    ACTIVE_OWNER_UNAVAILABLE = "active_owner_unavailable"
+    SIGNAL_FAILED = "signal_failed"
+    CONCURRENT_LIFECYCLE_CONFLICT = "concurrent_lifecycle_conflict"
+    POLICY_DENIED = "policy_denied"
+    INTERNAL_ERROR = "internal_error"
+
+
 TERMINAL_WORKFLOW_STATUSES = {
     WorkflowRunStatus.SUCCEEDED,
     WorkflowRunStatus.FAILED,
@@ -279,6 +305,10 @@ class WorkflowRunHistory:
     safe_failure_summary: str | None = None
     cancelled: bool = False
     waiting_for_confirmation: bool = False
+    cancellation_eligible: bool = False
+    cancellation_rejection_reason: WorkflowCancellationRejectionReason = (
+        WorkflowCancellationRejectionReason.NONE
+    )
     resume_eligible: bool = False
     resume_rejection_reason: WorkflowResumeRejectionReason = (
         WorkflowResumeRejectionReason.NONE
@@ -557,6 +587,65 @@ class WorkflowResumeResult:
         if self.resume_step_index is not None:
             lines.append(f"- resume step index: {self.resume_step_index}")
         return "\n".join(lines)
+
+
+@dataclass(frozen=True)
+class WorkflowCancellationEligibility:
+    eligible: bool
+    run_id: str
+    reason: WorkflowCancellationRejectionReason = WorkflowCancellationRejectionReason.NONE
+    safe_message: str = "Workflow cancellation eligibility evaluated."
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "run_id", safe_workflow_text(self.run_id, max_length=80))
+        object.__setattr__(
+            self,
+            "safe_message",
+            safe_workflow_text(self.safe_message, max_length=160),
+        )
+
+    def to_dict(self) -> dict[str, object]:
+        return _contract_dict(self)
+
+
+@dataclass(frozen=True)
+class WorkflowCancellationResult:
+    ok: bool
+    status: WorkflowCancellationStatus
+    run_id: str
+    cancellation_accepted: bool = False
+    signal_sent: bool = False
+    current_state: WorkflowRunHistoryState = WorkflowRunHistoryState.UNKNOWN
+    rejection_reason: WorkflowCancellationRejectionReason = (
+        WorkflowCancellationRejectionReason.NONE
+    )
+    safe_message: str = "Workflow cancellation result unavailable."
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "run_id", safe_workflow_text(self.run_id, max_length=80))
+        object.__setattr__(
+            self,
+            "safe_message",
+            safe_workflow_text(self.safe_message, max_length=220),
+        )
+
+    def to_dict(self) -> dict[str, object]:
+        return _contract_dict(self)
+
+    def safe_text_ru(self) -> str:
+        return "\n".join(
+            [
+                "Workflow cancellation:",
+                f"- status: {self.status.value}",
+                f"- run id: {self.run_id or 'unknown'}",
+                f"- cancellation accepted: {'yes' if self.cancellation_accepted else 'no'}",
+                f"- signal sent: {'yes' if self.signal_sent else 'no'}",
+                f"- current state: {self.current_state.value}",
+                f"- rejection reason: {self.rejection_reason.value}",
+                f"- message: {safe_workflow_text(self.safe_message, max_length=220)}",
+                "- no secrets",
+            ]
+        )
 
 
 def _contract_dict(value: object) -> dict[str, object]:

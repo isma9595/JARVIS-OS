@@ -11,6 +11,9 @@ from voice.speech_synthesis_backend import SpeechSynthesisResult
 from voice.voice_output_manager import VoiceOutputManager
 from workflows.contracts import (
     WorkflowHistoryResult,
+    WorkflowCancellationRejectionReason,
+    WorkflowCancellationResult,
+    WorkflowCancellationStatus,
     WorkflowResumeRejectionReason,
     WorkflowResumeResult,
     WorkflowResumeStatus,
@@ -118,6 +121,8 @@ def workflow_run(
     resume_step_id=None,
     resume_step_index=None,
     resumed_from_run_id=None,
+    cancellation_eligible=False,
+    cancellation_reason=WorkflowCancellationRejectionReason.NONE,
 ):
     safe_steps = tuple(steps or ())
     return WorkflowRunHistory(
@@ -146,6 +151,10 @@ def workflow_run(
         safe_failure_summary="workflow failed safely"
         if state == WorkflowRunHistoryState.FAILED
         else None,
+        cancelled=state == WorkflowRunHistoryState.CANCELLED,
+        waiting_for_confirmation=state == WorkflowRunHistoryState.WAITING_FOR_CONFIRMATION,
+        cancellation_eligible=cancellation_eligible,
+        cancellation_rejection_reason=cancellation_reason,
         resume_eligible=resume_eligible,
         resume_rejection_reason=resume_reason,
         resume_step_id=resume_step_id,
@@ -240,6 +249,7 @@ class FakeAppService:
         self.workflow_list_calls = []
         self.workflow_detail_calls = []
         self.workflow_resume_calls = []
+        self.workflow_cancellation_calls = []
         self.history_entries = (
             history_entry(
                 "op-new",
@@ -276,6 +286,7 @@ class FakeAppService:
         self.workflow_list_error = None
         self.workflow_detail_error = None
         self.workflow_resume_result = None
+        self.workflow_cancellation_result = None
 
     def status_text_ru(self):
         return "\n".join(
@@ -415,6 +426,20 @@ class FakeAppService:
             resume_step_index=1,
             execution_started=True,
             safe_message="Workflow resume started.",
+        )
+
+    def cancel_workflow_run(self, run_id):
+        self.workflow_cancellation_calls.append(run_id)
+        if self.workflow_cancellation_result is not None:
+            return self.workflow_cancellation_result
+        return WorkflowCancellationResult(
+            ok=True,
+            status=WorkflowCancellationStatus.ACCEPTED,
+            run_id=run_id,
+            cancellation_accepted=True,
+            signal_sent=True,
+            current_state=WorkflowRunHistoryState.CANCELLED,
+            safe_message="Workflow cancellation accepted.",
         )
 
 
@@ -972,6 +997,167 @@ def test_workflow_resume_unavailable_without_selection_and_double_click_guard():
 
     assert "no workflow run selected" in no_selection
     assert pending == "Workflow resume is already in progress."
+
+
+def test_workflow_cancellation_availability_comes_from_projected_dto():
+    service = FakeAppService()
+    service.workflow_runs = (
+        workflow_run(
+            "wf-active",
+            state=WorkflowRunHistoryState.RUNNING,
+            steps=(workflow_step("running", index=0, state=WorkflowStepHistoryState.RUNNING),),
+            completed_count=0,
+            cancellation_eligible=True,
+        ),
+        workflow_run(
+            "wf-complete",
+            steps=(workflow_step("done", index=0),),
+            cancellation_eligible=False,
+            cancellation_reason=WorkflowCancellationRejectionReason.ALREADY_COMPLETED,
+        ),
+    )
+    service.workflow_details = {run.run_id: run for run in service.workflow_runs}
+    view_model = DesktopShellViewModel(service)
+
+    assert view_model.state.workflow_cancellation_available is True
+    assert "cancel available: yes" in view_model.state.workflow_details_text
+    view_model.select_workflow_run(1)
+    assert view_model.state.workflow_cancellation_available is False
+    assert "already_completed" in view_model.state.workflow_cancellation_text
+    assert view_model.state.workflow_resume_available is False
+
+
+def test_workflow_cancellation_confirmation_cancellation_makes_no_appservice_call():
+    service = FakeAppService()
+    service.workflow_runs = (
+        workflow_run(
+            "wf-active",
+            state=WorkflowRunHistoryState.RUNNING,
+            steps=(workflow_step("running", index=0, state=WorkflowStepHistoryState.RUNNING),),
+            completed_count=0,
+            cancellation_eligible=True,
+        ),
+    )
+    service.workflow_details = {"wf-active": service.workflow_runs[0]}
+    view_model = DesktopShellViewModel(service)
+
+    text = view_model.cancel_selected_workflow_run(confirmed=False)
+
+    assert text == "Workflow cancellation cancelled."
+    assert service.workflow_cancellation_calls == []
+
+
+def test_workflow_cancellation_acceptance_calls_appservice_once_and_refreshes():
+    service = FakeAppService()
+    active = workflow_run(
+        "wf-active",
+        state=WorkflowRunHistoryState.RUNNING,
+        steps=(
+            workflow_step("done", index=0),
+            workflow_step("running", index=1, state=WorkflowStepHistoryState.RUNNING),
+            workflow_step("later", index=2, state=WorkflowStepHistoryState.PENDING),
+        ),
+        completed_count=1,
+        cancellation_eligible=True,
+    )
+    cancelled = workflow_run(
+        "wf-active",
+        state=WorkflowRunHistoryState.CANCELLED,
+        steps=(
+            workflow_step("done", index=0),
+            workflow_step("running", index=1, state=WorkflowStepHistoryState.CANCELLED),
+            workflow_step("later", index=2, state=WorkflowStepHistoryState.PENDING),
+        ),
+        completed_count=1,
+        cancellation_eligible=False,
+        cancellation_reason=WorkflowCancellationRejectionReason.ALREADY_CANCELLED,
+    )
+    service.workflow_runs = (active,)
+    service.workflow_details = {"wf-active": active}
+    view_model = DesktopShellViewModel(service)
+    service.workflow_runs = (cancelled,)
+    service.workflow_details = {"wf-active": cancelled}
+
+    text = view_model.cancel_selected_workflow_run(confirmed=True)
+
+    assert service.workflow_cancellation_calls == ["wf-active"]
+    assert "- status: accepted" in text
+    assert "- cancellation accepted: yes" in text
+    assert "- later steps start after accepted cancellation: no" in text
+    assert view_model.state.selected_workflow_run_id == "wf-active"
+    assert "state: cancelled" in view_model.state.workflow_details_text
+    assert "Step later" in view_model.state.workflow_details_text
+    assert view_model.state.workflow_cancellation_available is False
+
+
+def test_workflow_cancellation_rejection_and_exceptions_are_safe_and_keep_view_usable():
+    service = FakeAppService()
+    source = workflow_run(
+        "wf-active",
+        state=WorkflowRunHistoryState.RUNNING,
+        steps=(workflow_step("running", index=0, state=WorkflowStepHistoryState.RUNNING),),
+        completed_count=0,
+        cancellation_eligible=True,
+    )
+    service.workflow_runs = (source,)
+    service.workflow_details = {"wf-active": source}
+    service.workflow_cancellation_result = WorkflowCancellationResult(
+        ok=False,
+        status=WorkflowCancellationStatus.REJECTED,
+        run_id="wf-active",
+        rejection_reason=WorkflowCancellationRejectionReason.SIGNAL_FAILED,
+        safe_message="Traceback RuntimeError C:/Users/User/raw.log sk-test-1234567890secret",
+    )
+    view_model = DesktopShellViewModel(service)
+
+    text = view_model.cancel_selected_workflow_run(confirmed=True)
+
+    assert service.workflow_cancellation_calls == ["wf-active"]
+    assert "signal_failed" in text
+    assert "Traceback" not in text
+    assert "RuntimeError" not in text
+    assert "C:/Users/User" not in text
+    assert "sk-test" not in text
+    assert view_model.state.selected_workflow_run_id == "wf-active"
+
+
+def test_workflow_cancellation_unavailable_without_selection_and_double_click_guard():
+    service = FakeAppService()
+    view_model = DesktopShellViewModel(service)
+    view_model.select_workflow_run(None)
+
+    no_selection = view_model.cancel_selected_workflow_run(confirmed=True)
+    view_model.state = view_model._replace(workflow_cancellation_in_progress=True)
+    pending = view_model.cancel_selected_workflow_run(confirmed=True)
+
+    assert "no workflow run selected" in no_selection
+    assert pending == "Workflow cancellation is already in progress."
+    assert service.workflow_cancellation_calls == []
+
+
+def test_desktop_workflow_cancel_uses_only_run_id_and_no_runtime_data():
+    service = FakeAppService()
+    service.workflow_runs = (
+        workflow_run(
+            "wf-active",
+            state=WorkflowRunHistoryState.RUNNING,
+            steps=(workflow_step("running", index=0, state=WorkflowStepHistoryState.RUNNING),),
+            completed_count=0,
+            cancellation_eligible=True,
+        ),
+    )
+    service.workflow_details = {"wf-active": service.workflow_runs[0]}
+    view_model = DesktopShellViewModel(service)
+
+    view_model.cancel_selected_workflow_run(confirmed=True)
+    source = desktop_shell.__loader__.get_source(desktop_shell.__name__)
+
+    assert service.workflow_cancellation_calls == ["wf-active"]
+    assert "WorkflowRunner" not in source
+    assert "ExecutionCoordinator" not in source
+    assert "ExecutionJournal" not in source
+    assert "CancellationToken" not in source
+    assert "execution_journal" not in source
 
 
 def test_view_model_displays_history_entries_newest_first():

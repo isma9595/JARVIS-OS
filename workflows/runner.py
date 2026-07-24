@@ -27,6 +27,10 @@ from workflows.contracts import (
     WorkflowRunHistoryState,
     WorkflowRunSnapshot,
     WorkflowRunStatus,
+    WorkflowCancellationEligibility,
+    WorkflowCancellationRejectionReason,
+    WorkflowCancellationResult,
+    WorkflowCancellationStatus,
     WorkflowResumeEligibility,
     WorkflowResumeRejectionReason,
     WorkflowResumeResult,
@@ -102,6 +106,8 @@ class WorkflowRunner(Generic[StateT]):
         self._runs: dict[str, _WorkflowRun[StateT]] = {}
         self._resume_attempts: dict[str, str] = {}
         self._resuming_sources: set[str] = set()
+        self._cancellation_requests: set[str] = set()
+        self._cancel_lock = RLock()
         self._lock = RLock()
 
     def start(
@@ -139,6 +145,131 @@ class WorkflowRunner(Generic[StateT]):
                     message="Workflow run was not found.",
                 )
             return self._resume_eligibility_for_run(run)
+
+    def cancellation_eligibility(self, operation_id: str) -> WorkflowCancellationEligibility:
+        with self._lock:
+            try:
+                run = self._get_run(operation_id)
+            except KeyError:
+                return _cancellation_eligibility(
+                    False,
+                    operation_id,
+                    reason=WorkflowCancellationRejectionReason.NOT_FOUND,
+                    message="Workflow run was not found.",
+                )
+            return self._cancellation_eligibility_for_run(run)
+
+    def cancel_workflow_run(
+        self,
+        operation_id: str,
+        *,
+        reason: str = "workflow_cancelled",
+    ) -> WorkflowCancellationResult:
+        run = self._runs.get(operation_id)
+        if run is None:
+            return _cancellation_result(
+                False,
+                WorkflowCancellationStatus.REJECTED,
+                operation_id,
+                reason=WorkflowCancellationRejectionReason.NOT_FOUND,
+                message="Workflow run was not found.",
+            )
+        initial = self._cancellation_eligibility_without_wait(run)
+        if not initial.eligible:
+            if initial.reason == WorkflowCancellationRejectionReason.ALREADY_REQUESTED:
+                return _cancellation_result(
+                    True,
+                    WorkflowCancellationStatus.ALREADY_REQUESTED,
+                    run.operation_id,
+                    accepted=True,
+                    signal_sent=False,
+                    current_state=_run_history_state(run.status),
+                    reason=WorkflowCancellationRejectionReason.ALREADY_REQUESTED,
+                    message=initial.safe_message,
+                )
+            status = (
+                WorkflowCancellationStatus.ALREADY_CANCELLED
+                if initial.reason == WorkflowCancellationRejectionReason.ALREADY_CANCELLED
+                else WorkflowCancellationStatus.COMPLETED
+                if initial.reason == WorkflowCancellationRejectionReason.ALREADY_COMPLETED
+                else WorkflowCancellationStatus.REJECTED
+            )
+            return _cancellation_result(
+                False,
+                status,
+                run.operation_id,
+                current_state=_run_history_state(run.status),
+                reason=initial.reason,
+                message=initial.safe_message,
+            )
+        with self._cancel_lock:
+            duplicate = run.operation_id in self._cancellation_requests
+            if not duplicate:
+                self._cancellation_requests.add(run.operation_id)
+        if duplicate:
+            return _cancellation_result(
+                True,
+                WorkflowCancellationStatus.ALREADY_REQUESTED,
+                run.operation_id,
+                accepted=True,
+                signal_sent=False,
+                current_state=_run_history_state(run.status),
+                reason=WorkflowCancellationRejectionReason.ALREADY_REQUESTED,
+                message="Workflow cancellation was already requested.",
+            )
+
+        operation = self.execution_coordinator.cancel(run.operation_id, reason=reason)
+        signal_sent = operation is not None
+        if not signal_sent:
+            with self._cancel_lock:
+                self._cancellation_requests.discard(run.operation_id)
+            return _cancellation_result(
+                False,
+                WorkflowCancellationStatus.FAILED,
+                run.operation_id,
+                current_state=_run_history_state(run.status),
+                reason=WorkflowCancellationRejectionReason.ACTIVE_OWNER_UNAVAILABLE,
+                message="Workflow cancellation owner is unavailable.",
+            )
+
+        with self._lock:
+            run = self._get_run(operation_id)
+            if run.status == WorkflowRunStatus.SUCCEEDED:
+                with self._cancel_lock:
+                    self._cancellation_requests.discard(run.operation_id)
+                return _cancellation_result(
+                    False,
+                    WorkflowCancellationStatus.COMPLETED,
+                    run.operation_id,
+                    signal_sent=signal_sent,
+                    current_state=WorkflowRunHistoryState.COMPLETED,
+                    reason=WorkflowCancellationRejectionReason.ALREADY_COMPLETED,
+                    message="Workflow run already completed.",
+                )
+            if run.status != WorkflowRunStatus.CANCELLED:
+                if run.current_index < len(run.steps):
+                    step_id = run.steps[run.current_index].definition.step_id
+                    run.step_statuses[step_id] = WorkflowStepStatus.CANCELLED
+                    run.step_started_at.setdefault(step_id, utc_now_iso())
+                    run.step_completed_at[step_id] = utc_now_iso()
+                run.status = WorkflowRunStatus.CANCELLED
+                run.completed_at = run.completed_at or utc_now_iso()
+                self._snapshot_and_record(run)
+            self._record_cancellation_metadata(
+                run,
+                status=WorkflowCancellationStatus.ACCEPTED,
+                reason=WorkflowCancellationRejectionReason.NONE,
+                signal_sent=signal_sent,
+            )
+            return _cancellation_result(
+                True,
+                WorkflowCancellationStatus.ACCEPTED,
+                run.operation_id,
+                accepted=True,
+                signal_sent=signal_sent,
+                current_state=WorkflowRunHistoryState.CANCELLED,
+                message="Workflow cancellation accepted.",
+            )
 
     def resume_from_run(
         self,
@@ -270,19 +401,9 @@ class WorkflowRunner(Generic[StateT]):
             return self._advance(run, confirmation_present=True)
 
     def cancel(self, operation_id: str, *, reason: str = "workflow_cancelled") -> WorkflowRunSnapshot:
+        result = self.cancel_workflow_run(operation_id, reason=reason)
         with self._lock:
-            run = self._get_run(operation_id)
-            if run.status in TERMINAL_WORKFLOW_STATUSES:
-                return self._snapshot(run)
-            if run.current_index < len(run.steps):
-                step_id = run.steps[run.current_index].definition.step_id
-                run.step_statuses[step_id] = WorkflowStepStatus.CANCELLED
-                run.step_started_at.setdefault(step_id, utc_now_iso())
-                run.step_completed_at[step_id] = utc_now_iso()
-            run.status = WorkflowRunStatus.CANCELLED
-            run.completed_at = run.completed_at or utc_now_iso()
-            self.execution_coordinator.cancel(operation_id, reason=reason)
-            return self._snapshot_and_record(run)
+            return self._snapshot(self._get_run(result.run_id or operation_id))
 
     def snapshot(self, operation_id: str) -> WorkflowRunSnapshot:
         with self._lock:
@@ -471,6 +592,7 @@ class WorkflowRunner(Generic[StateT]):
         failed = self._latest_non_success_result(run)
         safe_result = self._latest_success_message(run)
         eligibility = self._resume_eligibility_for_run(run)
+        cancellation = self._cancellation_eligibility_for_run(run)
         return WorkflowRunHistory(
             run_id=run.operation_id,
             operation_id=run.operation_id,
@@ -491,6 +613,8 @@ class WorkflowRunner(Generic[StateT]):
             ),
             cancelled=run.status == WorkflowRunStatus.CANCELLED,
             waiting_for_confirmation=run.status == WorkflowRunStatus.AWAITING_CONFIRMATION,
+            cancellation_eligible=cancellation.eligible,
+            cancellation_rejection_reason=cancellation.reason,
             steps=steps,
             metadata=run.safe_metadata,
             resume_eligible=eligibility.eligible,
@@ -566,6 +690,9 @@ class WorkflowRunner(Generic[StateT]):
             "resume_start_step_id",
             "resume_start_step_index",
             "resume_attempt",
+            "workflow_cancellation_requested",
+            "workflow_cancellation_status",
+            "workflow_cancellation_signal_sent",
         ):
             if key in run.safe_metadata:
                 metadata[key] = run.safe_metadata[key]
@@ -632,6 +759,13 @@ class WorkflowRunner(Generic[StateT]):
                 run.operation_id,
                 reason=WorkflowResumeRejectionReason.ALREADY_RESUMED,
                 message="Workflow run already has a resumed attempt.",
+            )
+        if run.operation_id in self._cancellation_requests:
+            return _resume_eligibility(
+                False,
+                run.operation_id,
+                reason=WorkflowResumeRejectionReason.ACTIVE_RUN,
+                message="Workflow run is being cancelled.",
             )
         if not isinstance(run.status, WorkflowRunStatus):
             return _resume_eligibility(
@@ -719,6 +853,76 @@ class WorkflowRunner(Generic[StateT]):
             message="Workflow run can be resumed from the first unfinished step.",
         )
 
+    def _cancellation_eligibility_for_run(
+        self,
+        run: _WorkflowRun[StateT],
+    ) -> WorkflowCancellationEligibility:
+        return self._cancellation_eligibility_without_wait(run)
+
+    def _cancellation_eligibility_without_wait(
+        self,
+        run: _WorkflowRun[StateT],
+    ) -> WorkflowCancellationEligibility:
+        if run.operation_id in self._cancellation_requests:
+            return _cancellation_eligibility(
+                False,
+                run.operation_id,
+                reason=WorkflowCancellationRejectionReason.ALREADY_REQUESTED,
+                message="Workflow cancellation was already requested.",
+            )
+        if not isinstance(run.status, WorkflowRunStatus):
+            return _cancellation_eligibility(
+                False,
+                run.operation_id,
+                reason=WorkflowCancellationRejectionReason.MALFORMED_STATE,
+                message="Workflow run state is not cancellable.",
+            )
+        if run.status == WorkflowRunStatus.SUCCEEDED:
+            return _cancellation_eligibility(
+                False,
+                run.operation_id,
+                reason=WorkflowCancellationRejectionReason.ALREADY_COMPLETED,
+                message="Completed workflow runs cannot be cancelled.",
+            )
+        if run.status == WorkflowRunStatus.FAILED or run.status == WorkflowRunStatus.DENIED:
+            return _cancellation_eligibility(
+                False,
+                run.operation_id,
+                reason=WorkflowCancellationRejectionReason.FAILED_INACTIVE,
+                message="Inactive failed workflow runs cannot be cancelled.",
+            )
+        if run.status == WorkflowRunStatus.CANCELLED:
+            return _cancellation_eligibility(
+                False,
+                run.operation_id,
+                reason=WorkflowCancellationRejectionReason.ALREADY_CANCELLED,
+                message="Workflow run is already cancelled.",
+            )
+        if run.status not in {
+            WorkflowRunStatus.CREATED,
+            WorkflowRunStatus.RUNNING,
+            WorkflowRunStatus.AWAITING_CONFIRMATION,
+        }:
+            return _cancellation_eligibility(
+                False,
+                run.operation_id,
+                reason=WorkflowCancellationRejectionReason.NOT_ACTIVE,
+                message="Workflow run is not active.",
+            )
+        operation = self.execution_coordinator.journal.get(run.operation_id)
+        if operation is None:
+            return _cancellation_eligibility(
+                False,
+                run.operation_id,
+                reason=WorkflowCancellationRejectionReason.ACTIVE_OWNER_UNAVAILABLE,
+                message="Workflow cancellation owner is unavailable.",
+            )
+        return _cancellation_eligibility(
+            True,
+            run.operation_id,
+            message="Workflow run can receive a cancellation request.",
+        )
+
     def _first_unfinished_step_index(self, run: _WorkflowRun[StateT]) -> int | None:
         completed = set(run.completed_step_ids)
         for index, step in enumerate(run.steps):
@@ -753,6 +957,30 @@ class WorkflowRunner(Generic[StateT]):
             }
         )
         self.execution_coordinator.journal.update(operation.operation_id, metadata=metadata)
+
+    def _record_cancellation_metadata(
+        self,
+        run: _WorkflowRun[StateT],
+        *,
+        status: WorkflowCancellationStatus,
+        reason: WorkflowCancellationRejectionReason,
+        signal_sent: bool,
+    ) -> None:
+        operation = self.execution_coordinator.journal.get(run.operation_id)
+        if operation is None:
+            return
+        metadata = dict(operation.metadata or {})
+        if metadata.get("workflow_cancellation_requested") != "true":
+            metadata["workflow_cancellation_requested_at"] = utc_now_iso()
+        metadata.update(
+            {
+                "workflow_cancellation_requested": "true",
+                "workflow_cancellation_status": status.value,
+                "workflow_cancellation_rejection_reason": reason.value,
+                "workflow_cancellation_signal_sent": "yes" if signal_sent else "no",
+            }
+        )
+        self.execution_coordinator.journal.update(run.operation_id, metadata=metadata)
 
     def _objective_summary(self, run: _WorkflowRun[StateT]) -> str:
         for key in ("objective_summary", "objective", "input_preview", "request_summary"):
@@ -863,5 +1091,43 @@ def _resume_result(
         resume_step_index=resume_step_index,
         execution_started=execution_started,
         rejection_reason=reason if not ok else WorkflowResumeRejectionReason.NONE,
+        safe_message=message,
+    )
+
+
+def _cancellation_eligibility(
+    eligible: bool,
+    run_id: str,
+    *,
+    reason: WorkflowCancellationRejectionReason = WorkflowCancellationRejectionReason.NONE,
+    message: str,
+) -> WorkflowCancellationEligibility:
+    return WorkflowCancellationEligibility(
+        eligible=eligible,
+        run_id=run_id,
+        reason=reason if not eligible else WorkflowCancellationRejectionReason.NONE,
+        safe_message=message,
+    )
+
+
+def _cancellation_result(
+    ok: bool,
+    status: WorkflowCancellationStatus,
+    run_id: str,
+    *,
+    accepted: bool = False,
+    signal_sent: bool = False,
+    current_state: WorkflowRunHistoryState = WorkflowRunHistoryState.UNKNOWN,
+    reason: WorkflowCancellationRejectionReason = WorkflowCancellationRejectionReason.NONE,
+    message: str,
+) -> WorkflowCancellationResult:
+    return WorkflowCancellationResult(
+        ok=ok,
+        status=status,
+        run_id=run_id,
+        cancellation_accepted=accepted,
+        signal_sent=signal_sent,
+        current_state=current_state,
+        rejection_reason=reason if not ok else WorkflowCancellationRejectionReason.NONE,
         safe_message=message,
     )

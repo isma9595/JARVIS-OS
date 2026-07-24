@@ -7,6 +7,10 @@ from voice.one_shot_vosk_real_recognition import OneShotVoskRealRecognitionResul
 from voice.speech_synthesis_backend import SpeechSynthesisResult
 from voice.voice_output_manager import VoiceOutputManager
 from workflows.contracts import (
+    WorkflowCancellationEligibility,
+    WorkflowCancellationRejectionReason,
+    WorkflowCancellationResult,
+    WorkflowCancellationStatus,
     WorkflowResumeEligibility,
     WorkflowResumeRejectionReason,
     WorkflowResumeResult,
@@ -633,6 +637,139 @@ def test_resume_workflow_run_rejects_ineligible_and_sanitizes_failures():
     assert rejected.rejection_reason == WorkflowResumeRejectionReason.WORKFLOW_DEFINITION_INCOMPATIBLE
     assert failed.ok is False
     assert failed.rejection_reason == WorkflowResumeRejectionReason.INTERNAL_ERROR
+    assert "Traceback" not in text
+    assert "RuntimeError" not in text
+    assert "C:/Users/User" not in text
+    assert "sk-test" not in text
+
+
+def test_workflow_cancellation_eligibility_is_projected_safely():
+    class FakeWorkflowRunner:
+        def cancellation_eligibility(self, run_id):
+            assert run_id == "run-active"
+            return WorkflowCancellationEligibility(
+                eligible=True,
+                run_id=run_id,
+                safe_message="Workflow run can receive a cancellation request.",
+            )
+
+    service = JarvisAppService(command_processor=FakeCommandProcessor())
+    service.document_review_runner = FakeWorkflowRunner()
+
+    result = service.workflow_cancellation_eligibility("run-active")
+
+    assert result.eligible is True
+    assert result.reason == WorkflowCancellationRejectionReason.NONE
+    assert "Traceback" not in result.safe_message
+
+
+def test_cancel_workflow_run_returns_safe_typed_result_through_policy_gate():
+    class FakeWorkflowRunner:
+        def __init__(self):
+            self.calls = []
+
+        def cancellation_eligibility(self, run_id):
+            return WorkflowCancellationEligibility(
+                eligible=True,
+                run_id=run_id,
+                safe_message="eligible",
+            )
+
+        def cancel_workflow_run(self, run_id, *, reason):
+            self.calls.append((run_id, reason))
+            return WorkflowCancellationResult(
+                ok=True,
+                status=WorkflowCancellationStatus.ACCEPTED,
+                run_id=run_id,
+                cancellation_accepted=True,
+                signal_sent=True,
+                current_state=WorkflowRunHistoryState.CANCELLED,
+                safe_message="Workflow cancellation accepted.",
+            )
+
+    fake = FakeWorkflowRunner()
+    service = JarvisAppService(command_processor=FakeCommandProcessor())
+    service.document_review_runner = fake
+
+    result = service.cancel_workflow_run("run-active")
+
+    assert result.ok is True
+    assert result.status == WorkflowCancellationStatus.ACCEPTED
+    assert result.cancellation_accepted is True
+    assert result.signal_sent is True
+    assert result.current_state == WorkflowRunHistoryState.CANCELLED
+    assert fake.calls == [("run-active", "workflow_cancelled_by_user")]
+    assert "sk-test" not in result.safe_text_ru()
+
+
+def test_cancel_workflow_run_rejects_ineligible_policy_denied_and_sanitizes_failures():
+    from core.policy_boundary import PolicyDecision, PolicyDecisionType
+
+    class IneligibleRunner:
+        def cancellation_eligibility(self, run_id):
+            return WorkflowCancellationEligibility(
+                eligible=False,
+                run_id=run_id,
+                reason=WorkflowCancellationRejectionReason.ALREADY_COMPLETED,
+                safe_message="Traceback RuntimeError C:/Users/User/raw.log sk-test-1234567890secret",
+            )
+
+    class EligibleRunner:
+        def __init__(self):
+            self.calls = []
+
+        def cancellation_eligibility(self, run_id):
+            return WorkflowCancellationEligibility(eligible=True, run_id=run_id)
+
+        def cancel_workflow_run(self, run_id, *, reason):
+            self.calls.append((run_id, reason))
+            return WorkflowCancellationResult(
+                ok=True,
+                status=WorkflowCancellationStatus.ACCEPTED,
+                run_id=run_id,
+                cancellation_accepted=True,
+                signal_sent=True,
+                current_state=WorkflowRunHistoryState.CANCELLED,
+            )
+
+    class DenyingPolicy:
+        def evaluate(self, request):
+            return PolicyDecision(
+                decision=PolicyDecisionType.DENY,
+                reason_codes=("test_denied",),
+                required_capabilities=request.required_capabilities,
+                requires_confirmation=False,
+                user_message="policy denied safely",
+                safe_to_execute=False,
+            )
+
+    class ExplodingRunner:
+        def cancellation_eligibility(self, run_id):
+            return WorkflowCancellationEligibility(eligible=True, run_id=run_id)
+
+        def cancel_workflow_run(self, *_args, **_kwargs):
+            raise RuntimeError("Traceback RuntimeError C:/Users/User/raw.log sk-test-1234567890secret")
+
+    service = JarvisAppService(command_processor=FakeCommandProcessor())
+    service.document_review_runner = IneligibleRunner()
+    rejected = service.cancel_workflow_run("run-completed")
+    eligible = EligibleRunner()
+    service.document_review_runner = eligible
+    service.policy_boundary = DenyingPolicy()
+    denied = service.cancel_workflow_run("run-active")
+    service.policy_boundary = JarvisAppService(command_processor=FakeCommandProcessor()).policy_boundary
+    service.document_review_runner = ExplodingRunner()
+    failed = service.cancel_workflow_run("run-explodes")
+    text = rejected.safe_text_ru() + denied.safe_text_ru() + failed.safe_text_ru()
+
+    assert rejected.ok is False
+    assert rejected.status == WorkflowCancellationStatus.COMPLETED
+    assert rejected.rejection_reason == WorkflowCancellationRejectionReason.ALREADY_COMPLETED
+    assert denied.ok is False
+    assert denied.rejection_reason == WorkflowCancellationRejectionReason.POLICY_DENIED
+    assert eligible.calls == []
+    assert failed.ok is False
+    assert failed.rejection_reason == WorkflowCancellationRejectionReason.INTERNAL_ERROR
     assert "Traceback" not in text
     assert "RuntimeError" not in text
     assert "C:/Users/User" not in text

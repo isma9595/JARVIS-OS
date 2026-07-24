@@ -41,6 +41,13 @@ compatibility, starts from the first safe unfinished step, and does not rerun
 completed steps by default. It is not arbitrary replay, retry of completed
 steps, workflow editing, deletion, export, or restart-persistent recovery.
 
+TASK-108 adds `workflow_cancellation_eligibility(run_id)` and
+`cancel_workflow_run(run_id)`. Cancellation is explicit, policy-gated, bounded
+to eligible active in-memory workflow runs, and returns typed safe DTOs. It
+uses the existing cooperative cancellation boundary where supported, preserves
+completed-step history, prevents later steps after accepted cancellation, and
+does not force-kill running work or roll back side effects.
+
 TASK-078 adds `process_one_shot_voice_request(source)`. It captures one
 explicit local Vosk utterance through the existing one-shot recognition
 boundary, then delegates recognized text to `execute_contract()` so voice input
@@ -95,6 +102,8 @@ addendum. No new desktop screens, key fields, or product UI are added.
 - `WorkflowHistoryResult`
 - `WorkflowResumeEligibility`
 - `WorkflowResumeResult`
+- `WorkflowCancellationEligibility`
+- `WorkflowCancellationResult`
 - `AppContractManifest`
 
 Every contract supports deterministic `to_dict()`. Text-oriented contracts also
@@ -147,6 +156,8 @@ Future UI should use:
 - `workflow_run_history(run_id)`
 - `workflow_resume_eligibility(run_id)`
 - `resume_workflow_run(run_id)`
+- `workflow_cancellation_eligibility(run_id)`
+- `cancel_workflow_run(run_id)`
 
 Future UI should not call `CommandProcessor` or `ActionRouter` directly.
 
@@ -192,9 +203,20 @@ safe rejection reason/message. It does not expose exceptions, tracebacks,
 workflow runtime objects, raw metadata dictionaries, secrets, or filesystem
 paths.
 
-The workflow contracts support viewing and explicit safe resume only. They do
-not support arbitrary replay, retry of completed steps, deletion, editing,
-export, persistence redesign, or restart-persistent recovery.
+`WorkflowCancellationEligibility` reports whether an active run can receive a
+cancellation request and a stable rejection reason when it cannot.
+
+`WorkflowCancellationResult` reports cancellation status, run id, whether the
+request was accepted, whether a cooperative signal was sent, the current
+projected run state, and a stable safe rejection reason/message. It does not
+expose cancellation token objects, thread identifiers, exceptions, tracebacks,
+workflow runtime objects, raw metadata dictionaries, secrets, or filesystem
+paths.
+
+The workflow contracts support viewing, explicit safe resume, and explicit
+safe cancellation only. They do not support arbitrary replay, retry of
+completed steps, force termination, rollback, deletion, editing, export,
+persistence redesign, or restart-persistent recovery.
 
 ## One-Shot Voice Contract
 

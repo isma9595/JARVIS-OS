@@ -47,6 +47,10 @@ orchestration modules.
   workflow runs through AppService, with centralized eligibility checks,
   definition compatibility validation, duplicate-request protection, and a
   distinct linked resumed attempt.
+- Explicit safe workflow cancellation for eligible active in-memory workflow
+  runs through AppService, with centralized eligibility checks, cooperative
+  cancellation signalling, duplicate-request protection, and preserved
+  completed-step history.
 - Windows local filesystem adapter boundary in `platform_adapters/`.
 - Local memory and bounded conversation context in `memory/`.
 - Russian-first language preference with English support in `language/`.
@@ -213,8 +217,12 @@ git diff --check
   at the first safe unfinished step, does not rerun completed steps by default,
   preserves the source run history, and creates a distinct linked resumed
   attempt.
+- Workflow cancellation is explicit, policy-gated, AppService-mediated, and
+  cooperative. It does not roll back completed work or force-kill running
+  work; once accepted, later workflow steps are not started.
 - Desktop workflow history supports viewing, manual refresh, selection, ordered
-  step inspection, safe copy, and explicit resume for eligible runs only.
+  step inspection, safe copy, explicit resume for eligible runs, and explicit
+  cancellation for eligible active runs only.
 - Network/provider calls are explicit-only.
 - Raw microphone audio remains local; recognized text enters the same
   AppService route as typed input.
