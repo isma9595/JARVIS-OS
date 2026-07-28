@@ -1,8 +1,8 @@
 # JARVIS Roadmap
 
-Status: updated by TASK-112. This roadmap begins after the completed
+Status: updated by TASK-114. This roadmap begins after the completed
 execution/workflow platform milestone and the TASK-112 cognitive architecture
-report.
+report, then accounts for the TASK-113 cognitive skeleton implementation.
 
 Task numbering note: repository evidence shows no `.ai/tasks/TASK-111*.md`
 record and no separate TASK-111 implementation commit in the reviewed history.
@@ -16,56 +16,79 @@ approved task explicitly changes this rule.
 
 ## Milestone 1: Conversational Core
 
-Completion criteria: AppService can create and inspect durable-safe
-conversation sessions, record bounded turn summaries, and route typed/voice
-turns through a cognitive facade without changing existing command execution
-behavior. These tasks establish cognitive contracts, session/context
-ownership, durable goal ownership contracts, persistence boundaries, and
-orchestration without execution.
+Completion criteria: AppService can create and inspect cognitive conversation
+sessions, persist safe session summaries, project bounded conversation
+context, and route typed/voice turns through the existing cognitive facade
+without changing command execution behavior. These tasks establish completed
+minimal contracts, in-memory session ownership, AppService integration,
+persistence boundaries, and response composition without execution.
 
-### TASK-113 - Cognitive Contracts Foundation
+### TASK-113 - Cognitive Contracts & Interaction Skeleton - Completed
 
-- Purpose: define immutable conceptual production DTOs for sessions, turns,
-  intents, clarifications, `UserGoal`, plans, memory candidates, memory policy
-  decisions, knowledge, and assistant responses.
+- Delivered scope: minimal immutable conversation contracts; in-memory session
+  lifecycle and ordered turns; orchestration-only
+  `CognitiveInteractionService`; `JarvisAppService` facade integration.
+- Explicit limits: no persistence; no intent, planning, memory, knowledge,
+  provider, or execution ownership.
 - Main architectural risk: duplicating existing AppService/workflow DTO
   authority instead of creating cognitive-only contracts.
-- Expected production files: `cognition/contracts.py`, `cognition/__init__.py`.
+- Production files: `cognition/contracts.py`, `cognition/sessions.py`,
+  `cognition/interaction_service.py`, `cognition/__init__.py`, focused
+  `JarvisAppService` wiring.
 - Expected test areas: contract immutability, serialization, redaction,
-  timestamp/id field presence.
+  timestamp/id field presence, session ordering, interaction orchestration,
+  AppService integration, and architecture boundaries.
 - Dependencies: TASK-112.
-- Completion criteria: contracts import cleanly, serialize deterministically,
-  identify `UserGoal` as the central durable cognitive object for non-trivial
-  or continuing work, allow ephemeral informational turns to remain goal-less,
-  and expose no execution handles.
+- Completion criteria: completed by TASK-113; contracts import cleanly,
+  serialize safely, expose no execution handles, sessions remain in memory
+  only, `ConversationSessionService` is the sole cognitive session-state
+  owner, and `CognitiveInteractionService` coordinates without owning durable
+  state or executing actions.
 
-### TASK-114 - Conversation Session Store
+### TASK-114 - Conversation Session Persistence
 
-- Purpose: add session creation, snapshots, bounded turn append, and safe
-  restart loading for conversation metadata and summaries.
-- Main architectural risk: persisting raw sensitive text by default.
-- Expected production files: `cognition/sessions.py`,
-  `cognition/persistence.py`.
-- Expected test areas: ordering, restart load, corruption handling, redaction,
-  per-session isolation.
+- Purpose: introduce a safe persistence boundary for conversation session
+  metadata and bounded/redacted turn summaries; load safe sessions after
+  restart; preserve per-session ordering and isolation; keep
+  `ConversationSessionService` as the sole session lifecycle owner.
+- Main architectural risks: persisting raw sensitive text by default; turning
+  the persistence adapter into a second session owner; corrupt or partial
+  persisted state breaking application startup; schema evolution without
+  explicit handling.
+- Expected production areas may include: `cognition/persistence.py`; focused
+  extensions to `cognition/sessions.py`; composition/AppService wiring only if
+  required.
+- Expected test areas: restart load, corruption handling, redaction, bounded
+  summaries, per-session isolation, schema/version handling, and unchanged
+  command behavior.
 - Dependencies: TASK-113.
-- Completion criteria: sessions survive restart with safe summaries and no
-  command behavior changes.
+- Completion criteria: safe session summaries survive restart; raw sensitive
+  text is not persisted by default; corrupt records fail safely and do not make
+  the application unusable; no command or execution behavior changes; no
+  provider/network behavior; `ConversationSessionService` remains
+  authoritative.
 
-### TASK-115 - CognitiveInteractionService Skeleton
+### TASK-115 - Conversation Context & Response Composition
 
-- Purpose: add an internal cognitive facade behind AppService that records a
-  turn and returns a safe response without executing actions.
-- Main architectural risk: letting the facade bypass existing AppService
-  contracts or become a second `JarvisAppService`.
-- Expected production files: `cognition/interaction_service.py`,
-  `cognition/response_composer.py`, AppService construction hook.
-- Expected test areas: AppService integration, no provider/network/execution,
-  session turn recording.
+- Purpose: introduce bounded context projection from stored session turns; add
+  a narrow response composer or compatibility response boundary; preserve the
+  existing orchestration-only `CognitiveInteractionService`; return safe
+  conversational responses without execution.
+- Main architectural risks: unbounded context growth; cognition becoming a
+  second AppService; response composition executing actions; leaking raw
+  sensitive history; provider behavior being introduced prematurely.
+- Expected production files: `cognition/context.py`,
+  `cognition/response_composer.py`, focused extensions to
+  `cognition/interaction_service.py` only if required.
+- Expected test areas: bounded context snapshots, redaction, no durable state
+  in interaction orchestration, no provider/network/execution, and unchanged
+  command behavior.
 - Dependencies: TASK-114.
-- Completion criteria: a harmless conversational turn can be handled through
-  AppService and stored in the session log; `CognitiveInteractionService` owns
-  no durable domain state and only coordinates services for one interaction.
+- Completion criteria: interaction service can obtain a bounded context
+  snapshot; response composition remains non-executing; no durable state is
+  owned by `CognitiveInteractionService`; existing command behavior remains
+  unchanged; no provider/network dependency unless a later approved task
+  explicitly adds it.
 
 ## Milestone 2: Intent and Clarification
 
@@ -82,7 +105,8 @@ from approval.
 - Expected production files: `cognition/intent_interpreter.py`.
 - Expected test areas: parity with current AppService/CommandProcessor
   characterization tests, confidence/provenance, unsupported inputs.
-- Dependencies: TASK-115.
+- Dependencies: TASK-115, after bounded context and non-executing response
+  composition exist.
 - Completion criteria: existing command and ordinary-conversation
   classifications project into cognitive DTOs without execution.
 
