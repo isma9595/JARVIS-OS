@@ -1423,14 +1423,15 @@ in one task. The detailed task list is maintained in `docs/ROADMAP.md`.
 
 Milestones:
 
-- Conversational Core: TASK-113 through TASK-115.
-- Intent and Clarification: TASK-116 through TASK-118.
-- Personal Memory and MemoryPolicy: TASK-119 through TASK-122.
-- Goal and Planning: TASK-123 through TASK-126.
-- Knowledge: TASK-127 through TASK-129.
-- Automation and Recovery: TASK-130 through TASK-133.
-- Proactive Assistant: TASK-134 through TASK-136.
-- Desktop 2.0 Integration: TASK-137.
+- Conversational Core: TASK-113 through TASK-116, with TASK-114 reserved for
+  the completed roadmap-alignment record.
+- Intent and Clarification: TASK-117 through TASK-119.
+- Personal Memory and MemoryPolicy: TASK-120 through TASK-123.
+- Goal and Planning: TASK-124 through TASK-127.
+- Knowledge: TASK-128 through TASK-130.
+- Automation and Recovery: TASK-131 through TASK-134.
+- Proactive Assistant: TASK-135 through TASK-137.
+- Desktop 2.0 Integration: TASK-138.
 
 ## Open Architectural Questions
 

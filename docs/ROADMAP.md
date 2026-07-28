@@ -1,8 +1,9 @@
 # JARVIS Roadmap
 
-Status: updated by TASK-114. This roadmap begins after the completed
+Status: updated by TASK-115. This roadmap begins after the completed
 execution/workflow platform milestone and the TASK-112 cognitive architecture
-report, then accounts for the TASK-113 cognitive skeleton implementation.
+report, then accounts for the TASK-113 cognitive skeleton implementation and
+the completed TASK-114 roadmap-alignment record.
 
 Task numbering note: repository evidence shows no `.ai/tasks/TASK-111*.md`
 record and no separate TASK-111 implementation commit in the reviewed history.
@@ -45,7 +46,21 @@ persistence boundaries, and response composition without execution.
   owner, and `CognitiveInteractionService` coordinates without owning durable
   state or executing actions.
 
-### TASK-114 - Conversation Session Persistence
+### TASK-114 - Roadmap Alignment & Session Persistence Definition - Completed
+
+- Delivered scope: documentation-only alignment of this roadmap after
+  TASK-113, preserving TASK-113 as completed and defining persistence and
+  context/composition as the next implementation steps.
+- Explicit limits: no production code, tests, persistence implementation,
+  AppService behavior changes, provider behavior, execution behavior, or
+  command behavior changes.
+- Production files: `.ai/tasks/TASK-114.md`, `docs/ROADMAP.md`.
+- Dependencies: TASK-113.
+- Completion criteria: completed by TASK-114; the roadmap no longer schedules
+  duplicate implementation of TASK-113 contracts, in-memory sessions,
+  interaction orchestration, or AppService integration.
+
+### TASK-115 - Conversation Session Persistence
 
 - Purpose: introduce a safe persistence boundary for conversation session
   metadata and bounded/redacted turn summaries; load safe sessions after
@@ -61,14 +76,14 @@ persistence boundaries, and response composition without execution.
 - Expected test areas: restart load, corruption handling, redaction, bounded
   summaries, per-session isolation, schema/version handling, and unchanged
   command behavior.
-- Dependencies: TASK-113.
+- Dependencies: TASK-113 and TASK-114.
 - Completion criteria: safe session summaries survive restart; raw sensitive
   text is not persisted by default; corrupt records fail safely and do not make
   the application unusable; no command or execution behavior changes; no
   provider/network behavior; `ConversationSessionService` remains
   authoritative.
 
-### TASK-115 - Conversation Context & Response Composition
+### TASK-116 - Conversation Context & Response Composition
 
 - Purpose: introduce bounded context projection from stored session turns; add
   a narrow response composer or compatibility response boundary; preserve the
@@ -83,7 +98,7 @@ persistence boundaries, and response composition without execution.
 - Expected test areas: bounded context snapshots, redaction, no durable state
   in interaction orchestration, no provider/network/execution, and unchanged
   command behavior.
-- Dependencies: TASK-114.
+- Dependencies: TASK-115.
 - Completion criteria: interaction service can obtain a bounded context
   snapshot; response composition remains non-executing; no durable state is
   owned by `CognitiveInteractionService`; existing command behavior remains
@@ -96,7 +111,7 @@ Completion criteria: cognitive interpretation owns non-executing user intent
 for conversation turns, and clarification state is durable-safe and distinct
 from approval.
 
-### TASK-116 - IntentInterpreter Adapter
+### TASK-117 - IntentInterpreter Adapter
 
 - Purpose: wrap current `HybridIntentResolver`, `CommandResolutionService`, and
   command registry evidence behind cognitive `UserIntent`.
@@ -105,12 +120,12 @@ from approval.
 - Expected production files: `cognition/intent_interpreter.py`.
 - Expected test areas: parity with current AppService/CommandProcessor
   characterization tests, confidence/provenance, unsupported inputs.
-- Dependencies: TASK-115, after bounded context and non-executing response
+- Dependencies: TASK-116, after bounded context and non-executing response
   composition exist.
 - Completion criteria: existing command and ordinary-conversation
   classifications project into cognitive DTOs without execution.
 
-### TASK-117 - ClarificationCoordinator
+### TASK-118 - ClarificationCoordinator
 
 - Purpose: centralize pending clarification records for ambiguous intent and
   missing slots.
@@ -120,11 +135,11 @@ from approval.
   session-store extensions.
 - Expected test areas: option matching, expiry, restart recovery,
   cancellation, no approval side effects.
-- Dependencies: TASK-116.
+- Dependencies: TASK-117.
 - Completion criteria: ambiguous turns produce a persisted pending
   clarification and a later answer resolves only meaning.
 
-### TASK-118 - ReferenceResolver Phase 1
+### TASK-119 - ReferenceResolver Phase 1
 
 - Purpose: resolve references from recent conversation context and read-only
   AppService history projections.
@@ -133,7 +148,7 @@ from approval.
   `cognition/context.py`.
 - Expected test areas: "it/again" references, ambiguous candidates,
   workflow-run references, low-confidence clarification.
-- Dependencies: TASK-117.
+- Dependencies: TASK-118.
 - Completion criteria: simple read-only references resolve; mutating ambiguous
   references ask clarification.
 
@@ -144,7 +159,7 @@ based for inferred writes, and integrated with conversation recall without
 becoming an execution owner. `MemoryPolicy` must be introduced before inferred
 memory writes are represented.
 
-### TASK-119 - MemoryPolicy Foundation
+### TASK-120 - MemoryPolicy Foundation
 
 - Purpose: add a distinct memory policy component that decides what may be
   stored, what needs explicit approval, what must never be stored, retention,
@@ -155,11 +170,11 @@ memory writes are represented.
 - Expected test areas: secret rejection, approval requirement decisions,
   retention/expiry, deduplication/supersession, sensitivity classification,
   deletion/forgetting decisions.
-- Dependencies: TASK-118.
+- Dependencies: TASK-119.
 - Completion criteria: policy decisions are deterministic, serializable, and
   own no memory storage.
 
-### TASK-120 - MemoryService Read Adapter
+### TASK-121 - MemoryService Read Adapter
 
 - Purpose: expose existing `LocalMemoryManager` through cognitive memory read
   and recall contracts while keeping MemoryService as the memory record and
@@ -168,11 +183,11 @@ memory writes are represented.
 - Expected production files: `cognition/memory_service.py`.
 - Expected test areas: exact recall, aliases, unavailable store, redaction,
   provenance.
-- Dependencies: TASK-119.
+- Dependencies: TASK-120.
 - Completion criteria: cognitive responses can cite memory records by id using
   current storage; MemoryPolicy owns no storage.
 
-### TASK-121 - MemoryCandidate Approval Flow
+### TASK-122 - MemoryCandidate Approval Flow
 
 - Purpose: represent inferred memory writes as candidates requiring explicit
   user consent after MemoryPolicy evaluation.
@@ -181,10 +196,10 @@ memory writes are represented.
   `cognition/memory_policy.py`, `cognition/plan_policy.py`.
 - Expected test areas: candidate creation, rejection, approval, expiry,
   secret-like rejection.
-- Dependencies: TASK-120.
+- Dependencies: TASK-121.
 - Completion criteria: inferred memory never persists until approved.
 
-### TASK-122 - Explicit Memory Command Migration
+### TASK-123 - Explicit Memory Command Migration
 
 - Purpose: route explicit remember/recall/list/forget cognitive turns through
   MemoryService while preserving existing AppService behavior.
@@ -194,7 +209,7 @@ memory writes are represented.
   service updates.
 - Expected test areas: existing characterization tests, operation metadata,
   forget-all confirmation, session context update.
-- Dependencies: TASK-121.
+- Dependencies: TASK-122.
 - Completion criteria: memory commands keep current visible behavior with a
   clearer cognitive owner.
 
@@ -203,7 +218,7 @@ memory writes are represented.
 Completion criteria: cognitive goals and proposed plans exist above current
   planner/workflow execution, with approval and stale-plan rules.
 
-### TASK-123 - GoalService Foundation
+### TASK-124 - GoalService Foundation
 
 - Purpose: create durable-safe `UserGoal` records linked to sessions and
   source turns for non-trivial or continuing work.
@@ -211,12 +226,12 @@ Completion criteria: cognitive goals and proposed plans exist above current
 - Expected production files: `cognition/goals.py`, persistence extensions.
 - Expected test areas: goal lifecycle, restart recovery, cancellation,
   execution-link summaries.
-- Dependencies: TASK-118.
+- Dependencies: TASK-119.
 - Completion criteria: active goals can be created, inspected, blocked, and
   cancelled without executing anything; simple informational turns may remain
   goal-less.
 
-### TASK-124 - CognitivePlanner Draft Plans
+### TASK-125 - CognitivePlanner Draft Plans
 
 - Purpose: produce `ProposedPlan` drafts for complex goals using existing
   command/planner capability metadata.
@@ -225,10 +240,10 @@ Completion criteria: cognitive goals and proposed plans exist above current
   `cognition/execution_adapter.py`.
 - Expected test areas: read-only plan drafts, step conversion hints, malformed
   plan refusal, no execution.
-- Dependencies: TASK-123.
+- Dependencies: TASK-124.
 - Completion criteria: complex goals produce safe proposed plans only.
 
-### TASK-125 - PlanPolicyEvaluator and Approval Records
+### TASK-126 - PlanPolicyEvaluator and Approval Records
 
 - Purpose: add stale-plan, risk, privacy, and approval evaluation before any
   plan can be converted to execution.
@@ -237,10 +252,10 @@ Completion criteria: cognitive goals and proposed plans exist above current
   approval persistence updates.
 - Expected test areas: stale approval, risky step approval, clarification vs
   approval separation, conflicting instructions.
-- Dependencies: TASK-124.
+- Dependencies: TASK-125.
 - Completion criteria: approval is explicit, version-bound, and policy-gated.
 
-### TASK-126 - Approved Plan To Existing Execution Contracts
+### TASK-127 - Approved Plan To Existing Execution Contracts
 
 - Purpose: convert approved cognitive plan steps into current AppService
   command/workflow contracts without changing WorkflowRunner ownership.
@@ -249,7 +264,7 @@ Completion criteria: cognitive goals and proposed plans exist above current
   integration.
 - Expected test areas: operation registration, workflow run linkage,
   cancellation, failure projection, idempotency.
-- Dependencies: TASK-125.
+- Dependencies: TASK-126.
 - Completion criteria: approved simple plans can execute through existing
   execution/workflow owners and link back to goals.
 
@@ -258,7 +273,7 @@ Completion criteria: cognitive goals and proposed plans exist above current
 Completion criteria: retrieval is provenance-based, permission-aware, and
 separate from memory and execution.
 
-### TASK-127 - KnowledgeService Local Sources
+### TASK-128 - KnowledgeService Local Sources
 
 - Purpose: retrieve from approved local repository/docs indexes and session
   summaries as non-authoritative, sourced, timestamped, confidence-bearing
@@ -267,22 +282,22 @@ separate from memory and execution.
 - Expected production files: `cognition/knowledge_service.py`.
 - Expected test areas: allowed source constraints, provenance, freshness,
   unavailable source handling.
-- Dependencies: TASK-115.
+- Dependencies: TASK-116.
 - Completion criteria: informational answers can include local-source
   provenance without network; KnowledgeService does not own truth.
 
-### TASK-128 - Memory-Backed Knowledge Retrieval
+### TASK-129 - Memory-Backed Knowledge Retrieval
 
 - Purpose: allow KnowledgeService to use MemoryService read summaries as a
   source while preserving memory ownership.
 - Main architectural risk: duplicating memory contents in knowledge cache.
 - Expected production files: `cognition/knowledge_service.py`.
 - Expected test areas: memory provenance, sensitivity tags, cache separation.
-- Dependencies: TASK-120 and TASK-127.
+- Dependencies: TASK-121 and TASK-128.
 - Completion criteria: memory-derived knowledge cites memory ids and stores no
   duplicate durable memory.
 
-### TASK-129 - External Knowledge Gate Design Implementation
+### TASK-130 - External Knowledge Gate Design Implementation
 
 - Purpose: add explicit permission and privacy-gated external retrieval
   proposal path.
@@ -290,7 +305,7 @@ separate from memory and execution.
 - Expected production files: knowledge permission adapter and policy updates.
 - Expected test areas: blocked-by-default network, consent, stale knowledge,
   provider/search failure.
-- Dependencies: TASK-125 and TASK-127.
+- Dependencies: TASK-126 and TASK-128.
 - Completion criteria: external retrieval can be proposed and approved, but no
   hidden network is used.
 
@@ -299,7 +314,7 @@ separate from memory and execution.
 Completion criteria: durable workflow/execution recovery boundaries are
 addressed before unattended background automation is claimed.
 
-### TASK-130 - Durable Workflow/Execution Recovery Boundary
+### TASK-131 - Durable Workflow/Execution Recovery Boundary
 
 - Purpose: define what can and cannot be recovered for execution operations and
   workflow runs after restart before any unattended background behavior.
@@ -309,11 +324,11 @@ addressed before unattended background automation is claimed.
   status projection contracts.
 - Expected test areas: interrupted state, unavailable execution links, safe
   resume messaging, cancellation/revise options.
-- Dependencies: TASK-126.
+- Dependencies: TASK-127.
 - Completion criteria: restart behavior is explicit and no unattended
   automation is claimed without durable execution/workflow recovery semantics.
 
-### TASK-131 - Background Goal Model
+### TASK-132 - Background Goal Model
 
 - Purpose: extend goals with approved background eligibility, schedule intent,
   and cancellation expectations.
@@ -321,10 +336,10 @@ addressed before unattended background automation is claimed.
 - Expected production files: `cognition/goals.py`, policy updates.
 - Expected test areas: disabled-by-default behavior, consent records, restart
   recovery.
-- Dependencies: TASK-130.
+- Dependencies: TASK-131.
 - Completion criteria: background goals can be represented but not yet run.
 
-### TASK-132 - Automation Policy and Scheduler Adapter
+### TASK-133 - Automation Policy and Scheduler Adapter
 
 - Purpose: define policy checks and a narrow scheduler adapter for approved
   background proposals.
@@ -333,10 +348,10 @@ addressed before unattended background automation is claimed.
   extension, scheduler adapter.
 - Expected test areas: stale plans, cancellation, frequency bounds,
   no direct action execution.
-- Dependencies: TASK-131.
+- Dependencies: TASK-132.
 - Completion criteria: approved automation can be queued as a proposal only.
 
-### TASK-133 - Restart-Safe Automation Observation
+### TASK-134 - Restart-Safe Automation Observation
 
 - Purpose: show background goal and linked execution status after restart using
   durable cognitive state and available execution projections.
@@ -346,7 +361,7 @@ addressed before unattended background automation is claimed.
   extension.
 - Expected test areas: interrupted state, missing execution links, safe resume
   messaging.
-- Dependencies: TASK-132.
+- Dependencies: TASK-133.
 - Completion criteria: user can see and cancel/revise interrupted automation
   state safely.
 
@@ -355,7 +370,7 @@ addressed before unattended background automation is claimed.
 Completion criteria: suggestions are consent-bound proposals with dismissal
 state and no hidden execution.
 
-### TASK-134 - ProactiveSuggestionService Foundation
+### TASK-135 - ProactiveSuggestionService Foundation
 
 - Purpose: represent proactive suggestions, dismiss/snooze state, and consent
   records.
@@ -363,11 +378,11 @@ state and no hidden execution.
   trigger.
 - Expected production files: `cognition/proactive.py`.
 - Expected test areas: disabled default, consent, snooze/dismiss, persistence.
-- Dependencies: TASK-123.
+- Dependencies: TASK-124.
 - Completion criteria: service can return no suggestion or a consent-bound
   suggestion DTO.
 
-### TASK-135 - Proactive Policy Evaluation
+### TASK-136 - Proactive Policy Evaluation
 
 - Purpose: enforce sensitivity, frequency, stale context, and approval rules
   for suggestions.
@@ -377,11 +392,11 @@ state and no hidden execution.
   `cognition/plan_policy.py`.
 - Expected test areas: stale suppression, sensitive memory suppression,
   user-dismissed suppression.
-- Dependencies: TASK-134.
+- Dependencies: TASK-135.
 - Completion criteria: unsafe or stale suggestions are suppressed with
   observable reason codes.
 
-### TASK-136 - Suggestion To Goal Flow
+### TASK-137 - Suggestion To Goal Flow
 
 - Purpose: accepted suggestions create normal goals or plans through the
   existing cognitive path.
@@ -390,7 +405,7 @@ state and no hidden execution.
 - Expected production files: proactive/AppService integration.
 - Expected test areas: accept/dismiss, goal creation, no direct execution,
   approval-required follow-up.
-- Dependencies: TASK-135 and TASK-125.
+- Dependencies: TASK-136 and TASK-126.
 - Completion criteria: accepted suggestions enter the same goal/planning
   pipeline as user requests.
 
@@ -399,7 +414,7 @@ state and no hidden execution.
 Completion criteria: Desktop presents sessions, clarifications, goals, plans,
 and suggestions through AppService DTOs only.
 
-### TASK-137 - Desktop Conversation Sessions, Decisions, And Suggestions UX
+### TASK-138 - Desktop Conversation Sessions, Decisions, And Suggestions UX
 
 - Purpose: show current session, recent turn summaries, restart recovery
   status, clarification options, plan approvals, and consent-bound proactive
@@ -409,7 +424,7 @@ and suggestions through AppService DTOs only.
 - Expected test areas: AppService-only boundary, disabled default, accept to
   goal, dismiss/snooze persistence, clarification answer, approve/reject, stale
   approval, disabled unsafe buttons, empty/unavailable states.
-- Dependencies: TASK-115, TASK-117, TASK-125, and TASK-136.
+- Dependencies: TASK-116, TASK-118, TASK-126, and TASK-137.
 - Completion criteria: Desktop can inspect session status through AppService,
   separates "answer a question" from "approve action", shows suggestions as
   visible proposals only, and routes accepted work through cognitive

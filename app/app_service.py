@@ -241,6 +241,7 @@ class JarvisAppService:
         one_shot_voice_recognition_factory=None,
         planner_service=None,
         cognitive_session_service=None,
+        cognitive_session_repository=None,
         cognitive_interaction_service=None,
     ):
         self._startup_profiler = StartupProfiler(clock=startup_clock)
@@ -307,7 +308,8 @@ class JarvisAppService:
                 command_registry=self.command_registry,
             )
             self.cognitive_session_service = (
-                cognitive_session_service or ConversationSessionService()
+                cognitive_session_service
+                or ConversationSessionService(repository=cognitive_session_repository)
             )
             self.cognitive_interaction_service = (
                 cognitive_interaction_service

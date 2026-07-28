@@ -16,13 +16,14 @@ def _imports_for(path: Path) -> set[str]:
     return imports
 
 
-def test_cognition_package_contains_only_task_113_skeleton_modules():
+def test_cognition_package_contains_only_approved_cognitive_modules():
     modules = {path.name for path in COGNITION_ROOT.glob("*.py")}
 
     assert modules == {
         "__init__.py",
         "contracts.py",
         "interaction_service.py",
+        "persistence.py",
         "sessions.py",
     }
 
@@ -56,9 +57,31 @@ def test_interaction_service_does_not_import_execution_or_provider_owners():
     assert "memory" not in imports
 
 
+def test_persistence_does_not_import_appservice_or_runtime_owners():
+    imports = _imports_for(COGNITION_ROOT / "persistence.py")
+    forbidden = {
+        "app.app_service",
+        "cognition.interaction_service",
+        "core.execution_coordinator",
+        "workflows.runner",
+        "memory",
+        "platform_adapters",
+    }
+
+    assert not forbidden.intersection(imports)
+    assert not any(module.startswith("ai.") for module in imports)
+
+
 def test_session_state_has_one_authoritative_owner():
     session_source = (COGNITION_ROOT / "sessions.py").read_text(encoding="utf-8")
     interaction_source = (COGNITION_ROOT / "interaction_service.py").read_text(encoding="utf-8")
 
     assert "self._sessions" in session_source
     assert "self._sessions" not in interaction_source
+
+
+def test_interaction_service_owns_no_repository_or_session_cache():
+    source = (COGNITION_ROOT / "interaction_service.py").read_text(encoding="utf-8")
+
+    assert "repository" not in source
+    assert "_sessions" not in source

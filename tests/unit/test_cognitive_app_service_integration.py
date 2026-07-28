@@ -5,6 +5,7 @@ from cognition import (
     AssistantResponseType,
     ConversationSessionClosedError,
     ConversationSessionStatus,
+    LocalConversationSessionRepository,
 )
 
 
@@ -98,3 +99,22 @@ def test_session_creation_and_snapshot_do_not_call_execution_workflow_or_provide
 
     assert snapshot.session_id == session.session_id
     assert snapshot.turn_count == 0
+
+
+def test_app_service_can_recover_sessions_through_injected_repository(tmp_path):
+    repository = LocalConversationSessionRepository(tmp_path)
+    first_service = JarvisAppService(
+        command_processor=FakeCommandProcessor(),
+        cognitive_session_repository=repository,
+    )
+    session = first_service.start_conversation_session()
+    first_service.handle_conversation_turn("hello", AppCommandSource.TEST, session.session_id)
+
+    restarted = JarvisAppService(
+        command_processor=FakeCommandProcessor(),
+        cognitive_session_repository=LocalConversationSessionRepository(tmp_path),
+    )
+    snapshot = restarted.conversation_session_snapshot(session.session_id)
+
+    assert snapshot.session_id == session.session_id
+    assert snapshot.turn_count == 2
