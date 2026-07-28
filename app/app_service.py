@@ -48,6 +48,14 @@ from app.conversational_loop import (
     ConversationalResult,
     SafeConversationalLoop,
 )
+from cognition import (
+    CognitiveInteractionResult,
+    CognitiveInteractionService,
+    ConversationSessionService,
+    ConversationSessionSnapshot,
+    ConversationTurn,
+    ConversationTurnInput,
+)
 from core.command_registry import (
     CommandCategory,
     CommandMetadata,
@@ -232,6 +240,8 @@ class JarvisAppService:
         provider_runtime_factory=None,
         one_shot_voice_recognition_factory=None,
         planner_service=None,
+        cognitive_session_service=None,
+        cognitive_interaction_service=None,
     ):
         self._startup_profiler = StartupProfiler(clock=startup_clock)
         self._startup_eager_components = (
@@ -295,6 +305,16 @@ class JarvisAppService:
             self.conversational_loop = SafeConversationalLoop(
                 app_service=self,
                 command_registry=self.command_registry,
+            )
+            self.cognitive_session_service = (
+                cognitive_session_service or ConversationSessionService()
+            )
+            self.cognitive_interaction_service = (
+                cognitive_interaction_service
+                or CognitiveInteractionService(
+                    session_service=self.cognitive_session_service,
+                    response_delegate=self._cognitive_compatibility_response,
+                )
             )
             self.intent_resolver = HybridIntentResolver(self.command_registry)
             self.policy_boundary = PolicyDecisionBoundary()
@@ -950,6 +970,48 @@ class JarvisAppService:
 
     def conversational_capabilities_text_ru(self) -> str:
         return self.conversational_loop.capabilities_text_ru()
+
+    def start_conversation_session(self) -> ConversationSessionSnapshot:
+        return self.cognitive_session_service.create_session()
+
+    def conversation_session_snapshot(self, session_id: str) -> ConversationSessionSnapshot:
+        return self.cognitive_session_service.get_snapshot(session_id)
+
+    def handle_conversation_turn(
+        self,
+        text: str,
+        source: AppCommandSource | str = AppCommandSource.UNKNOWN,
+        session_id: str | None = None,
+        locale: str | None = None,
+    ) -> CognitiveInteractionResult:
+        return self.cognitive_interaction_service.handle_turn(
+            ConversationTurnInput(
+                text=text,
+                source=self._source_value(source),
+                session_id=session_id,
+                locale=locale,
+            )
+        )
+
+    def close_conversation_session(self, session_id: str) -> ConversationSessionSnapshot:
+        return self.cognitive_session_service.close_session(session_id)
+
+    def _cognitive_compatibility_response(
+        self,
+        turn_input: ConversationTurnInput,
+        user_turn: ConversationTurn,
+    ) -> str:
+        del user_turn
+        result = self.conversational_loop.handle(
+            ConversationalRequest(
+                text=turn_input.text,
+                source=turn_input.source,
+                allow_network=False,
+                allow_command_execution=False,
+                allow_risky_actions=False,
+            )
+        )
+        return self.conversational_loop.result_text_ru(result)
 
     def provider_runtime_status(self):
         return self._provider_runtime().all_credential_statuses()
@@ -4260,6 +4322,10 @@ class JarvisAppService:
         if len(preview) > 120:
             preview = preview[:117].rstrip() + "..."
         return preview or "<empty>"
+
+    @staticmethod
+    def _source_value(source: AppCommandSource | str) -> str:
+        return source.value if isinstance(source, AppCommandSource) else str(source or "unknown")
 
     def _build_audio_lifecycle_controller(self) -> AudioLifecycleController:
         existing_controller = getattr(
