@@ -1,6 +1,13 @@
 from dataclasses import dataclass
 
-from app.app_contracts import AppExecutionHistoryEntry, AppExecutionHistoryResult
+from app.app_contracts import (
+    AppExecutionHistoryEntry,
+    AppExecutionHistoryResult,
+    ApplicationActivityDto,
+    ApplicationActivityKind,
+    ApplicationActivitySnapshotDto,
+    ApplicationActivityState,
+)
 from app.app_service import AppCommandSource, JarvisAppService
 from app import desktop_shell
 from app.desktop_shell import DesktopShellViewModel, JarvisDesktopShell
@@ -81,6 +88,63 @@ def history_entry(
         user_message=user_message,
         safe_error_summary=safe_error_summary,
         metadata=(("risk_level", "read_only"),),
+    )
+
+
+def activity(
+    activity_id,
+    *,
+    state=ApplicationActivityState.RUNNING,
+    kind=ApplicationActivityKind.COMMAND_EXECUTION,
+    title="Command execution",
+    error=None,
+):
+    return ApplicationActivityDto(
+        activity_id=activity_id,
+        kind=kind,
+        state=state,
+        title=title,
+        detail="safe detail",
+        started_at="2026-07-22T10:00:00+00:00",
+        updated_at="2026-07-22T10:01:00+00:00",
+        finished_at=None
+        if state
+        in {
+            ApplicationActivityState.STARTING,
+            ApplicationActivityState.RUNNING,
+            ApplicationActivityState.WAITING_FOR_USER,
+            ApplicationActivityState.CANCELLATION_REQUESTED,
+        }
+        else "2026-07-22T10:02:00+00:00",
+        is_active=state
+        in {
+            ApplicationActivityState.STARTING,
+            ApplicationActivityState.RUNNING,
+            ApplicationActivityState.WAITING_FOR_USER,
+            ApplicationActivityState.CANCELLATION_REQUESTED,
+        },
+        requires_user_attention=state == ApplicationActivityState.WAITING_FOR_USER,
+        cancellation_requested=state == ApplicationActivityState.CANCELLATION_REQUESTED,
+        can_cancel=state == ApplicationActivityState.RUNNING,
+        cancel_target_id=activity_id if state == ApplicationActivityState.RUNNING else None,
+        source_run_id=None,
+        error_message=error,
+        revision=1,
+    )
+
+
+def activity_snapshot(current=None, recent=(), *, available=True, error=None):
+    return ApplicationActivitySnapshotDto(
+        current=current,
+        recent=tuple(recent),
+        is_busy=current is not None and getattr(current, "is_active", False),
+        requires_user_attention=(
+            current is not None and getattr(current, "requires_user_attention", False)
+        ),
+        updated_at="2026-07-22T10:03:00+00:00",
+        revision=1,
+        status_available=available,
+        error=error,
     )
 
 
@@ -287,6 +351,9 @@ class FakeAppService:
         self.workflow_detail_error = None
         self.workflow_resume_result = None
         self.workflow_cancellation_result = None
+        self.activity_calls = 0
+        self.activity_snapshots = [activity_snapshot()]
+        self.activity_error = None
 
     def status_text_ru(self):
         return "\n".join(
@@ -371,6 +438,14 @@ class FakeAppService:
             empty=not self.history_entries,
             error=None,
         )
+
+    def application_activity(self):
+        self.activity_calls += 1
+        if self.activity_error is not None:
+            raise RuntimeError(self.activity_error)
+        if len(self.activity_snapshots) > 1:
+            return self.activity_snapshots.pop(0)
+        return self.activity_snapshots[0]
 
     def recent_workflow_runs(self, limit=None):
         self.workflow_list_calls.append(limit)
@@ -1155,6 +1230,98 @@ def test_workflow_cancellation_non_cancellable_projection_disables_cancel():
     assert "non_cancellable_step" in view_model.state.workflow_cancellation_text
     assert "non_cancellable_step" in text
     assert service.workflow_cancellation_calls == []
+
+
+def test_desktop_activity_renders_current_and_recent_outcome():
+    service = FakeAppService()
+    current = activity(
+        "op-current",
+        state=ApplicationActivityState.WAITING_FOR_USER,
+        title="Confirmation required",
+    )
+    recent = activity(
+        "op-recent",
+        state=ApplicationActivityState.FAILED,
+        title="Voice request",
+        error="Traceback RuntimeError C:/Users/User/raw.log sk-test-1234567890secret",
+    )
+    service.activity_snapshots = [activity_snapshot(current=current, recent=(recent,))]
+
+    view_model = DesktopShellViewModel(service)
+
+    assert "Application Activity:" in view_model.state.activity_text
+    assert "- status: busy" in view_model.state.activity_text
+    assert "waiting_for_user" in view_model.state.activity_text
+    assert "Voice request | failed" in view_model.state.activity_text
+    assert "Traceback" not in view_model.state.activity_text
+    assert "C:/Users/User" not in view_model.state.activity_text
+    assert view_model.state.current_activity.activity_id == "op-current"
+    assert view_model.state.recent_activities[0].activity_id == "op-recent"
+
+
+def test_desktop_activity_idle_transition_clears_stale_current():
+    service = FakeAppService()
+    service.activity_snapshots = [
+        activity_snapshot(current=activity("op-current")),
+        activity_snapshot(current=None),
+    ]
+    view_model = DesktopShellViewModel(service)
+
+    text = view_model.refresh_application_activity()
+
+    assert "- status: idle" in text
+    assert "- current: idle" in text
+    assert view_model.state.current_activity is None
+    assert "op-current" not in view_model.state.activity_text
+
+
+def test_desktop_activity_refresh_failure_preserves_usability_and_recovers():
+    service = FakeAppService()
+    service.activity_snapshots = [activity_snapshot()]
+    view_model = DesktopShellViewModel(service)
+    service.activity_error = "Traceback RuntimeError backend C:/Users/User/raw.log sk-test-1234567890secret"
+
+    failed = view_model.refresh_application_activity()
+    service.activity_error = None
+    service.activity_snapshots = [activity_snapshot(current=activity("op-recovered"))]
+    recovered = view_model.refresh_application_activity()
+
+    assert "unavailable" in failed
+    assert "Traceback" not in failed
+    assert "RuntimeError" not in failed
+    assert "C:/Users/User" not in failed
+    assert "sk-test" not in failed
+    assert "op-recovered" in recovered
+    assert view_model.state.activity_load_error is None
+
+
+def test_desktop_activity_refresh_guard_prevents_overlapping_reads():
+    service = FakeAppService()
+    view_model = DesktopShellViewModel(service)
+    calls_before = service.activity_calls
+    view_model.state = view_model._replace(activity_refresh_in_progress=True)
+
+    text = view_model.refresh_application_activity()
+
+    assert text == view_model.state.activity_text
+    assert service.activity_calls == calls_before
+    assert view_model.state.last_error == "Application activity refresh is already in progress."
+
+
+def test_desktop_activity_boundary_uses_appservice_only():
+    service = FakeAppService()
+    view_model = DesktopShellViewModel(service)
+
+    view_model.refresh_application_activity()
+    source = desktop_shell.__loader__.get_source(desktop_shell.__name__)
+
+    assert service.activity_calls >= 2
+    assert "WorkflowRunner" not in source
+    assert "ExecutionCoordinator" not in source
+    assert "ExecutionJournal" not in source
+    assert "execution_coordinator" not in source
+    assert "execution_journal" not in source
+    assert ".journal" not in source
 
 
 def test_desktop_workflow_cancel_uses_only_run_id_and_no_runtime_data():

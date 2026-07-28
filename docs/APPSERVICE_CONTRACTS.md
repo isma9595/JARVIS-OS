@@ -54,6 +54,14 @@ steps declared with `WorkflowStepDefinition.cancellable=False`. The mutation
 path revalidates central eligibility and does not send a coordinator
 cancellation signal when that reason applies.
 
+TASK-110 adds `application_activity()`. It returns an
+`ApplicationActivitySnapshotDto` projected from bounded `ExecutionCoordinator`
+operation snapshots through `ApplicationActivityTracker`. The DTO reports a
+foreground current activity, bounded recent terminal outcomes, busy state,
+user-attention state, revision, availability, and safe errors. It does not
+return coordinator handles, journal records, threads, tokens, raw exceptions,
+provider payloads, arbitrary metadata, or mutable runtime objects.
+
 TASK-078 adds `process_one_shot_voice_request(source)`. It captures one
 explicit local Vosk utterance through the existing one-shot recognition
 boundary, then delegates recognized text to `execute_contract()` so voice input
@@ -103,6 +111,8 @@ addendum. No new desktop screens, key fields, or product UI are added.
 - `AppVoiceRequestResult`
 - `AppExecutionHistoryEntry`
 - `AppExecutionHistoryResult`
+- `ApplicationActivityDto`
+- `ApplicationActivitySnapshotDto`
 - `WorkflowRunHistory`
 - `WorkflowStepHistory`
 - `WorkflowHistoryResult`

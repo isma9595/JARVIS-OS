@@ -153,6 +153,13 @@ safe cancellation rejection through the existing eligibility/result DTOs, and
 AppService still delegates policy decisions to the workflow runner rather than
 duplicating them.
 
+TASK-110 adds `application_activity()` as a read-only AppService projection for
+Desktop activity status. It consumes bounded `ExecutionCoordinator` operation
+snapshots through `ApplicationActivityTracker` and returns an
+`ApplicationActivitySnapshotDto`. AppService does not expose coordinator,
+journal, workflow runner, thread, token, exception, provider, or mutable runtime
+objects through this method.
+
 ## Planner Interaction
 
 Planner-specific AppService orchestration is delegated to

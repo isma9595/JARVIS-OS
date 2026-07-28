@@ -34,7 +34,7 @@ handlers / ActionRouter fallback
 The UI is not an execution authority. Desktop Shell code uses
 `JarvisAppService` for status, command listing, preview, explicit execution,
 clarification display, recent execution history, workflow history inspection,
-and one-shot voice requests. It does not call
+application activity status, and one-shot voice requests. It does not call
 `CommandProcessor`, `ActionRouter`, provider adapters, memory storage, or
 filesystem adapters directly.
 
@@ -144,6 +144,25 @@ cancellation safely before any coordinator signal, cancellation reservation, or
 cancellation journal metadata is written. Resume duplicate protection is covered
 under true concurrency, and cancellation targets the active resumed attempt
 rather than its historical source run.
+
+TASK-110 adds application-level activity status without reopening the workflow
+subsystem. `ApplicationActivityTracker` in `app/activity.py` is a projection
+tracker below AppService; it consumes bounded immutable `ExecutionOperation`
+snapshots from `ExecutionCoordinator` and returns safe
+`ApplicationActivitySnapshotDto` DTOs. It is not a second coordinator, event
+bus, telemetry system, or execution authority. The current model is
+foreground-only: the most recently observed active user-visible operation is
+`current`, while completed, failed, rejected, and cancelled operations are kept
+as bounded recent outcomes.
+
+Activity states are stable public values: `idle`, `starting`, `running`,
+`waiting_for_user`, `cancellation_requested`, `succeeded`, `failed`,
+`rejected`, `cancelled`, and `unknown`. Terminal states do not regress to
+active in the projection; duplicate terminal updates are idempotent; stale
+completion for an older operation does not replace a newer current operation.
+Desktop reads this through `JarvisAppService.application_activity()` and never
+imports coordinator, journal, workflow, planner, provider, token, thread, or
+mutable runtime objects for activity status.
 
 Confirmation-required operations pause before side effects. Repeated execution
 is not treated as confirmation. Cancellation and idempotency are tracked through

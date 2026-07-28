@@ -1,4 +1,10 @@
-from app import AppCommandPreview, AppCommandResult, AppCommandSource, JarvisAppService
+from app import (
+    AppCommandPreview,
+    AppCommandResult,
+    AppCommandSource,
+    ApplicationActivityState,
+    JarvisAppService,
+)
 from app.text_normalization import normalize_control_text
 from core.command_processor import CommandProcessor
 from core.execution_journal import ExecutionOperation, ExecutionStatus, safe_journal_metadata, utc_now_iso
@@ -465,6 +471,61 @@ def test_recent_workflow_runs_returns_bounded_safe_result_newest_first():
     assert result.empty is False
     assert [run.run_id for run in result.runs] == ["run-new", "run-old"]
     assert result.runs[0].state == WorkflowRunHistoryState.COMPLETED
+
+
+def test_application_activity_projects_current_and_recent_operations_safely():
+    service = JarvisAppService(command_processor=FakeCommandProcessor())
+    running = service.execution_coordinator.register(
+        source="desktop_ui",
+        idempotency_key="activity-running",
+        request_fingerprint="activity-running",
+        command_id="app.status",
+    )
+    service.execution_coordinator.mark_running(running.operation.operation_id)
+    failed = service.execution_coordinator.register(
+        source="desktop_ui",
+        idempotency_key="activity-failed",
+        request_fingerprint="activity-failed",
+        command_id="voice.test",
+    )
+    service.execution_coordinator.mark_failed(
+        failed.operation.operation_id,
+        error_code="Traceback RuntimeError C:/Users/User/raw.log sk-test-1234567890secret",
+    )
+
+    snapshot = service.application_activity()
+    text = snapshot.safe_text_ru()
+
+    assert snapshot.status_available is True
+    assert snapshot.current is not None
+    assert snapshot.current.activity_id == running.operation.operation_id
+    assert snapshot.current.state == ApplicationActivityState.RUNNING
+    assert snapshot.is_busy is True
+    assert snapshot.recent[0].activity_id == failed.operation.operation_id
+    assert snapshot.recent[0].state == ApplicationActivityState.FAILED
+    assert "Traceback" not in text
+    assert "RuntimeError" not in text
+    assert "C:/Users/User" not in text
+    assert "sk-test" not in text
+
+
+def test_application_activity_failure_returns_safe_unavailable_snapshot():
+    class BrokenCoordinator:
+        def recent_operations(self, _limit):
+            raise RuntimeError("Traceback RuntimeError C:/Users/User/raw.log sk-test-1234567890secret")
+
+    service = JarvisAppService(command_processor=FakeCommandProcessor())
+    service.execution_coordinator = BrokenCoordinator()
+
+    snapshot = service.application_activity()
+    text = snapshot.safe_text_ru()
+
+    assert snapshot.status_available is False
+    assert snapshot.is_busy is False
+    assert snapshot.error == "application_activity_unavailable"
+    assert "Traceback" not in text
+    assert "C:/Users/User" not in text
+    assert "sk-test" not in text
 
 
 def test_recent_workflow_runs_enforces_default_and_maximum_limits():

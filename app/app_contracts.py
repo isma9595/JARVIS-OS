@@ -72,6 +72,29 @@ class AppCommandSource(Enum):
     UNKNOWN = "unknown"
 
 
+class ApplicationActivityState(Enum):
+    IDLE = "idle"
+    STARTING = "starting"
+    RUNNING = "running"
+    WAITING_FOR_USER = "waiting_for_user"
+    CANCELLATION_REQUESTED = "cancellation_requested"
+    SUCCEEDED = "succeeded"
+    FAILED = "failed"
+    REJECTED = "rejected"
+    CANCELLED = "cancelled"
+    UNKNOWN = "unknown"
+
+
+class ApplicationActivityKind(Enum):
+    COMMAND_EXECUTION = "command_execution"
+    WORKFLOW_EXECUTION = "workflow_execution"
+    WORKFLOW_RESUME = "workflow_resume"
+    WORKFLOW_CANCELLATION = "workflow_cancellation"
+    ASSISTANT_REQUEST = "assistant_request"
+    SYSTEM_OPERATION = "system_operation"
+    UNKNOWN = "unknown"
+
+
 @dataclass(frozen=True)
 class AppClarificationOption(_ContractMixin):
     option_id: str
@@ -601,6 +624,172 @@ class AppExecutionHistoryResult(_ContractMixin):
                 *[entry.summary_text() for entry in self.entries],
             ]
         )
+
+
+@dataclass(frozen=True)
+class ApplicationActivityDto(_ContractMixin):
+    activity_id: str
+    kind: ApplicationActivityKind
+    state: ApplicationActivityState
+    title: str
+    detail: str | None
+    started_at: str | None
+    updated_at: str | None
+    finished_at: str | None
+    is_active: bool
+    requires_user_attention: bool
+    cancellation_requested: bool
+    can_cancel: bool
+    cancel_target_id: str | None
+    source_run_id: str | None
+    error_message: str | None
+    revision: int
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "activity_id",
+            safe_history_text(self.activity_id, max_length=80) or "unknown",
+        )
+        object.__setattr__(self, "kind", _activity_kind(self.kind))
+        object.__setattr__(self, "state", _activity_state(self.state))
+        object.__setattr__(
+            self,
+            "title",
+            safe_history_text(self.title, max_length=120) or "Activity",
+        )
+        object.__setattr__(
+            self,
+            "detail",
+            safe_history_text(self.detail, max_length=180) if self.detail else None,
+        )
+        for field_name in ("started_at", "updated_at", "finished_at"):
+            value = getattr(self, field_name)
+            object.__setattr__(
+                self,
+                field_name,
+                safe_history_text(value, max_length=80) if value else None,
+            )
+        for field_name in ("cancel_target_id", "source_run_id"):
+            value = getattr(self, field_name)
+            object.__setattr__(
+                self,
+                field_name,
+                safe_history_text(value, max_length=80) if value else None,
+            )
+        object.__setattr__(
+            self,
+            "error_message",
+            safe_history_text(self.error_message, max_length=160)
+            if self.error_message
+            else None,
+        )
+        object.__setattr__(self, "revision", max(0, int(self.revision)))
+
+    def summary_text(self) -> str:
+        return (
+            f"{self.title} | {self.kind.value} | {self.state.value} | "
+            f"updated {self.updated_at or 'unknown'}"
+        )
+
+    def details_text(self) -> str:
+        lines = [
+            "Application activity:",
+            f"- id: {self.activity_id}",
+            f"- kind: {self.kind.value}",
+            f"- state: {self.state.value}",
+            f"- title: {self.title}",
+            f"- active: {'yes' if self.is_active else 'no'}",
+            f"- requires user attention: {'yes' if self.requires_user_attention else 'no'}",
+            f"- cancellation requested: {'yes' if self.cancellation_requested else 'no'}",
+            f"- can cancel: {'yes' if self.can_cancel else 'no'}",
+            f"- started: {self.started_at or 'unknown'}",
+            f"- updated: {self.updated_at or 'unknown'}",
+            f"- finished: {self.finished_at or 'not finished'}",
+        ]
+        if self.detail:
+            lines.append(f"- detail: {self.detail}")
+        if self.source_run_id:
+            lines.append(f"- source run id: {self.source_run_id}")
+        if self.error_message:
+            lines.append(f"- error: {self.error_message}")
+        return "\n".join(lines)
+
+    def safe_text_ru(self) -> str:
+        return self.details_text()
+
+
+@dataclass(frozen=True)
+class ApplicationActivitySnapshotDto(_ContractMixin):
+    current: ApplicationActivityDto | None
+    recent: tuple[ApplicationActivityDto, ...]
+    is_busy: bool
+    requires_user_attention: bool
+    updated_at: str
+    revision: int
+    status_available: bool
+    error: str | None = None
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "recent", tuple(self.recent))
+        object.__setattr__(
+            self,
+            "updated_at",
+            safe_history_text(self.updated_at, max_length=80) or "unknown",
+        )
+        object.__setattr__(self, "revision", max(0, int(self.revision)))
+        object.__setattr__(
+            self,
+            "error",
+            safe_history_text(self.error, max_length=120) if self.error else None,
+        )
+
+    def safe_text_ru(self) -> str:
+        if not self.status_available:
+            return "\n".join(
+                [
+                    "Application activity:",
+                    "- status: unavailable",
+                    f"- error: {safe_history_text(self.error or 'application_activity_unavailable')}",
+                    "- no secrets",
+                ]
+            )
+        lines = [
+            "Application activity:",
+            f"- status: {'busy' if self.is_busy else 'idle'}",
+            f"- requires user attention: {'yes' if self.requires_user_attention else 'no'}",
+            f"- updated: {self.updated_at}",
+            f"- revision: {self.revision}",
+        ]
+        if self.current is None:
+            lines.append("- current: idle")
+        else:
+            lines.append("- current:")
+            lines.extend(f"  {line}" for line in self.current.details_text().splitlines()[1:])
+        if self.recent:
+            lines.append("Recent outcomes:")
+            lines.extend(f"- {activity.summary_text()}" for activity in self.recent)
+        else:
+            lines.append("Recent outcomes: none")
+        return "\n".join(lines)
+
+
+def _activity_state(value: object) -> ApplicationActivityState:
+    if isinstance(value, ApplicationActivityState):
+        return value
+    try:
+        return ApplicationActivityState(str(value or "unknown"))
+    except ValueError:
+        return ApplicationActivityState.UNKNOWN
+
+
+def _activity_kind(value: object) -> ApplicationActivityKind:
+    if isinstance(value, ApplicationActivityKind):
+        return value
+    try:
+        return ApplicationActivityKind(str(value or "unknown"))
+    except ValueError:
+        return ApplicationActivityKind.UNKNOWN
 
 
 @dataclass(frozen=True)

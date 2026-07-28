@@ -20,9 +20,10 @@ secure key storage foundation, but this shell still has no key input fields.
 The desktop shell uses `JarvisAppService` as its app-facing boundary.
 The shell can show service status, list registry commands, preview command
 risk, execute explicit user commands, show recent execution history, and show
-workflow run/step history only through AppService. Workflow resume, when
-available, is also invoked only through AppService. Workflow cancellation, when
-available for an active run, is also invoked only through AppService.
+application activity status, and show workflow run/step history only through
+AppService. Workflow resume, when available, is also invoked only through
+AppService. Workflow cancellation, when available for an active run, is also
+invoked only through AppService.
 
 TASK-073 adds versioned AppService contracts. The shell may read contract
 status/cards through AppService, but TASK-073 adds no new screens or key input.
@@ -56,6 +57,8 @@ python run_desktop.py
 - List command registry categories and commands.
 - Preview command risk without execution.
 - Execute explicit command text through AppService.
+- Display a compact Activity Status panel with current idle/busy state,
+  user-attention state, and bounded recent outcomes from AppService.
 - Display a bounded, newest-first execution history list from AppService.
 - Search the currently loaded safe history entries by plain text.
 - Filter the currently loaded safe history entries by supported execution
@@ -101,6 +104,10 @@ python run_desktop.py
 - No network by default.
 - AI responses are not executed as commands.
 - Preview does not execute target commands.
+- Activity Status is read-only and uses `JarvisAppService.application_activity()`.
+  The shell stores safe activity DTOs and formatted text only. Manual refresh
+  and existing UI action completions update the panel; no Desktop-owned polling
+  thread or execution orchestration is introduced.
 - Execution history is read-only and uses the existing Execution Journal
   through AppService-safe DTOs.
 - History search and status filtering run locally over the safe bounded DTOs

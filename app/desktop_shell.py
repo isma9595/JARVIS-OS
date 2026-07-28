@@ -31,6 +31,13 @@ class DesktopShellState:
     history_result_count_text: str
     history_loading: bool
     history_load_error: str | None
+    activity_text: str
+    activity_snapshot: object | None
+    current_activity: object | None
+    recent_activities: tuple[object, ...]
+    activity_loading: bool
+    activity_load_error: str | None
+    activity_refresh_in_progress: bool
     workflow_list_text: str
     selected_workflow_run_id: str | None
     workflow_details_text: str
@@ -74,6 +81,7 @@ class DesktopShellViewModel:
         except Exception as exc:
             command_list_text = self._safe_error(exc)
         history = self._load_history_state()
+        activity = self._load_activity_state()
         workflow = self._load_workflow_state()
         return DesktopShellState(
             app_title="JARVIS OS",
@@ -101,6 +109,13 @@ class DesktopShellViewModel:
             history_result_count_text=history["history_result_count_text"],
             history_loading=history["history_loading"],
             history_load_error=history["history_load_error"],
+            activity_text=activity["activity_text"],
+            activity_snapshot=activity["activity_snapshot"],
+            current_activity=activity["current_activity"],
+            recent_activities=activity["recent_activities"],
+            activity_loading=activity["activity_loading"],
+            activity_load_error=activity["activity_load_error"],
+            activity_refresh_in_progress=False,
             workflow_list_text=workflow["workflow_list_text"],
             selected_workflow_run_id=workflow["selected_workflow_run_id"],
             workflow_details_text=workflow["workflow_details_text"],
@@ -241,6 +256,25 @@ class DesktopShellViewModel:
             last_error=history["last_error"],
         )
         return self.state.history_list_text
+
+    def refresh_application_activity(self) -> str:
+        if self.state.activity_refresh_in_progress:
+            text = "Application activity refresh is already in progress."
+            self.state = self._replace(last_error=text)
+            return self.state.activity_text
+        self.state = self._replace(activity_refresh_in_progress=True)
+        activity = self._load_activity_state()
+        self.state = self._replace(
+            activity_text=activity["activity_text"],
+            activity_snapshot=activity["activity_snapshot"],
+            current_activity=activity["current_activity"],
+            recent_activities=activity["recent_activities"],
+            activity_loading=activity["activity_loading"],
+            activity_load_error=activity["activity_load_error"],
+            activity_refresh_in_progress=False,
+            last_error=activity["last_error"],
+        )
+        return self.state.activity_text
 
     def select_history_entry(self, index: int | str | None) -> str:
         try:
@@ -716,6 +750,100 @@ class DesktopShellViewModel:
                 "workflow_cancellation_available": False,
                 "last_error": error_text,
             }
+
+    def _load_activity_state(self) -> dict[str, object]:
+        try:
+            snapshot = self.app_service.application_activity()
+            if not getattr(snapshot, "status_available", False):
+                error_text = self._safe_activity_error(getattr(snapshot, "error", None))
+                return {
+                    "activity_text": self._format_activity_snapshot(snapshot),
+                    "activity_snapshot": snapshot,
+                    "current_activity": None,
+                    "recent_activities": tuple(getattr(snapshot, "recent", ()) or ()),
+                    "activity_loading": False,
+                    "activity_load_error": error_text,
+                    "last_error": error_text,
+                }
+            return {
+                "activity_text": self._format_activity_snapshot(snapshot),
+                "activity_snapshot": snapshot,
+                "current_activity": getattr(snapshot, "current", None),
+                "recent_activities": tuple(getattr(snapshot, "recent", ()) or ()),
+                "activity_loading": False,
+                "activity_load_error": None,
+                "last_error": None,
+            }
+        except Exception:
+            error_text = self._safe_activity_error("application_activity_unavailable")
+            return {
+                "activity_text": "Application Activity:\n- status: unavailable\n- error: application_activity_unavailable",
+                "activity_snapshot": None,
+                "current_activity": None,
+                "recent_activities": (),
+                "activity_loading": False,
+                "activity_load_error": error_text,
+                "last_error": error_text,
+            }
+
+    def _format_activity_snapshot(self, snapshot) -> str:
+        if not getattr(snapshot, "status_available", False):
+            error = self._safe_activity_error(getattr(snapshot, "error", None))
+            return self._safe_text(
+                "\n".join(
+                    [
+                        "Application Activity:",
+                        "- status: unavailable",
+                        f"- error: {error}",
+                    ]
+                )
+            )
+        current = getattr(snapshot, "current", None)
+        lines = [
+            "Application Activity:",
+            f"- status: {'busy' if getattr(snapshot, 'is_busy', False) else 'idle'}",
+            f"- requires user attention: {'yes' if getattr(snapshot, 'requires_user_attention', False) else 'no'}",
+            f"- updated: {getattr(snapshot, 'updated_at', None) or 'unknown'}",
+        ]
+        if current is None:
+            lines.append("- current: idle")
+        else:
+            lines.extend(
+                [
+                    "- current:",
+                    f"  id: {getattr(current, 'activity_id', None) or 'unknown'}",
+                    f"  kind: {self._state_value(getattr(current, 'kind', None))}",
+                    f"  state: {self._state_value(getattr(current, 'state', None))}",
+                    f"  title: {getattr(current, 'title', None) or 'Activity'}",
+                    f"  started: {getattr(current, 'started_at', None) or 'unknown'}",
+                    f"  updated: {getattr(current, 'updated_at', None) or 'unknown'}",
+                    f"  waiting for user: {'yes' if getattr(current, 'requires_user_attention', False) else 'no'}",
+                    f"  cancellation requested: {'yes' if getattr(current, 'cancellation_requested', False) else 'no'}",
+                ]
+            )
+            detail = getattr(current, "detail", None)
+            if detail:
+                lines.append(f"  detail: {detail}")
+            error = getattr(current, "error_message", None)
+            if error:
+                lines.append(f"  error: {error}")
+        recent = tuple(getattr(snapshot, "recent", ()) or ())
+        lines.append("Recent outcomes:")
+        if recent:
+            for activity in recent:
+                lines.append(
+                    f"- {getattr(activity, 'title', 'Activity')} | {self._state_value(getattr(activity, 'state', None))} | {getattr(activity, 'updated_at', None) or 'unknown'}"
+                )
+        else:
+            lines.append("- none")
+        return self._safe_text("\n".join(lines))
+
+    def _safe_activity_error(self, error: object) -> str:
+        text = self._safe_text(str(error or "application_activity_unavailable"))
+        text = re.sub(r"(?i)\b[a-z]:[\\/][^\r\n\t ]+", "[PATH REDACTED]", text)
+        if re.search(r"(?i)(traceback|runtimeerror|exception|backend)", text):
+            return "application_activity_unavailable"
+        return text or "application_activity_unavailable"
 
     @staticmethod
     def _select_workflow_run(runs: tuple[object, ...], preferred_id: str | None):
@@ -1423,7 +1551,7 @@ class JarvisDesktopShell:
         main = tk.Frame(self.root, bg=self.COLORS["bg"], padx=8, pady=0)
         main.grid(row=1, column=1, sticky="nsew", padx=(0, 16), pady=(0, 16))
         main.grid_columnconfigure(0, weight=1)
-        main.grid_rowconfigure(4, weight=1)
+        main.grid_rowconfigure(5, weight=1)
 
         input_panel = tk.Frame(main, bg=self.COLORS["panel"], padx=12, pady=12)
         input_panel.grid(row=0, column=0, sticky="ew")
@@ -1488,8 +1616,35 @@ class JarvisDesktopShell:
         )
         note.grid(row=1, column=0, sticky="ew", pady=8)
 
+        activity_panel = tk.Frame(main, bg=self.COLORS["panel"], padx=10, pady=10)
+        activity_panel.grid(row=2, column=0, sticky="ew", pady=(0, 8))
+        activity_panel.grid_columnconfigure(0, weight=1)
+        tk.Label(
+            activity_panel,
+            text="Activity Status",
+            bg=self.COLORS["panel"],
+            fg=self.COLORS["text"],
+            font=("Segoe UI", 12, "bold"),
+        ).grid(row=0, column=0, sticky="w")
+        self.activity_refresh_button = tk.Button(
+            activity_panel,
+            text="Refresh",
+            command=self._on_activity_refresh,
+            bg=self.COLORS["panel_alt"],
+            fg=self.COLORS["text"],
+            activebackground=self.COLORS["accent"],
+            activeforeground=self.COLORS["text"],
+            relief="flat",
+            padx=10,
+            pady=6,
+        )
+        self.activity_refresh_button.grid(row=0, column=1, sticky="e")
+        self.activity_box = self._text_box(activity_panel, height=5)
+        self.activity_box.grid(row=1, column=0, columnspan=2, sticky="ew", pady=(8, 0))
+        self._bind_readonly_text_copy(self.activity_box)
+
         history_panel = tk.Frame(main, bg=self.COLORS["panel"], padx=10, pady=10)
-        history_panel.grid(row=2, column=0, sticky="ew", pady=(0, 8))
+        history_panel.grid(row=3, column=0, sticky="ew", pady=(0, 8))
         history_panel.grid_columnconfigure(0, weight=1)
         history_panel.grid_columnconfigure(1, weight=1)
         tk.Label(
@@ -1608,7 +1763,7 @@ class JarvisDesktopShell:
         self._bind_readonly_text_copy(self.history_details_box)
 
         workflow_panel = tk.Frame(main, bg=self.COLORS["panel"], padx=10, pady=10)
-        workflow_panel.grid(row=3, column=0, sticky="ew", pady=(0, 8))
+        workflow_panel.grid(row=4, column=0, sticky="ew", pady=(0, 8))
         workflow_panel.grid_columnconfigure(0, weight=1)
         workflow_panel.grid_columnconfigure(1, weight=1)
         tk.Label(
@@ -1689,7 +1844,7 @@ class JarvisDesktopShell:
         self._bind_readonly_text_copy(self.workflow_details_box)
 
         split = tk.PanedWindow(main, orient="vertical", bg=self.COLORS["bg"], sashwidth=6)
-        split.grid(row=4, column=0, sticky="nsew")
+        split.grid(row=5, column=0, sticky="nsew")
         self.preview_box = self._text_box(split, height=10)
         self.output_box = self._text_box(split, height=14)
         self.command_list_box = self._text_box(split, height=10)
@@ -1826,6 +1981,10 @@ class JarvisDesktopShell:
         self._set_text(self.preview_box, state.preview_text)
         self._set_text(self.output_box, state.output_text)
         self._set_text(self.command_list_box, state.command_list_text)
+        self._set_text(self.activity_box, state.activity_text)
+        self.activity_refresh_button.configure(
+            state="disabled" if state.activity_refresh_in_progress else "normal"
+        )
         self._render_history_state(state)
         self._render_workflow_state(state)
 
@@ -1918,6 +2077,7 @@ class JarvisDesktopShell:
 
     def _on_execute(self) -> None:
         self.view_model.execute_command(self._command_input())
+        self.view_model.refresh_application_activity()
         self.view_model.refresh_execution_history()
         self.view_model.refresh_workflow_history()
         self._render_state()
@@ -1947,6 +2107,7 @@ class JarvisDesktopShell:
     def _finish_voice_once(self) -> None:
         self._voice_worker_active = False
         self.voice_button.configure(state="normal")
+        self.view_model.refresh_application_activity()
         self.view_model.refresh_execution_history()
         self.view_model.refresh_workflow_history()
         self._render_state()
@@ -1981,6 +2142,10 @@ class JarvisDesktopShell:
 
     def _on_history_refresh(self) -> None:
         self.view_model.refresh_execution_history()
+        self._render_state()
+
+    def _on_activity_refresh(self) -> None:
+        self.view_model.refresh_application_activity()
         self._render_state()
 
     def _on_history_search_changed(self, _event) -> None:
@@ -2032,6 +2197,7 @@ class JarvisDesktopShell:
             self._render_state()
             return
         self.view_model.resume_selected_workflow_run(confirmed=True)
+        self.view_model.refresh_application_activity()
         self._render_state()
 
     def _on_workflow_cancel(self) -> None:
@@ -2041,6 +2207,7 @@ class JarvisDesktopShell:
             self._render_state()
             return
         self.view_model.cancel_selected_workflow_run(confirmed=True)
+        self.view_model.refresh_application_activity()
         self._render_state()
 
     def _confirm_workflow_resume(self, text: str) -> bool:

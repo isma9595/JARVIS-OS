@@ -15,6 +15,7 @@ from app.startup_profiler import StartupProfiler, StartupProfileSnapshot
 from app.app_contracts import (
     APP_CONTRACT_SCHEMA_NAME,
     APP_CONTRACT_VERSION,
+    ApplicationActivitySnapshotDto,
     AppCommandCard,
     AppCommandPreview,
     AppCommandResult,
@@ -32,6 +33,7 @@ from app.app_contracts import (
     safe_contract_text,
     safe_history_text,
 )
+from app.activity import ApplicationActivityTracker
 from app.text_normalization import normalize_control_text
 from core.lazy_component import LazyComponent
 from app.intent_resolver import (
@@ -206,6 +208,8 @@ class JarvisAppService:
     MAX_EXECUTION_HISTORY_LIMIT = 100
     DEFAULT_WORKFLOW_HISTORY_LIMIT = 25
     MAX_WORKFLOW_HISTORY_LIMIT = 100
+    DEFAULT_ACTIVITY_RECENT_LIMIT = 10
+    MAX_ACTIVITY_RECENT_LIMIT = 25
 
     PREVIEW_PREFIX_ALIASES = (
         "app preview:",
@@ -295,6 +299,9 @@ class JarvisAppService:
             self.intent_resolver = HybridIntentResolver(self.command_registry)
             self.policy_boundary = PolicyDecisionBoundary()
             self.execution_coordinator = ExecutionCoordinator()
+            self.activity_tracker = ApplicationActivityTracker(
+                recent_limit=self.DEFAULT_ACTIVITY_RECENT_LIMIT,
+            )
         self._pending_clarification: ClarificationState | None = None
         self._pending_clarification_operation_id: str | None = None
         self._pending_confirmation: PendingAppConfirmation | None = None
@@ -2518,6 +2525,17 @@ class JarvisAppService:
 
     def execution_history_text_ru(self, limit: int | None = None) -> str:
         return self.execution_history(limit).safe_text_ru()
+
+    def application_activity(self) -> ApplicationActivitySnapshotDto:
+        try:
+            operations = self.execution_coordinator.recent_operations(
+                self.MAX_ACTIVITY_RECENT_LIMIT,
+            )
+            return self.activity_tracker.snapshot_from_operations(operations)
+        except Exception:
+            return self.activity_tracker.snapshot_unavailable(
+                error="application_activity_unavailable",
+            )
 
     def recent_workflow_runs(self, limit: int | None = None) -> WorkflowHistoryResult:
         effective_limit = self._bounded_workflow_history_limit(limit)

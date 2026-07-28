@@ -36,6 +36,8 @@ orchestration modules.
 - Desktop execution history viewer backed by the existing Execution Journal and
   projected through AppService-safe DTOs, with local Desktop text search and
   status filtering over the bounded loaded history.
+- Desktop Activity Status panel backed by AppService-safe application activity
+  DTOs projected from existing execution lifecycle snapshots.
 - Deterministic multi-step planner in `planner/`.
 - Reusable workflow runner and local TXT document-review workflow in
   `workflows/`.
@@ -214,6 +216,9 @@ git diff --check
 - Execution history is read-only in the Desktop Shell; it supports viewing,
   refresh, local filtering/search, selection, and safe copy, not replay,
   editing, deletion, or export.
+- Activity status is read-only in the Desktop Shell; it shows current
+  application-level activity, idle/busy state, user-attention state, and bounded
+  recent outcomes through AppService DTOs only.
 - Workflow run history is read-only and projected from existing workflow
   runtime state with safe DTOs.
 - Workflow resume is explicit, policy-gated, and AppService-mediated. It starts
