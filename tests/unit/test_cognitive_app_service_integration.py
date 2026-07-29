@@ -271,6 +271,40 @@ def test_app_service_constructs_and_injects_clarification_coordinator():
     assert result.response.text == "What are you confirming?"
 
 
+def test_app_service_execute_routes_unresolved_russian_action_to_clarification():
+    processor = FakeCommandProcessor()
+    service = JarvisAppService(command_processor=processor)
+
+    result = service.execute_command("\u0421\u0434\u0435\u043b\u0430\u0439 \u044d\u0442\u043e", AppCommandSource.TEST)
+
+    assert result.requires_clarification is True
+    assert result.category == "clarification"
+    assert result.executed is False
+    assert result.operation_status == "awaiting_clarification"
+    assert "\u044d\u0442\u043e" in result.clarification_question.casefold()
+    assert processor.calls == []
+
+
+def test_app_service_execute_does_not_route_clarification_controls_to_legacy_voice():
+    processor = FakeCommandProcessor()
+    service = JarvisAppService(command_processor=processor)
+    first = service.execute_command("\u0421\u0434\u0435\u043b\u0430\u0439 \u044d\u0442\u043e", AppCommandSource.TEST)
+
+    confirm = service.execute_command("\u041f\u043e\u0434\u0442\u0432\u0435\u0440\u0436\u0434\u0430\u044e", AppCommandSource.TEST)
+    cancel = service.execute_command("\u043e\u0442\u043c\u0435\u043d\u0430", AppCommandSource.TEST)
+
+    assert confirm.category == "clarification"
+    assert confirm.requires_clarification is True
+    assert confirm.operation_status == "awaiting_clarification"
+    assert cancel.category == "clarification"
+    assert cancel.requires_confirmation is False
+    assert cancel.operation_status == "cancelled"
+    assert first.operation_id == confirm.operation_id == cancel.operation_id
+    assert "voice" not in confirm.output_text.casefold()
+    assert "voice" not in cancel.output_text.casefold()
+    assert processor.calls == []
+
+
 def test_context_composition_does_not_call_provider_execution_workflow_or_memory():
     class ForbiddenProviderRuntime:
         def all_credential_statuses(self):

@@ -1,3 +1,5 @@
+import pytest
+
 from app import AppCommandSource, JarvisAppService
 from app.desktop_shell import DesktopShellViewModel
 from ai.provider_contracts import AIProviderCapability
@@ -71,6 +73,36 @@ class SpyAppService(JarvisAppService):
     def execute_contract(self, text, source=AppCommandSource.DESKTOP_UI):
         self.execute_contract_calls.append((text, source))
         return super().execute_contract(text, source)
+
+
+SAFE_VAGUE_REFERENCES = (
+    "\u0421\u0434\u0435\u043b\u0430\u0439 \u044d\u0442\u043e",
+    "\u0421\u0434\u0435\u043b\u0430\u0439 \u044d\u0442\u043e.",
+    "\u0441\u0434\u0435\u043b\u0430\u0439 \u044d\u0442\u043e",
+    "Do it",
+    "Do it.",
+    "\u041f\u043e\u0432\u0442\u043e\u0440\u0438 \u044d\u0442\u043e",
+    "\u041f\u0440\u043e\u0434\u043e\u043b\u0436\u0430\u0439",
+)
+
+PENDING_CONFIRMATION_CONTROLS = (
+    "\u041f\u043e\u0434\u0442\u0432\u0435\u0440\u0436\u0434\u0430\u044e",
+    "\u041f\u043e\u0434\u0442\u0432\u0435\u0440\u0436\u0434\u0430\u044e.",
+    "\u0434\u0430",
+    "\u0414\u0430.",
+    "Confirm",
+    "Proceed",
+)
+
+PENDING_CANCELLATION_CONTROLS = (
+    "\u043e\u0442\u043c\u0435\u043d\u0430",
+    "\u041e\u0442\u043c\u0435\u043d\u0430.",
+    "\u041e\u0422\u041c\u0415\u041d\u0410",
+    "\u043e\u0442\u043c\u0435\u043d\u0438",
+    "\u041d\u0435 \u043d\u0430\u0434\u043e",
+    "Cancel!",
+    "Never mind",
+)
 
 
 def test_status_clarification_then_system_option_executes_once_without_provider():
@@ -201,12 +233,124 @@ def test_clarification_confirmation_word_does_not_select_option():
     processor = TrackingProcessor()
     service = JarvisAppService(command_processor=processor)
 
-    service.execute_contract("покажи статус", AppCommandSource.TEST)
+    first = service.execute_contract("покажи статус", AppCommandSource.TEST)
     result = service.execute_contract("подтверждаю", AppCommandSource.TEST)
 
+    assert first.requires_clarification is True
+    assert first.operation_status == "awaiting_clarification"
     assert result.command_id is None
-    assert processor.calls == ["подтверждаю"]
+    assert result.executed is False
+    assert result.requires_clarification is True
+    assert result.operation_status == "awaiting_clarification"
+    assert result.operation_id == first.operation_id
+    assert result.requires_confirmation is False
+    assert result.response_executed_as_command is False
+    assert "voice.confirmation" not in result.output_text.casefold()
+    assert processor.calls == []
     assert "статус системы" not in processor.calls
+
+
+@pytest.mark.parametrize("text", SAFE_VAGUE_REFERENCES)
+def test_safe_vague_references_request_clarification_before_legacy_fallback(text):
+    processor = TrackingProcessor()
+    service = JarvisAppService(command_processor=processor)
+
+    result = service.execute_contract(text, AppCommandSource.TEST)
+
+    assert result.command_id is None
+    assert result.category == "clarification"
+    assert result.operation_status == "awaiting_clarification"
+    assert result.executed is False
+    assert result.requires_clarification is True
+    assert result.requires_confirmation is False
+    assert result.response_executed_as_command is False
+    assert "voice.confirmation" not in result.output_text.casefold()
+    assert "legacy_commandprocessor_fallback" not in result.output_text
+    assert processor.calls == []
+
+
+@pytest.mark.parametrize("text", PENDING_CONFIRMATION_CONTROLS)
+def test_confirmation_controls_during_pending_clarification_do_not_execute(text):
+    processor = TrackingProcessor()
+    service = JarvisAppService(command_processor=processor)
+    first = service.execute_contract("\u0421\u0434\u0435\u043b\u0430\u0439 \u044d\u0442\u043e.", AppCommandSource.TEST)
+
+    result = service.execute_contract(text, AppCommandSource.TEST)
+
+    assert result.command_id is None
+    assert result.category == "clarification"
+    assert result.operation_id == first.operation_id
+    assert result.operation_status == "awaiting_clarification"
+    assert result.executed is False
+    assert result.requires_clarification is True
+    assert result.requires_confirmation is False
+    assert result.response_executed_as_command is False
+    assert "voice.confirmation" not in result.output_text.casefold()
+    assert "legacy_commandprocessor_fallback" not in result.output_text
+    assert processor.calls == []
+
+
+@pytest.mark.parametrize("text", PENDING_CANCELLATION_CONTROLS)
+def test_cancellation_controls_during_pending_clarification_cancel_operation(text):
+    processor = TrackingProcessor()
+    service = JarvisAppService(command_processor=processor)
+    first = service.execute_contract("\u0421\u0434\u0435\u043b\u0430\u0439 \u044d\u0442\u043e.", AppCommandSource.TEST)
+
+    result = service.execute_contract(text, AppCommandSource.TEST)
+
+    assert result.command_id is None
+    assert result.category == "clarification"
+    assert result.operation_id == first.operation_id
+    assert result.operation_status == "cancelled"
+    assert result.executed is False
+    assert result.requires_clarification is False
+    assert result.requires_confirmation is False
+    assert result.response_executed_as_command is False
+    assert "voice.confirmation" not in result.output_text.casefold()
+    assert "legacy_commandprocessor_fallback" not in result.output_text
+    assert processor.calls == []
+
+
+def test_cancellation_priority_lifecycle_and_no_target_confirmation_regression():
+    processor = TrackingProcessor()
+    service = JarvisAppService(command_processor=processor)
+
+    first = service.execute_contract("\u0421\u0434\u0435\u043b\u0430\u0439 \u044d\u0442\u043e.", AppCommandSource.TEST)
+    confirm = service.execute_contract("\u041f\u043e\u0434\u0442\u0432\u0435\u0440\u0436\u0434\u0430\u044e.", AppCommandSource.TEST)
+    cancel = service.execute_contract("\u043e\u0442\u043c\u0435\u043d\u0430", AppCommandSource.TEST)
+    no_target_confirm = service.execute_contract("\u041f\u043e\u0434\u0442\u0432\u0435\u0440\u0436\u0434\u0430\u044e.", AppCommandSource.TEST)
+    second = service.execute_contract("\u0421\u0434\u0435\u043b\u0430\u0439 \u044d\u0442\u043e.", AppCommandSource.TEST)
+
+    assert first.operation_id == confirm.operation_id == cancel.operation_id
+    assert confirm.operation_status == "awaiting_clarification"
+    assert cancel.operation_status == "cancelled"
+    assert cancel.requires_confirmation is False
+    assert no_target_confirm.command_id is None
+    assert no_target_confirm.executed is False
+    assert no_target_confirm.requires_clarification is True
+    assert second.operation_id != first.operation_id
+    assert second.operation_id != no_target_confirm.operation_id
+    assert second.operation_status == "awaiting_clarification"
+    assert processor.calls == []
+
+
+def test_known_unknown_and_risky_inputs_keep_expected_boundaries():
+    processor = TrackingProcessor()
+    service = JarvisAppService(command_processor=processor)
+
+    known = service.execute_contract("app contracts status", AppCommandSource.TEST)
+    unknown = service.execute_contract("task080 harmless unknown input", AppCommandSource.TEST)
+    risky = service.execute_contract("\u0443\u0434\u0430\u043b\u0438 \u044d\u0442\u043e", AppCommandSource.TEST)
+
+    assert known.command_id == "app_contracts.status"
+    assert known.executed is True
+    assert unknown.category != "clarification"
+    assert unknown.requires_clarification is False
+    assert risky.category == "unsupported"
+    assert risky.executed is False
+    assert risky.requires_clarification is False
+    assert "vague_risky_action_not_executed" in risky.intent_resolution.reason_codes
+    assert "удали это" not in processor.calls
 
 
 def test_vague_risky_delete_is_not_executed():

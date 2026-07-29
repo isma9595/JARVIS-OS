@@ -428,10 +428,14 @@ _PREVIOUS_RESPONSE_PHRASES = (
 )
 
 _PREVIOUS_REQUEST_PHRASES = (
+    "continue",
     "my previous request",
     "my last request",
     "previous request",
+    "repeat",
     "last request",
+    "\u043f\u0440\u043e\u0434\u043e\u043b\u0436\u0430\u0439",
+    "\u043f\u043e\u0432\u0442\u043e\u0440\u0438",
     "\u043c\u043e\u0439 \u043f\u0440\u0435\u0434\u044b\u0434\u0443\u0449\u0438\u0439 \u0437\u0430\u043f\u0440\u043e\u0441",
     "\u043f\u0440\u0435\u0434\u044b\u0434\u0443\u0449\u0438\u0439 \u0437\u0430\u043f\u0440\u043e\u0441",
 )

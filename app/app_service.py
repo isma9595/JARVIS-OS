@@ -49,13 +49,23 @@ from app.conversational_loop import (
     SafeConversationalLoop,
 )
 from cognition import (
+    ClarificationCoordinationInput,
     CognitiveInteractionResult,
     CognitiveInteractionService,
     CompatibilityResponseComposer,
+    ClarificationStatus,
+    ConversationContextContentClassification,
     ConversationContextProjector,
+    ConversationContextSnapshot,
+    ConversationContextTurn,
+    ConversationRole,
     ConversationSessionService,
     ConversationSessionSnapshot,
+    ConversationSessionStatus,
+    ConversationTurn,
     ConversationTurnInput,
+    IntentInterpretationInput,
+    ReferenceResolutionInput,
     RuleBasedIntentInterpreter,
     RuleBasedClarificationCoordinator,
     RuleBasedReferenceResolver,
@@ -1676,6 +1686,33 @@ class JarvisAppService:
                 clarification_options=resolution.clarification_options,
             )
 
+        cognitive_clarification = self._cognitive_clarification_result_if_needed(
+            input_text,
+            source,
+            resolution,
+        )
+        if cognitive_clarification is not None:
+            return cognitive_clarification
+
+        if resolution.intent_kind == IntentKind.CANCELLATION_RESPONSE:
+            self._pending_clarification = None
+            self._pending_clarification_operation_id = None
+            return AppCommandResult(
+                ok=True,
+                input_text=input_text,
+                output_text="Отмена принята. Сейчас нет ожидающего действия.",
+                source=source,
+                registry_match_id=None,
+                category="cancellation",
+                risk_level="read_only",
+                executed=False,
+                requires_confirmation=False,
+                network_may_be_used=False,
+                response_executed_as_command=False,
+                error=None,
+                intent_resolution=resolution,
+            )
+
         if resolution.intent_kind == IntentKind.UNSUPPORTED:
             self._pending_clarification = None
             return AppCommandResult(
@@ -1745,6 +1782,121 @@ class JarvisAppService:
 
         command_text = resolution.command_text or input_text
         return self._execute_resolved_command(command_text, source, resolution)
+
+    def _cognitive_clarification_result_if_needed(
+        self,
+        input_text: str,
+        source: AppCommandSource,
+        resolution,
+    ) -> AppCommandResult | None:
+        reason_codes = tuple(getattr(resolution, "reason_codes", ()) or ())
+        if resolution.intent_kind == IntentKind.UNSUPPORTED and any(
+            reason in reason_codes
+            for reason in {
+                "vague_risky_action_not_executed",
+                "risky_misspelling_not_repaired",
+                "exact_risky_existing_path",
+                "forbidden_existing_path",
+            }
+        ):
+            return None
+        if resolution.intent_kind not in {
+            IntentKind.UNSUPPORTED,
+            IntentKind.CONFIRMATION_RESPONSE,
+        } and "legacy_commandprocessor_fallback" not in reason_codes:
+            return None
+        clarification = self._probe_cognitive_clarification(input_text, source)
+        if clarification is None:
+            return None
+        if clarification.status not in {
+            ClarificationStatus.NEEDED,
+            ClarificationStatus.UNAVAILABLE,
+        }:
+            return None
+        question = clarification.safe_question or "Clarification is required before any command can run."
+        self._pending_clarification = ClarificationState(
+            question_ru=question,
+            options=(),
+            original_text=input_text,
+            source=source.value,
+        )
+        return AppCommandResult(
+            ok=True,
+            input_text=input_text,
+            output_text=question,
+            source=source,
+            registry_match_id=None,
+            category="clarification",
+            risk_level="read_only",
+            executed=False,
+            requires_confirmation=False,
+            network_may_be_used=False,
+            response_executed_as_command=False,
+            error=None,
+            intent_resolution=resolution,
+            requires_clarification=True,
+            clarification_question=question,
+            clarification_options=(),
+        )
+
+    def _probe_cognitive_clarification(
+        self,
+        input_text: str,
+        source: AppCommandSource,
+    ):
+        session_id = "app-command-routing"
+        now = "1970-01-01T00:00:00+00:00"
+        current_turn = ConversationTurn(
+            turn_id="app-command-routing-current",
+            session_id=session_id,
+            sequence=1,
+            role=ConversationRole.USER,
+            text=input_text,
+            source=source.value,
+            created_at=now,
+        )
+        context_turn = ConversationContextTurn(
+            turn_id=current_turn.turn_id,
+            sequence=current_turn.sequence,
+            role=current_turn.role,
+            source=current_turn.source,
+            safe_text=current_turn.text,
+            created_at=current_turn.created_at,
+            content_classification=ConversationContextContentClassification.BOUNDED_SAFE_TEXT,
+        )
+        context = ConversationContextSnapshot(
+            session_id=session_id,
+            session_status=ConversationSessionStatus.ACTIVE,
+            projected_at=now,
+            turns=(context_turn,),
+            total_turn_count=1,
+            included_turn_count=1,
+            omitted_turn_count=0,
+            first_included_sequence=1,
+            last_included_sequence=1,
+        )
+        interpreted_intent = self.cognitive_intent_interpreter.interpret(
+            IntentInterpretationInput(
+                current_user_turn=current_turn,
+                context=context,
+                source=source.value,
+            )
+        )
+        references = self.cognitive_reference_resolver.resolve(
+            ReferenceResolutionInput(
+                current_user_turn=current_turn,
+                context=context,
+                interpreted_intent=interpreted_intent,
+            )
+        )
+        return self.cognitive_clarification_coordinator.coordinate(
+            ClarificationCoordinationInput(
+                current_user_turn=current_turn,
+                context=context,
+                interpreted_intent=interpreted_intent,
+                reference_resolution=references,
+            )
+        )
 
     def _execute_resolved_command(
         self,
@@ -2468,9 +2620,17 @@ class JarvisAppService:
     ) -> AppCommandResult | None:
         result = self._consume_pending_clarification(input_text, source)
         if result is None:
+            self.execution_coordinator.cancel(
+                operation_id,
+                reason="clarification_replaced",
+            )
             return None
         operation = self.execution_coordinator.journal.get(operation_id)
-        if result.executed:
+        if result.requires_clarification:
+            operation = self.execution_coordinator.mark_awaiting_clarification(
+                operation_id
+            )
+        elif result.executed:
             operation = self.execution_coordinator.mark_succeeded(
                 operation_id,
                 summary=result.output_text,
@@ -3071,6 +3231,65 @@ class JarvisAppService:
                 selected = option
                 break
         if selected is None:
+            if resolution.intent_kind == IntentKind.CONFIRMATION_RESPONSE:
+                return AppCommandResult(
+                    ok=True,
+                    input_text=input_text,
+                    output_text=state.question_ru or "РЈС‚РѕС‡РЅРёС‚Рµ С†РµР»СЊ РґРµР№СЃС‚РІРёСЏ.",
+                    source=source,
+                    registry_match_id=None,
+                    category="clarification",
+                    risk_level="read_only",
+                    executed=False,
+                    requires_confirmation=False,
+                    network_may_be_used=False,
+                    response_executed_as_command=False,
+                    error=None,
+                    intent_resolution=resolution,
+                    requires_clarification=True,
+                    clarification_question=state.question_ru,
+                    clarification_options=state.options,
+                )
+            if not state.options and resolution.intent_kind in {
+                IntentKind.CONFIRMATION_RESPONSE,
+                IntentKind.CANCELLATION_RESPONSE,
+            }:
+                if resolution.intent_kind == IntentKind.CANCELLATION_RESPONSE:
+                    self._pending_clarification = None
+                    self._pending_clarification_operation_id = None
+                    return AppCommandResult(
+                        ok=True,
+                        input_text=input_text,
+                        output_text="Уточнение отменено. Команда не запускалась.",
+                        source=source,
+                        registry_match_id=None,
+                        category="clarification",
+                        risk_level="read_only",
+                        executed=False,
+                        requires_confirmation=False,
+                        network_may_be_used=False,
+                        response_executed_as_command=False,
+                        error=None,
+                        intent_resolution=resolution,
+                    )
+                return AppCommandResult(
+                    ok=True,
+                    input_text=input_text,
+                    output_text=state.question_ru or "Уточните цель действия.",
+                    source=source,
+                    registry_match_id=None,
+                    category="clarification",
+                    risk_level="read_only",
+                    executed=False,
+                    requires_confirmation=False,
+                    network_may_be_used=False,
+                    response_executed_as_command=False,
+                    error=None,
+                    intent_resolution=resolution,
+                    requires_clarification=True,
+                    clarification_question=state.question_ru,
+                    clarification_options=(),
+                )
             self._pending_clarification = None
             self._pending_clarification_operation_id = None
             return None

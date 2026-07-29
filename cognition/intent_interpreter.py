@@ -1,6 +1,7 @@
 """Deterministic provider-neutral intent interpretation boundary."""
 
 from dataclasses import dataclass
+import re
 from typing import Protocol
 
 from cognition.contracts import (
@@ -58,7 +59,8 @@ class RuleBasedIntentInterpreter:
             )
 
         normalized = safe_user_text.casefold()
-        if normalized in _CANCELLATION_PHRASES:
+        control_normalized = _normalize_control_response(normalized)
+        if control_normalized in _CANCELLATION_PHRASES:
             return self._intent(
                 IntentCategory.CANCELLATION,
                 IntentConfidence.HIGH,
@@ -68,7 +70,7 @@ class RuleBasedIntentInterpreter:
                 context_turn_count_used,
             )
 
-        if clarification_turn is not None and _looks_like_short_reply(normalized):
+        if clarification_turn is not None and _looks_like_short_reply(control_normalized):
             return self._intent(
                 IntentCategory.CLARIFICATION_RESPONSE,
                 IntentConfidence.MEDIUM,
@@ -79,7 +81,7 @@ class RuleBasedIntentInterpreter:
                 may_require_clarification=False,
             )
 
-        if normalized in _CONFIRMATION_PHRASES:
+        if control_normalized in _CONFIRMATION_PHRASES:
             return self._intent(
                 IntentCategory.CONFIRMATION,
                 IntentConfidence.HIGH,
@@ -89,7 +91,7 @@ class RuleBasedIntentInterpreter:
                 context_turn_count_used,
             )
 
-        if normalized in _REJECTION_PHRASES:
+        if control_normalized in _REJECTION_PHRASES:
             return self._intent(
                 IntentCategory.REJECTION,
                 IntentConfidence.HIGH,
@@ -218,6 +220,10 @@ def _starts_with_phrase(text: str, phrases: tuple[str, ...]) -> bool:
     return any(text == phrase or text.startswith(f"{phrase} ") for phrase in phrases)
 
 
+def _normalize_control_response(normalized: str) -> str:
+    return " ".join(re.sub(r"^[^\w]+|[^\w]+$", " ", normalized).split())
+
+
 _CANCELLATION_PHRASES = (
     "abort",
     "cancel",
@@ -234,6 +240,7 @@ _CONFIRMATION_PHRASES = (
     "i confirm",
     "ok",
     "okay",
+    "proceed",
     "yes",
     "yep",
     "\u0434\u0430",
@@ -284,6 +291,7 @@ _ACTION_REQUEST_PREFIXES = (
     "do",
     "open",
     "remove",
+    "repeat",
     "run",
     "send",
     "start",
@@ -292,6 +300,8 @@ _ACTION_REQUEST_PREFIXES = (
     "write",
     "\u0437\u0430\u043f\u0443\u0441\u0442\u0438",
     "\u0441\u0434\u0435\u043b\u0430\u0439",
+    "\u043f\u043e\u0432\u0442\u043e\u0440\u0438",
+    "\u043f\u0440\u043e\u0434\u043e\u043b\u0436\u0430\u0439",
     "\u043e\u0442\u043a\u0440\u043e\u0439",
     "\u0441\u043e\u0437\u0434\u0430\u0439",
     "\u0443\u0434\u0430\u043b\u0438",

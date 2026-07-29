@@ -303,6 +303,21 @@ class FakeVoiceResult:
     normalization_rules: tuple[str, ...] = ()
 
 
+def _operation_id_from_desktop_text(text: str) -> str:
+    for line in text.splitlines():
+        if line.startswith("- operation id: "):
+            return line.removeprefix("- operation id: ").strip()
+    return ""
+
+
+def _desktop_field(text: str, label: str) -> str:
+    prefix = f"- {label}: "
+    for line in text.splitlines():
+        if line.startswith(prefix):
+            return line.removeprefix(prefix).strip()
+    return ""
+
+
 class FakeAppService:
     def __init__(self):
         self.preview_calls = []
@@ -2085,6 +2100,102 @@ def test_desktop_shell_projects_unknown_fallback_confirmation_from_app_service(t
     assert "- operation status: succeeded" in text
     assert "- awaiting confirmation: yes" not in text
     assert service.memory_manager.recall_user_fact("task096marker").found is False
+
+
+def test_desktop_shell_routes_russian_do_it_to_clarification_without_voice_fallback():
+    service = JarvisAppService(command_processor=FakeAppServiceCommandProcessor())
+    view_model = DesktopShellViewModel(service)
+
+    text = view_model.execute_command("\u0421\u0434\u0435\u043b\u0430\u0439 \u044d\u0442\u043e")
+
+    assert "- category: clarification" in text
+    assert "- requires confirmation: no" in text
+    assert "- operation status: awaiting_clarification" in text
+    assert "\u044d\u0442\u043e" in text.casefold()
+    assert "unsupported" not in text.casefold()
+    assert "voice.confirmation" not in text.casefold()
+
+
+def test_desktop_shell_clarification_confirmation_and_cancel_avoid_voice_fallback():
+    service = JarvisAppService(command_processor=FakeAppServiceCommandProcessor())
+    view_model = DesktopShellViewModel(service)
+    first = view_model.execute_command("\u0421\u0434\u0435\u043b\u0430\u0439 \u044d\u0442\u043e")
+
+    confirm = view_model.execute_command("\u041f\u043e\u0434\u0442\u0432\u0435\u0440\u0436\u0434\u0430\u044e")
+    cancel = view_model.execute_command("\u043e\u0442\u043c\u0435\u043d\u0430")
+
+    assert "- category: clarification" in confirm
+    assert "- operation status: awaiting_clarification" in confirm
+    assert "- category: clarification" in cancel
+    assert "- operation status: cancelled" in cancel
+    assert "voice.confirmation" not in confirm.casefold()
+    assert "voice.confirmation" not in cancel.casefold()
+    assert _operation_id_from_desktop_text(first) == _operation_id_from_desktop_text(confirm)
+    assert _operation_id_from_desktop_text(confirm) == _operation_id_from_desktop_text(cancel)
+
+
+def test_desktop_shell_non_gui_clarification_control_smoke_matches_app_service():
+    processor = FakeAppServiceCommandProcessor()
+    service = JarvisAppService(command_processor=processor)
+    view_model = DesktopShellViewModel(service)
+    commands = (
+        "\u0421\u0434\u0435\u043b\u0430\u0439 \u044d\u0442\u043e.",
+        "\u041f\u043e\u0434\u0442\u0432\u0435\u0440\u0436\u0434\u0430\u044e.",
+        "\u043e\u0442\u043c\u0435\u043d\u0430",
+        "\u041f\u043e\u0434\u0442\u0432\u0435\u0440\u0436\u0434\u0430\u044e.",
+        "\u0421\u0434\u0435\u043b\u0430\u0439 \u044d\u0442\u043e.",
+        "\u043e\u0442\u043c\u0435\u043d\u0430",
+        "\u0443\u0434\u0430\u043b\u0438 \u044d\u0442\u043e",
+    )
+
+    desktop_outputs = tuple(view_model.execute_command(command) for command in commands)
+
+    assert [_desktop_field(text, "category") for text in desktop_outputs] == [
+        "clarification",
+        "clarification",
+        "clarification",
+        "clarification",
+        "clarification",
+        "clarification",
+        "unsupported",
+    ]
+    assert [_desktop_field(text, "operation status") for text in desktop_outputs] == [
+        "awaiting_clarification",
+        "awaiting_clarification",
+        "cancelled",
+        "awaiting_clarification",
+        "awaiting_clarification",
+        "cancelled",
+        "succeeded",
+    ]
+    assert _operation_id_from_desktop_text(desktop_outputs[0]) == _operation_id_from_desktop_text(desktop_outputs[1])
+    assert _operation_id_from_desktop_text(desktop_outputs[1]) == _operation_id_from_desktop_text(desktop_outputs[2])
+    assert _operation_id_from_desktop_text(desktop_outputs[3]) != _operation_id_from_desktop_text(desktop_outputs[0])
+    assert _operation_id_from_desktop_text(desktop_outputs[4]) != _operation_id_from_desktop_text(desktop_outputs[3])
+    for text in desktop_outputs:
+        assert "- executed: yes" not in text
+        assert "- response executed as command: no" in text
+        assert "voice.confirmation" not in text.casefold()
+        assert "legacy_commandprocessor_fallback" not in text
+    assert processor.calls == []
+
+    app_processor = FakeAppServiceCommandProcessor()
+    app_service = JarvisAppService(command_processor=app_processor)
+    app_results = tuple(
+        app_service.execute_contract(command, AppCommandSource.TEST)
+        for command in commands
+    )
+
+    assert [result.category for result in app_results] == [
+        _desktop_field(text, "category") for text in desktop_outputs
+    ]
+    assert [result.operation_status for result in app_results] == [
+        _desktop_field(text, "operation status") for text in desktop_outputs
+    ]
+    assert all(result.executed is False for result in app_results)
+    assert all(result.response_executed_as_command is False for result in app_results)
+    assert all(result.requires_confirmation is False for result in app_results)
+    assert app_processor.calls == []
 
 
 def test_desktop_shell_renders_local_tts_diagnostics_without_confirmation():

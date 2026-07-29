@@ -98,6 +98,8 @@ class HybridIntentResolver:
         "ок",
         "ага",
         "yes",
+        "confirm",
+        "proceed",
     }
     CANCELLATION_RESPONSES = {
         "нет",
@@ -106,6 +108,7 @@ class HybridIntentResolver:
         "не надо",
         "stop",
         "cancel",
+        "never mind",
         "no",
     }
     AMBIGUOUS_STATUS_PHRASES = {
@@ -167,6 +170,7 @@ class HybridIntentResolver:
         reason_codes: list[str] = []
         if processing != original:
             reason_codes.append("safe_source_normalization")
+        control_normalized = self._normalize_control_response(normalized)
 
         exact = self._match_registry_command(processing)
         if exact is not None:
@@ -208,21 +212,21 @@ class HybridIntentResolver:
                 command_text=processing,
             )
 
-        if normalized in self.CONFIRMATION_RESPONSES:
-            return self._resolved_non_command(
-                original,
-                processing,
-                source,
-                IntentKind.CONFIRMATION_RESPONSE,
-                (*reason_codes, "confirmation_response"),
-            )
-        if normalized in self.CANCELLATION_RESPONSES:
+        if control_normalized in self.CANCELLATION_RESPONSES:
             return self._resolved_non_command(
                 original,
                 processing,
                 source,
                 IntentKind.CANCELLATION_RESPONSE,
                 (*reason_codes, "cancellation_response"),
+            )
+        if control_normalized in self.CONFIRMATION_RESPONSES:
+            return self._resolved_non_command(
+                original,
+                processing,
+                source,
+                IntentKind.CONFIRMATION_RESPONSE,
+                (*reason_codes, "confirmation_response"),
             )
 
         if normalized in self.AMBIGUOUS_STATUS_PHRASES:
@@ -441,6 +445,10 @@ class HybridIntentResolver:
                 if prefix and normalized_text.startswith(prefix):
                     return command
         return None
+
+    @classmethod
+    def _normalize_control_response(cls, normalized: str) -> str:
+        return " ".join(re.sub(r"^[^\w]+|[^\w]+$", " ", normalized).split())
 
     def _semantic_read_only_match(
         self,
