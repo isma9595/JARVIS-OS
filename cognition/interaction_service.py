@@ -8,6 +8,7 @@ from cognition.contracts import (
     AssistantResponse,
     AssistantResponseType,
     CognitiveInteractionResult,
+    ClarificationCoordinationInput,
     ConversationTurn,
     ConversationTurnInput,
     IntentInterpretationInput,
@@ -17,6 +18,11 @@ from cognition.contracts import (
     safe_cognitive_text,
 )
 from cognition.context import ConversationContextProjector
+from cognition.clarification_coordinator import (
+    ClarificationCoordinationError,
+    ClarificationCoordinator,
+    RuleBasedClarificationCoordinator,
+)
 from cognition.intent_interpreter import (
     IntentInterpretationError,
     IntentInterpreter,
@@ -44,6 +50,7 @@ class CognitiveInteractionService:
     context_projector: ConversationContextProjector = ConversationContextProjector()
     intent_interpreter: IntentInterpreter = RuleBasedIntentInterpreter()
     reference_resolver: ReferenceResolver = RuleBasedReferenceResolver()
+    clarification_coordinator: ClarificationCoordinator = RuleBasedClarificationCoordinator()
     response_composer: ResponseComposer | None = None
     assistant_source: str = "cognitive_interaction_service"
 
@@ -111,6 +118,7 @@ class CognitiveInteractionService:
                 composition=composition,
                 intent=None,
                 references=None,
+                clarification=None,
             )
         try:
             reference_resolution = self.reference_resolver.resolve(
@@ -147,6 +155,45 @@ class CognitiveInteractionService:
                 composition=composition,
                 intent=interpreted_intent,
                 references=None,
+                clarification=None,
+            )
+        try:
+            clarification = self.clarification_coordinator.coordinate(
+                ClarificationCoordinationInput(
+                    current_user_turn=user_turn,
+                    context=context,
+                    interpreted_intent=interpreted_intent,
+                    reference_resolution=reference_resolution,
+                )
+            )
+        except ClarificationCoordinationError:
+            composition = ResponseCompositionResult(
+                response_type=AssistantResponseType.ERROR,
+                text="Conversation clarification coordination failed safely.",
+                context_turn_count_used=context.included_turn_count,
+                composition_source="clarification_error_fallback",
+            )
+            assistant_turn = self.session_service.append_assistant_turn(
+                session.session_id,
+                safe_cognitive_text(composition.text),
+                self.assistant_source,
+            )
+            response = AssistantResponse(
+                response_id=f"cog-response-{uuid4().hex}",
+                session_id=session.session_id,
+                turn_id=assistant_turn.turn_id,
+                response_type=composition.response_type,
+                text=assistant_turn.text,
+                created_at=_utc_now_iso(),
+            )
+            return CognitiveInteractionResult(
+                response=response,
+                session=self.session_service.get_snapshot(session.session_id),
+                context=context,
+                composition=composition,
+                intent=interpreted_intent,
+                references=reference_resolution,
+                clarification=None,
             )
         composition_input = ResponseCompositionInput(
             current_user_turn=user_turn,
@@ -156,6 +203,7 @@ class CognitiveInteractionService:
             session=source_session,
             interpreted_intent=interpreted_intent,
             reference_resolution=reference_resolution,
+            clarification_request=clarification,
         )
         try:
             composition = self.response_composer.compose(composition_input)
@@ -186,6 +234,7 @@ class CognitiveInteractionService:
             composition=composition,
             intent=interpreted_intent,
             references=reference_resolution,
+            clarification=clarification,
         )
 
 

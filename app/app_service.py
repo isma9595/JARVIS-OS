@@ -57,6 +57,7 @@ from cognition import (
     ConversationSessionSnapshot,
     ConversationTurnInput,
     RuleBasedIntentInterpreter,
+    RuleBasedClarificationCoordinator,
     RuleBasedReferenceResolver,
     ResponseCompositionInput,
 )
@@ -249,6 +250,7 @@ class JarvisAppService:
         cognitive_context_projector=None,
         cognitive_intent_interpreter=None,
         cognitive_reference_resolver=None,
+        cognitive_clarification_coordinator=None,
         cognitive_response_composer=None,
         cognitive_interaction_service=None,
     ):
@@ -328,6 +330,10 @@ class JarvisAppService:
             self.cognitive_reference_resolver = (
                 cognitive_reference_resolver or RuleBasedReferenceResolver()
             )
+            self.cognitive_clarification_coordinator = (
+                cognitive_clarification_coordinator
+                or RuleBasedClarificationCoordinator()
+            )
             self.cognitive_response_composer = (
                 cognitive_response_composer
                 or CompatibilityResponseComposer(
@@ -341,6 +347,7 @@ class JarvisAppService:
                     context_projector=self.cognitive_context_projector,
                     intent_interpreter=self.cognitive_intent_interpreter,
                     reference_resolver=self.cognitive_reference_resolver,
+                    clarification_coordinator=self.cognitive_clarification_coordinator,
                     response_composer=self.cognitive_response_composer,
                 )
             )

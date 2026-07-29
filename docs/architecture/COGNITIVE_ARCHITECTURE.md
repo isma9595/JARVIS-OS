@@ -114,7 +114,7 @@ Typed Desktop input currently follows this path:
 DesktopShellViewModel / Tk UI
     -> JarvisAppService.preview_command() or execute_command()
         -> HybridIntentResolver for top-level deterministic intent metadata
-        -> pending clarification / pending confirmation checks
+        -> AppService command clarification / pending confirmation checks
         -> planner, workflow, memory, language, voice, provider-runtime,
            direct state-change, or legacy CommandProcessor route
         -> ExecutionCoordinator and PolicyDecisionBoundary where applicable
@@ -159,7 +159,7 @@ Desktop
 | --- | --- | --- |
 | Command interpretation | Split between `HybridIntentResolver`, `CommandResolutionService`, planner parser, AppService memory/language parsers, and legacy `CommandProcessor` | No single cognitive owner exists. The resolver modules are deterministic and non-executing; `CommandProcessor` still mixes recognition and execution for legacy paths. |
 | AI provider interaction | `ai/` provider contracts, gates, router, fallback/session/runtime modules, called from `CommandProcessor` and surfaced by AppService status | Providers return text only. Provider responses are not execution authority. |
-| Conversation state | `SessionConversationContext` plus AppService pending clarification/confirmation fields | Context is bounded and session-only. Clarification is single AppService instance state. There is no durable conversation session model. |
+| Conversation state | `SessionConversationContext` plus AppService command clarification/confirmation fields | Context is bounded and session-only. Legacy command clarification is AppService instance state. Cognitive clarification is represented as ordinary assistant turns. |
 | Execution lifecycle | `ExecutionCoordinator` and `ExecutionJournal` | Own operation IDs, idempotency, cancellation tokens, lifecycle status, bounded in-memory journal. |
 | Workflow lifecycle | `WorkflowRunner` and `workflows/contracts.py` | Own run/step state, resume/cancel eligibility, cooperative cancellation, run history projection. Current state is in-memory. |
 | Activity projection | `ApplicationActivityTracker` below AppService | Read-only projection from execution operations, not an execution owner. |
@@ -289,8 +289,9 @@ informational turns may remain goal-less.
 
 ### 1. Conversation Sessions
 
-Conversation sessions group turns, pending clarification, active goal, pending
-plan, and execution linkage under a stable `session_id`.
+Conversation sessions group turns, active goal, pending plan, and execution
+linkage under a stable `session_id`. Cognitive clarification continuity comes
+from ordinary assistant/user turns rather than a separate pending store.
 
 The session manager owns creation, lookup, archival, restart loading, and
 detached snapshots. It does not parse intent, call providers, run workflows, or
@@ -300,7 +301,7 @@ render UI.
 
 Short-term context is a bounded rolling context for the current session:
 recent turns, salient references, current topic, active goal summary, pending
-clarification, and last safe assistant response.
+plan summary, and last safe assistant response.
 
 It should extend the current `SessionConversationContext` idea but move
 ownership into the cognitive layer and make snapshots durable only where the
@@ -322,14 +323,16 @@ workflow", or "open it again" into explicit entities with provenance and
 confidence. It reads only conversation context, activity/workflow history
 projections, memory summaries, and approved knowledge sources.
 
-If resolution is low-confidence or action-bearing, it produces a clarification
-request instead of guessing.
+If resolution is ambiguous or unresolved, it reports that typed status instead
+of guessing. Clarification coordination decides whether that bounded evidence
+should become a user-facing question.
 
 ### 5. Clarification Handling
 
-Clarification handling is one coordinator for missing intent, missing slots,
-ambiguous references, conflicting instructions, plan approval details, and
-memory-write consent. It must keep clarification separate from action approval.
+Clarification handling is one stateless coordinator for bounded deterministic
+ambiguity such as ambiguous references, unresolved actionable references, and
+unclear short confirmation or rejection. It must keep clarification separate
+from action approval.
 
 A clarification answer resolves data. It never approves a mutating or risky
 action unless there is a distinct `PlanApproval` or existing confirmation
@@ -490,10 +493,10 @@ not replace execution state.
 - Owned state: authoritative session metadata, turn index, active/pending
   cognitive state links.
 - Persistence: durable session store for session metadata, selected turn
-  summaries, pending clarification, active goal id, pending plan id, execution
-  links.
+  summaries, active goal id, pending plan id, execution links, and ordinary
+  clarification question turns.
 - Public interfaces: `create_session`, `get_snapshot`, `append_turn`,
-  `set_pending_clarification`, `set_active_goal`, `close_session`.
+  `set_active_goal`, `close_session`.
 - Forbidden: intent parsing, provider calls, execution, UI rendering.
 - Dependencies: persistence adapter, clock/id generator.
 - Lifecycle: process singleton per user profile.
@@ -554,27 +557,30 @@ not replace execution state.
 - Dependencies: ConversationContextStore, AppService read-only history
   adapters, MemoryService read API, KnowledgeService read API.
 - Lifecycle: stateless service.
-- Failure behavior: emit `ClarificationRequest`.
+- Failure behavior: return unresolved or ambiguous typed status.
 - Concurrency: reentrant; read-only dependencies must return snapshots.
 - Observability: candidate count, selected entity id, confidence, provenance.
 
 ### ClarificationCoordinator
 
-- Responsibility: manage pending clarification lifecycle.
-- Inputs: missing/ambiguous intent data, user clarification answer, context.
-- Outputs: `ClarificationRequest` or updated `ResolvedIntent`.
-- Owned state: pending clarification records by session.
-- Persistence: pending clarification must survive restart when tied to an
-  active session.
-- Public interfaces: `request_clarification`, `answer_clarification`,
-  `cancel_clarification`.
+- Responsibility: decide whether bounded context, interpreted intent, and
+  reference-resolution output require one safe clarification question.
+- Inputs: current user turn, bounded context snapshot, `InterpretedIntent`, and
+  `ReferenceResolutionResult`.
+- Outputs: `ClarificationRequest`.
+- Owned state: none.
+- Persistence: none; conversation history is the only continuity source.
+- Public interfaces: `coordinate(input)`.
 - Forbidden: treating clarification as approval, executing selected command,
-  broad free-form option execution.
-- Dependencies: session service, intent/reference services for revalidation.
-- Lifecycle: per session.
-- Failure behavior: expire stale clarification and ask again safely.
-- Concurrency: one active clarification per session unless later approved.
-- Observability: clarification id, option ids, expiry, resolution status.
+  broad free-form option execution, reconstructing command arguments,
+  inspecting authoritative session objects, or persisting pending
+  clarification state.
+- Dependencies: immutable cognition contracts only.
+- Lifecycle: stateless service.
+- Failure behavior: narrow safe assistant error through
+  `CognitiveInteractionService`.
+- Concurrency: reentrant.
+- Observability: clarification status, reason, option count, and rule id.
 
 ### GoalService
 
@@ -747,8 +753,7 @@ for clarity only and are not implementation instructions.
 ### ConversationSessionSnapshot
 
 - Required: `session_id`, `user_id`, `status`, `created_at`, `updated_at`,
-  `turn_count`, `active_goal_id`, `pending_clarification_id`,
-  `pending_plan_id`, `last_turn_id`.
+  `turn_count`, `active_goal_id`, `pending_plan_id`, `last_turn_id`.
 - Optional: `title`, `locale`, `source_client`, `archived_at`,
   `linked_execution_ids`.
 - Identifiers: stable `session_id`.
@@ -802,16 +807,16 @@ for clarity only and are not implementation instructions.
 
 ### ClarificationRequest
 
-- Required: `clarification_id`, `session_id`, `turn_id`, `question`,
-  `options`, `status`, `created_at`, `expires_at`.
-- Optional: `free_text_allowed`, `target_intent_id`, `target_plan_id`,
-  `reason_codes`.
-- Status enum: `pending`, `answered`, `cancelled`, `expired`.
-- Provenance: component that requested clarification and missing fields.
-- Confidence: not applicable except option confidence if generated.
-- Serialization: explicit option ids and display text.
-- Sensitive data: options must be safe display labels; no hidden executable
-  payloads.
+- Required: `status`, `reason`, `options`, reference/context counts,
+  coordinator identity/version, and deterministic rule id.
+- Optional: one bounded `safe_question` when the status needs user guidance.
+- Status enum: `not_needed`, `needed`, `unavailable`.
+- Provenance: bounded cognitive rule id only.
+- Confidence: not represented; clarification is conversational guidance, not
+  approval or resolution.
+- Serialization: JSON-safe enums, primitive counters, and bounded option DTOs.
+- Sensitive data: options must be safe display labels and excerpts; no hidden
+  executable payloads.
 
 ### UserGoal
 
@@ -970,19 +975,20 @@ Workflow interaction: workflow used only for workflow-backed commands.
 
 1. IntentInterpreter or ReferenceResolver marks ambiguity.
 2. ClarificationCoordinator creates `ClarificationRequest`.
-3. SessionService persists pending clarification.
-4. ResponseComposer asks a bounded question.
-5. User answer resolves the pending clarification.
-6. The resolved intent re-enters policy/planning; action approval remains
+3. ResponseComposer asks a bounded question.
+4. SessionService records the question as an ordinary assistant turn.
+5. User answer is interpreted through normal bounded context.
+6. Any later resolved intent re-enters policy/planning; action approval remains
    separate.
 
-Authoritative state owner: ClarificationCoordinator and SessionService.
+Authoritative state owner: ConversationSessionService for turn history.
 
-Persisted state: pending clarification id/options/expiry.
+Persisted state: no pending clarification store; only normal conversation
+turn summaries.
 
 User-visible status: waiting for user.
 
-Failure/recovery: expired clarification is cancelled and user is asked again.
+Failure/recovery: if bounded context is unavailable, ask a generic safe prompt.
 
 Workflow interaction: none until resolved and approved.
 
@@ -1053,8 +1059,10 @@ Workflow interaction: workflow owns run/step lifecycle.
 
 ### G. Cancelled Or Interrupted Conversation
 
-1. User cancels pending clarification, plan, goal, or active execution.
-2. Cognitive cancellation updates session/goal/plan state.
+1. User cancels the current clarification conversation, plan, goal, or active
+   execution.
+2. Cognitive cancellation updates session/goal/plan state where durable state
+   exists.
 3. Active execution cancellation is delegated to existing AppService/
    WorkflowRunner/ExecutionCoordinator APIs.
 4. ResponseComposer reports what was cancelled and what remains.
@@ -1073,7 +1081,7 @@ Workflow interaction: cooperative cancellation only through WorkflowRunner.
 
 ### H. Resume After Restart
 
-1. AppService starts and loads durable sessions/goals/pending clarifications.
+1. AppService starts and loads durable sessions/goals.
 2. Execution/workflow volatile state is marked unavailable unless future
    execution persistence exists.
 3. SessionService restores safe conversation summary.
@@ -1084,8 +1092,8 @@ Workflow interaction: cooperative cancellation only through WorkflowRunner.
 Authoritative state owner: session/goal stores; execution owner for only
 durable execution records that exist.
 
-Persisted state: sessions, pending clarification, active goal, approved plan,
-execution links.
+Persisted state: sessions, active goal, approved plan, execution links, and
+ordinary clarification question turns.
 
 User-visible status: interrupted/recovery available.
 
@@ -1220,7 +1228,7 @@ Must survive restart:
 
 - conversation session metadata and safe turn summaries for active sessions;
 - active durable goal and goal status;
-- pending clarification with bounded options and expiry;
+- ordinary clarification question turns as safe conversation summaries;
 - approved plan and plan version when execution has not completed;
 - execution linkage ids, while accepting that current execution/workflow
   runtime state may not be recoverable until a future persistence task;
@@ -1322,7 +1330,7 @@ execution authority.
 ### DesktopShellState
 
 Desktop remains presentation-only. It should call AppService conversation DTOs,
-show pending clarifications/plans/suggestions, and submit user decisions. It
+show clarification responses/plans/suggestions, and submit user decisions. It
 must not import cognitive internals.
 
 ### AI Providers

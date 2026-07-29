@@ -2,6 +2,9 @@ import pytest
 
 from cognition import (
     AssistantResponseType,
+    ClarificationReason,
+    ClarificationRequest,
+    ClarificationStatus,
     CompatibilityResponseComposer,
     ConversationContextProjector,
     ConversationSessionService,
@@ -129,6 +132,75 @@ def test_compatibility_composer_observably_uses_reference_resolution():
     assert result.composition_source == (
         "compatibility_delegate:conversation:refs=1,"
         "resolved=1,ambiguous=0,unresolved=0"
+    )
+
+
+def test_compatibility_composer_uses_needed_clarification_without_delegate_call():
+    calls = []
+    _, composition_input = _composition_input(
+        interpreted_intent=_intent(),
+        reference_resolution=_reference_resolution(),
+    )
+    composition_input = ResponseCompositionInput(
+        current_user_turn=composition_input.current_user_turn,
+        context=composition_input.context,
+        source=composition_input.source,
+        locale=composition_input.locale,
+        session=composition_input.session,
+        interpreted_intent=composition_input.interpreted_intent,
+        reference_resolution=composition_input.reference_resolution,
+        clarification_request=ClarificationRequest(
+            status=ClarificationStatus.NEEDED,
+            reason=ClarificationReason.AMBIGUOUS_REFERENCE,
+            safe_question="Which one did you mean?",
+            options=(),
+            related_reference_count=1,
+            context_turn_count_used=1,
+            coordinator_id="test",
+            coordinator_version="1",
+            rule_id="test_rule",
+        ),
+    )
+
+    result = CompatibilityResponseComposer(lambda _: calls.append("delegate") or "reply").compose(
+        composition_input
+    )
+
+    assert calls == []
+    assert result.text == "Which one did you mean?"
+    assert result.composition_source == (
+        "compatibility_delegate:clarification=needed,"
+        "reason=ambiguous_reference,options=0,rule=test_rule"
+    )
+
+
+def test_compatibility_composer_uses_unavailable_generic_prompt():
+    _, composition_input = _composition_input()
+    composition_input = ResponseCompositionInput(
+        current_user_turn=composition_input.current_user_turn,
+        context=composition_input.context,
+        source=composition_input.source,
+        locale=composition_input.locale,
+        session=composition_input.session,
+        clarification_request=ClarificationRequest(
+            status=ClarificationStatus.UNAVAILABLE,
+            reason=ClarificationReason.INSUFFICIENT_CONTEXT,
+            safe_question=None,
+            options=(),
+            related_reference_count=0,
+            context_turn_count_used=1,
+            coordinator_id="test",
+            coordinator_version="1",
+            rule_id="test_rule",
+        ),
+    )
+
+    result = CompatibilityResponseComposer(lambda _: "reply").compose(composition_input)
+
+    assert result.text == "Could you clarify what you mean?"
+    assert result.composition_source == (
+        "compatibility_delegate:clarification=unavailable,"
+        "reason=insufficient_context,options=0,rule=test_rule"
     )
 
 

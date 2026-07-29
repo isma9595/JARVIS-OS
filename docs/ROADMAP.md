@@ -1,6 +1,6 @@
 # JARVIS Roadmap
 
-Status: updated by TASK-118. This roadmap begins after the completed
+Status: updated by TASK-119. This roadmap begins after the completed
 execution/workflow platform milestone and the TASK-112 cognitive architecture
 report, then accounts for the TASK-113 cognitive skeleton implementation and
 the completed TASK-114 roadmap-alignment record.
@@ -113,8 +113,8 @@ reference resolution without execution.
 
 Completion criteria: cognitive interpretation owns non-executing user intent
 for conversation turns, simple conversational references are resolved
-conservatively from bounded context, and clarification state is durable-safe
-and distinct from approval.
+conservatively from bounded context, and clarification guidance is stateless,
+durable-safe, and distinct from approval.
 
 ### TASK-117 - IntentInterpreter Adapter - Completed
 
@@ -166,20 +166,25 @@ and distinct from approval.
   reference authorizes execution, and existing command behavior remains
   unchanged.
 
-### TASK-119 - ClarificationCoordinator
+### TASK-119 - ClarificationCoordinator - Completed
 
-- Purpose: centralize pending clarification records for ambiguous intent,
-  ambiguous references, unresolved references, and missing slots.
-- Main architectural risk: conflating clarification with risky-action
-  confirmation.
-- Expected production files: `cognition/clarification.py`,
-  session-store extensions.
-- Expected test areas: option matching, expiry, restart recovery,
-  cancellation, ambiguous references, unresolved references, no approval side
-  effects.
+- Delivered scope: immutable provider-neutral clarification contracts;
+  stateless deterministic `ClarificationCoordinator` protocol and
+  `RuleBasedClarificationCoordinator`; safe bounded option construction for
+  ambiguous references; explicit `not_needed`, `needed`, and `unavailable`
+  outcomes; response-composer integration for clarification questions; and
+  AppService composition-root wiring.
+- Non-goals preserved: no pending clarification store, no state machine, no
+  command or workflow reconstruction, no execution approval, no provider calls,
+  no memory or knowledge lookup, and no broad missing-slot extraction.
+- Expected test areas: completed by TASK-119 with contracts, coordinator,
+  response composer, interaction service, AppService integration, architecture
+  boundary, and existing cognitive compatibility tests.
 - Dependencies: TASK-118.
-- Completion criteria: ambiguous or incomplete turns produce a persisted
-  pending clarification and a later answer resolves only meaning.
+- Completion criteria: completed by TASK-119; clarification is conversational
+  guidance only, coordinator decisions use bounded context/intent/reference
+  DTOs, questions are deterministic and safe, `unavailable` is explicit, and
+  existing command/workflow/confirmation APIs remain unchanged.
 
 ## Milestone 3: Personal Memory
 

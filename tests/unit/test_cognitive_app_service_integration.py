@@ -3,6 +3,9 @@ import pytest
 from app import AppCommandSource, JarvisAppService
 from cognition import (
     AssistantResponseType,
+    ClarificationRequest,
+    ClarificationReason,
+    ClarificationStatus,
     ConversationSessionClosedError,
     ConversationSessionStatus,
     IntentCategory,
@@ -236,6 +239,36 @@ def test_app_service_conversation_turn_flows_through_reference_resolver():
     assert calls[0].interpreted_intent is result.intent
     assert result.references.references == ()
     assert result.response.text == "refs 0"
+
+
+def test_app_service_constructs_and_injects_clarification_coordinator():
+    calls = []
+
+    class TrackingCoordinator:
+        def coordinate(self, coordination_input):
+            calls.append(coordination_input)
+            return ClarificationRequest(
+                status=ClarificationStatus.NEEDED,
+                reason=ClarificationReason.UNCLEAR_CONFIRMATION,
+                safe_question="What are you confirming?",
+                options=(),
+                related_reference_count=0,
+                context_turn_count_used=coordination_input.context.included_turn_count,
+                coordinator_id="test",
+                coordinator_version="1",
+                rule_id="test_rule",
+            )
+
+    service = JarvisAppService(
+        command_processor=FakeCommandProcessor(),
+        cognitive_clarification_coordinator=TrackingCoordinator(),
+    )
+
+    result = service.handle_conversation_turn("yes", AppCommandSource.TEST)
+
+    assert len(calls) == 1
+    assert result.clarification.status is ClarificationStatus.NEEDED
+    assert result.response.text == "What are you confirming?"
 
 
 def test_context_composition_does_not_call_provider_execution_workflow_or_memory():

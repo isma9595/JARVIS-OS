@@ -281,6 +281,7 @@ _INFORMATION_REQUEST_PREFIXES = (
 _ACTION_REQUEST_PREFIXES = (
     "create",
     "delete",
+    "do",
     "open",
     "remove",
     "run",
@@ -290,6 +291,7 @@ _ACTION_REQUEST_PREFIXES = (
     "turn on",
     "write",
     "\u0437\u0430\u043f\u0443\u0441\u0442\u0438",
+    "\u0441\u0434\u0435\u043b\u0430\u0439",
     "\u043e\u0442\u043a\u0440\u043e\u0439",
     "\u0441\u043e\u0437\u0434\u0430\u0439",
     "\u0443\u0434\u0430\u043b\u0438",

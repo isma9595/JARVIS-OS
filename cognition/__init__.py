@@ -4,6 +4,11 @@ from cognition.contracts import (
     AssistantResponse,
     AssistantResponseType,
     CognitiveInteractionResult,
+    ClarificationCoordinationInput,
+    ClarificationOption,
+    ClarificationReason,
+    ClarificationRequest,
+    ClarificationStatus,
     ConversationContextContentClassification,
     ConversationContextSnapshot,
     ConversationContextTurn,
@@ -27,6 +32,12 @@ from cognition.contracts import (
     ResolvedReference,
     ResponseCompositionInput,
     ResponseCompositionResult,
+)
+from cognition.clarification_coordinator import (
+    ClarificationCoordinationError,
+    ClarificationCoordinator,
+    InvalidClarificationInputError,
+    RuleBasedClarificationCoordinator,
 )
 from cognition.context import (
     DEFAULT_CONTEXT_MAX_TOTAL_CHARS,
@@ -76,6 +87,13 @@ __all__ = [
     "AssistantResponseType",
     "CognitiveInteractionResult",
     "CognitiveInteractionService",
+    "ClarificationCoordinationError",
+    "ClarificationCoordinationInput",
+    "ClarificationCoordinator",
+    "ClarificationOption",
+    "ClarificationReason",
+    "ClarificationRequest",
+    "ClarificationStatus",
     "CompatibilityResponseComposer",
     "CONVERSATION_SESSION_SCHEMA_VERSION",
     "ConversationContextContentClassification",
@@ -102,6 +120,7 @@ __all__ = [
     "ConversationTurnInput",
     "DetectedReference",
     "InvalidConversationTurnError",
+    "InvalidClarificationInputError",
     "IntentCategory",
     "IntentConfidence",
     "IntentEvidence",
@@ -127,5 +146,6 @@ __all__ = [
     "ResponseCompositionResult",
     "ResolvedReference",
     "RuleBasedIntentInterpreter",
+    "RuleBasedClarificationCoordinator",
     "RuleBasedReferenceResolver",
 ]

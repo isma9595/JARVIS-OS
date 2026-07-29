@@ -2,6 +2,10 @@ import pytest
 
 from cognition import (
     AssistantResponseType,
+    ClarificationCoordinationError,
+    ClarificationRequest,
+    ClarificationReason,
+    ClarificationStatus,
     CognitiveInteractionService,
     ConversationContextProjector,
     ConversationPersistenceWriteError,
@@ -223,6 +227,83 @@ def test_context_projector_runs_after_user_turn_and_composer_runs_once():
     assert result.references.references[0].status is ReferenceResolutionStatus.RESOLVED
 
 
+def test_interaction_service_calls_coordinator_between_resolver_and_composer_once():
+    events = []
+    session_service = ConversationSessionService()
+
+    class TrackingInterpreter:
+        def interpret(self, interpretation_input):
+            events.append("interpret")
+            return _test_intent(
+                context_turn_count_used=interpretation_input.context.included_turn_count
+            )
+
+    class TrackingResolver:
+        def resolve(self, resolution_input):
+            events.append("resolve")
+            return _test_references(
+                context_turn_count_used=resolution_input.context.included_turn_count
+            )
+
+    class TrackingCoordinator:
+        def coordinate(self, coordination_input):
+            events.append(
+                (
+                    "coordinate",
+                    coordination_input.reference_resolution is not None,
+                    coordination_input.interpreted_intent.category,
+                )
+            )
+            return ClarificationRequest(
+                status=ClarificationStatus.NEEDED,
+                reason=ClarificationReason.UNCLEAR_CONFIRMATION,
+                safe_question="What are you confirming?",
+                options=(),
+                related_reference_count=0,
+                context_turn_count_used=coordination_input.context.included_turn_count,
+                coordinator_id="test",
+                coordinator_version="1",
+                rule_id="test_rule",
+            )
+
+    class TrackingComposer:
+        def compose(self, composition_input):
+            events.append(
+                (
+                    "compose",
+                    composition_input.clarification_request.status,
+                    composition_input.clarification_request.safe_question,
+                )
+            )
+            return ResponseCompositionResult(
+                response_type=AssistantResponseType.MESSAGE,
+                text=composition_input.clarification_request.safe_question,
+                context_turn_count_used=composition_input.context.included_turn_count,
+                composition_source="test",
+            )
+
+    service = CognitiveInteractionService(
+        session_service=session_service,
+        intent_interpreter=TrackingInterpreter(),
+        reference_resolver=TrackingResolver(),
+        clarification_coordinator=TrackingCoordinator(),
+        response_composer=TrackingComposer(),
+    )
+
+    result = service.handle_turn(ConversationTurnInput(text="yes", source="test"))
+    turns = session_service.turns_snapshot(result.session.session_id)
+
+    assert events == [
+        "interpret",
+        "resolve",
+        ("coordinate", True, IntentCategory.CONVERSATION),
+        ("compose", ClarificationStatus.NEEDED, "What are you confirming?"),
+    ]
+    assert result.clarification.status is ClarificationStatus.NEEDED
+    assert result.response.text == "What are you confirming?"
+    assert [turn.role for turn in turns] == [ConversationRole.USER, ConversationRole.ASSISTANT]
+
+
 def test_projection_failure_preserves_user_turn_without_assistant_turn():
     session_service = ConversationSessionService()
 
@@ -322,6 +403,37 @@ def test_reference_resolution_failure_records_safe_error_and_skips_composer():
     assert result.composition.composition_source == "reference_error_fallback"
     assert [turn.sequence for turn in turns] == [1, 2]
     assert [turn.role for turn in turns] == [ConversationRole.USER, ConversationRole.ASSISTANT]
+    assert "sk-test" not in result.response.text
+
+
+def test_clarification_coordination_failure_records_safe_error_and_skips_composer():
+    session_service = ConversationSessionService()
+
+    class FailingCoordinator:
+        def coordinate(self, *_):
+            raise ClarificationCoordinationError("secret sk-test-1234567890secret")
+
+    class UnusedComposer:
+        def compose(self, *_):
+            raise AssertionError("composer should not run")
+
+    service = CognitiveInteractionService(
+        session_service=session_service,
+        context_projector=ConversationContextProjector(),
+        clarification_coordinator=FailingCoordinator(),
+        response_composer=UnusedComposer(),
+    )
+
+    result = service.handle_turn(ConversationTurnInput(text="hello", source="test"))
+    turns = session_service.turns_snapshot(result.session.session_id)
+
+    assert result.response.response_type is AssistantResponseType.ERROR
+    assert result.response.text == "Conversation clarification coordination failed safely."
+    assert result.intent is not None
+    assert result.references is not None
+    assert result.clarification is None
+    assert result.composition.composition_source == "clarification_error_fallback"
+    assert [turn.sequence for turn in turns] == [1, 2]
     assert "sk-test" not in result.response.text
 
 

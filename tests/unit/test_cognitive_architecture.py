@@ -23,6 +23,7 @@ def test_cognition_package_contains_only_approved_cognitive_modules():
         "__init__.py",
         "contracts.py",
         "context.py",
+        "clarification_coordinator.py",
         "intent_interpreter.py",
         "interaction_service.py",
         "persistence.py",
@@ -91,6 +92,7 @@ def test_context_interpreter_and_response_composer_do_not_import_runtime_owners(
         "context.py",
         "intent_interpreter.py",
         "reference_resolver.py",
+        "clarification_coordinator.py",
         "response_composer.py",
     ):
         imports = _imports_for(COGNITION_ROOT / module_name)
@@ -105,6 +107,7 @@ def test_session_state_has_one_authoritative_owner():
     interpreter_source = (COGNITION_ROOT / "intent_interpreter.py").read_text(encoding="utf-8")
     resolver_source = (COGNITION_ROOT / "reference_resolver.py").read_text(encoding="utf-8")
     composer_source = (COGNITION_ROOT / "response_composer.py").read_text(encoding="utf-8")
+    coordinator_source = (COGNITION_ROOT / "clarification_coordinator.py").read_text(encoding="utf-8")
 
     assert "self._sessions" in session_source
     assert "self._sessions" not in interaction_source
@@ -112,6 +115,7 @@ def test_session_state_has_one_authoritative_owner():
     assert "self._sessions" not in interpreter_source
     assert "self._sessions" not in resolver_source
     assert "self._sessions" not in composer_source
+    assert "self._sessions" not in coordinator_source
 
 
 def test_interaction_service_owns_no_repository_or_session_cache():
@@ -126,6 +130,7 @@ def test_context_projector_and_response_composer_own_no_durable_state_or_token_c
     interpreter_source = (COGNITION_ROOT / "intent_interpreter.py").read_text(encoding="utf-8")
     resolver_source = (COGNITION_ROOT / "reference_resolver.py").read_text(encoding="utf-8")
     composer_source = (COGNITION_ROOT / "response_composer.py").read_text(encoding="utf-8")
+    coordinator_source = (COGNITION_ROOT / "clarification_coordinator.py").read_text(encoding="utf-8")
 
     assert "repository" not in context_source
     assert "save_record" not in context_source
@@ -143,6 +148,10 @@ def test_context_projector_and_response_composer_own_no_durable_state_or_token_c
     assert "save_record" not in composer_source
     assert "load_records" not in composer_source
     assert "token" not in composer_source.lower()
+    assert "repository" not in coordinator_source
+    assert "save_record" not in coordinator_source
+    assert "load_records" not in coordinator_source
+    assert "token" not in coordinator_source.lower()
 
 
 def test_no_future_placeholder_cognitive_services_are_added():

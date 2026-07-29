@@ -80,10 +80,32 @@ class ReferenceResolutionStatus(Enum):
     NOT_APPLICABLE = "not_applicable"
 
 
+class ClarificationStatus(Enum):
+    NOT_NEEDED = "not_needed"
+    NEEDED = "needed"
+    UNAVAILABLE = "unavailable"
+
+
+class ClarificationReason(Enum):
+    AMBIGUOUS_REFERENCE = "ambiguous_reference"
+    UNRESOLVED_REFERENCE = "unresolved_reference"
+    MISSING_SUBJECT = "missing_subject"
+    UNCLEAR_CONFIRMATION = "unclear_confirmation"
+    UNCLEAR_REJECTION = "unclear_rejection"
+    INSUFFICIENT_CONTEXT = "insufficient_context"
+    CONFLICTING_SIGNALS = "conflicting_signals"
+    UNSUPPORTED_AMBIGUITY = "unsupported_ambiguity"
+    NONE = "none"
+
+
 MAX_INTENT_SAFE_TEXT_LENGTH = 240
 MAX_INTENT_EVIDENCE_TEXT_LENGTH = 120
 MAX_REFERENCE_SURFACE_TEXT_LENGTH = 80
 MAX_REFERENCE_CANDIDATE_EXCERPT_LENGTH = 160
+MAX_CLARIFICATION_QUESTION_LENGTH = 160
+MAX_CLARIFICATION_OPTION_EXCERPT_LENGTH = 120
+MAX_CLARIFICATION_OPTION_LABEL_LENGTH = 80
+MAX_CLARIFICATION_OPTIONS = 3
 
 
 def safe_cognitive_text(text: object) -> str:
@@ -532,6 +554,150 @@ class ReferenceResolutionResult(CognitiveContractMixin):
 
 
 @dataclass(frozen=True)
+class ClarificationOption(CognitiveContractMixin):
+    safe_label: str
+    candidate_turn_sequence: int | None
+    candidate_id: str | None
+    safe_excerpt: str
+    source_reason: str
+    ordinal: int
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "safe_label",
+            _bounded_required_text(
+                self.safe_label,
+                "safe_label",
+                MAX_CLARIFICATION_OPTION_LABEL_LENGTH,
+            ),
+        )
+        object.__setattr__(
+            self,
+            "candidate_turn_sequence",
+            _optional_positive_int(
+                self.candidate_turn_sequence,
+                "candidate_turn_sequence",
+            ),
+        )
+        object.__setattr__(self, "candidate_id", _optional_clean_text(self.candidate_id))
+        object.__setattr__(
+            self,
+            "safe_excerpt",
+            _bounded_required_text(
+                self.safe_excerpt,
+                "safe_excerpt",
+                MAX_CLARIFICATION_OPTION_EXCERPT_LENGTH,
+            ),
+        )
+        object.__setattr__(
+            self,
+            "source_reason",
+            _clean_required_text(self.source_reason, "source_reason"),
+        )
+        object.__setattr__(self, "ordinal", _positive_int(self.ordinal, "ordinal"))
+        if self.candidate_turn_sequence is None and self.candidate_id is None:
+            raise InvalidConversationTurnError(
+                "clarification options require a detached candidate reference"
+            )
+
+
+@dataclass(frozen=True)
+class ClarificationRequest(CognitiveContractMixin):
+    status: ClarificationStatus
+    reason: ClarificationReason
+    safe_question: str | None
+    options: tuple[ClarificationOption, ...]
+    related_reference_count: int
+    context_turn_count_used: int
+    coordinator_id: str
+    coordinator_version: str
+    rule_id: str
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "status", _clarification_status(self.status))
+        object.__setattr__(self, "reason", _clarification_reason(self.reason))
+        object.__setattr__(
+            self,
+            "safe_question",
+            _bounded_optional_text(
+                self.safe_question,
+                MAX_CLARIFICATION_QUESTION_LENGTH,
+            ),
+        )
+        options = tuple(self.options)
+        if len(options) > MAX_CLARIFICATION_OPTIONS:
+            options = options[:MAX_CLARIFICATION_OPTIONS]
+        if not all(isinstance(item, ClarificationOption) for item in options):
+            raise InvalidConversationTurnError(
+                "options must contain clarification options"
+            )
+        object.__setattr__(self, "options", options)
+        object.__setattr__(
+            self,
+            "related_reference_count",
+            _nonnegative_int(self.related_reference_count, "related_reference_count"),
+        )
+        object.__setattr__(
+            self,
+            "context_turn_count_used",
+            _nonnegative_int(self.context_turn_count_used, "context_turn_count_used"),
+        )
+        object.__setattr__(
+            self,
+            "coordinator_id",
+            _clean_required_text(self.coordinator_id, "coordinator_id"),
+        )
+        object.__setattr__(
+            self,
+            "coordinator_version",
+            _clean_required_text(self.coordinator_version, "coordinator_version"),
+        )
+        object.__setattr__(self, "rule_id", _clean_required_text(self.rule_id, "rule_id"))
+        if self.status is ClarificationStatus.NEEDED and self.safe_question is None:
+            raise InvalidConversationTurnError(
+                "needed clarification requires a safe question"
+            )
+        if self.status is ClarificationStatus.NOT_NEEDED and self.options:
+            raise InvalidConversationTurnError(
+                "not-needed clarification cannot include options"
+            )
+        if (
+            self.status is ClarificationStatus.NOT_NEEDED
+            and self.reason is not ClarificationReason.NONE
+        ):
+            raise InvalidConversationTurnError(
+                "not-needed clarification requires none reason"
+            )
+
+
+@dataclass(frozen=True)
+class ClarificationCoordinationInput(CognitiveContractMixin):
+    current_user_turn: ConversationTurn
+    context: ConversationContextSnapshot
+    interpreted_intent: InterpretedIntent
+    reference_resolution: ReferenceResolutionResult
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.current_user_turn, ConversationTurn):
+            raise InvalidConversationTurnError(
+                "current_user_turn must be a conversation turn"
+            )
+        if not isinstance(self.context, ConversationContextSnapshot):
+            raise InvalidConversationTurnError(
+                "context must be a conversation context snapshot"
+            )
+        if not isinstance(self.interpreted_intent, InterpretedIntent):
+            raise InvalidConversationTurnError(
+                "interpreted_intent must be an interpreted intent"
+            )
+        if not isinstance(self.reference_resolution, ReferenceResolutionResult):
+            raise InvalidConversationTurnError(
+                "reference_resolution must be a reference resolution result"
+            )
+
+
+@dataclass(frozen=True)
 class ResponseCompositionInput(CognitiveContractMixin):
     current_user_turn: ConversationTurn
     context: ConversationContextSnapshot
@@ -540,6 +706,7 @@ class ResponseCompositionInput(CognitiveContractMixin):
     session: ConversationSessionSnapshot | None = None
     interpreted_intent: InterpretedIntent | None = None
     reference_resolution: ReferenceResolutionResult | None = None
+    clarification_request: ClarificationRequest | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.current_user_turn, ConversationTurn):
@@ -561,6 +728,13 @@ class ResponseCompositionInput(CognitiveContractMixin):
         ):
             raise InvalidConversationTurnError(
                 "reference_resolution must be a reference resolution result"
+            )
+        if self.clarification_request is not None and not isinstance(
+            self.clarification_request,
+            ClarificationRequest,
+        ):
+            raise InvalidConversationTurnError(
+                "clarification_request must be a clarification request"
             )
 
 
@@ -612,6 +786,7 @@ class CognitiveInteractionResult(CognitiveContractMixin):
     composition: ResponseCompositionResult | None = None
     intent: InterpretedIntent | None = None
     references: ReferenceResolutionResult | None = None
+    clarification: ClarificationRequest | None = None
 
 
 def _session_status(value: object) -> ConversationSessionStatus:
@@ -660,6 +835,28 @@ def _reference_resolution_status(value: object) -> ReferenceResolutionStatus:
     if isinstance(value, ReferenceResolutionStatus):
         return value
     return ReferenceResolutionStatus(str(value))
+
+
+def _clarification_status(value: object) -> ClarificationStatus:
+    if isinstance(value, ClarificationStatus):
+        return value
+    try:
+        return ClarificationStatus(str(value))
+    except ValueError as exc:
+        raise InvalidConversationTurnError(
+            "status must be a clarification status"
+        ) from exc
+
+
+def _clarification_reason(value: object) -> ClarificationReason:
+    if isinstance(value, ClarificationReason):
+        return value
+    try:
+        return ClarificationReason(str(value))
+    except ValueError as exc:
+        raise InvalidConversationTurnError(
+            "reason must be a clarification reason"
+        ) from exc
 
 
 def _optional_positive_int(value: object | None, field_name: str) -> int | None:
