@@ -89,11 +89,9 @@ class ClarificationStatus(Enum):
 class ClarificationReason(Enum):
     AMBIGUOUS_REFERENCE = "ambiguous_reference"
     UNRESOLVED_REFERENCE = "unresolved_reference"
-    MISSING_SUBJECT = "missing_subject"
     UNCLEAR_CONFIRMATION = "unclear_confirmation"
     UNCLEAR_REJECTION = "unclear_rejection"
     INSUFFICIENT_CONTEXT = "insufficient_context"
-    CONFLICTING_SIGNALS = "conflicting_signals"
     UNSUPPORTED_AMBIGUITY = "unsupported_ambiguity"
     NONE = "none"
 
@@ -105,6 +103,9 @@ MAX_REFERENCE_CANDIDATE_EXCERPT_LENGTH = 160
 MAX_CLARIFICATION_QUESTION_LENGTH = 160
 MAX_CLARIFICATION_OPTION_EXCERPT_LENGTH = 120
 MAX_CLARIFICATION_OPTION_LABEL_LENGTH = 80
+MAX_CLARIFICATION_COORDINATOR_ID_LENGTH = 80
+MAX_CLARIFICATION_COORDINATOR_VERSION_LENGTH = 32
+MAX_CLARIFICATION_RULE_ID_LENGTH = 96
 MAX_CLARIFICATION_OPTIONS = 3
 
 
@@ -646,14 +647,30 @@ class ClarificationRequest(CognitiveContractMixin):
         object.__setattr__(
             self,
             "coordinator_id",
-            _clean_required_text(self.coordinator_id, "coordinator_id"),
+            _bounded_required_provenance(
+                self.coordinator_id,
+                "coordinator_id",
+                MAX_CLARIFICATION_COORDINATOR_ID_LENGTH,
+            ),
         )
         object.__setattr__(
             self,
             "coordinator_version",
-            _clean_required_text(self.coordinator_version, "coordinator_version"),
+            _bounded_required_provenance(
+                self.coordinator_version,
+                "coordinator_version",
+                MAX_CLARIFICATION_COORDINATOR_VERSION_LENGTH,
+            ),
         )
-        object.__setattr__(self, "rule_id", _clean_required_text(self.rule_id, "rule_id"))
+        object.__setattr__(
+            self,
+            "rule_id",
+            _bounded_required_provenance(
+                self.rule_id,
+                "rule_id",
+                MAX_CLARIFICATION_RULE_ID_LENGTH,
+            ),
+        )
         if self.status is ClarificationStatus.NEEDED and self.safe_question is None:
             raise InvalidConversationTurnError(
                 "needed clarification requires a safe question"
@@ -880,6 +897,18 @@ def _bounded_optional_text(value: object | None, max_length: int) -> str | None:
 
 def _bounded_required_text(value: object, field_name: str, max_length: int) -> str:
     return _truncate_contract_text(_clean_required_text(value, field_name), max_length)
+
+
+def _bounded_required_provenance(value: object, field_name: str, max_length: int) -> str:
+    if type(value) is not str:
+        raise InvalidConversationTurnError(f"{field_name} must be text")
+    cleaned = value.strip()
+    if not cleaned:
+        raise InvalidConversationTurnError(f"{field_name} must not be empty")
+    redacted = safe_cognitive_text(cleaned)
+    if redacted.casefold() in {"[redacted]", "[redacted sensitive content]"}:
+        raise InvalidConversationTurnError(f"{field_name} must not be fully redacted")
+    return _truncate_contract_text(redacted, max_length)
 
 
 def _truncate_contract_text(text: str, max_length: int) -> str:

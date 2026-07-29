@@ -20,6 +20,7 @@ from cognition import (
     ResolvedReference,
     ResponseCompositionInput,
 )
+from cognition.contracts import MAX_CLARIFICATION_RULE_ID_LENGTH
 
 
 def _intent():
@@ -202,6 +203,36 @@ def test_compatibility_composer_uses_unavailable_generic_prompt():
         "compatibility_delegate:clarification=unavailable,"
         "reason=insufficient_context,options=0,rule=test_rule"
     )
+
+
+def test_compatibility_composer_diagnostic_rule_provenance_is_bounded():
+    _, composition_input = _composition_input()
+    long_rule_id = "rule-" + ("x" * (MAX_CLARIFICATION_RULE_ID_LENGTH + 50))
+    clarification = ClarificationRequest(
+        status=ClarificationStatus.UNAVAILABLE,
+        reason=ClarificationReason.INSUFFICIENT_CONTEXT,
+        safe_question=None,
+        options=(),
+        related_reference_count=0,
+        context_turn_count_used=1,
+        coordinator_id="test",
+        coordinator_version="1",
+        rule_id=long_rule_id,
+    )
+    composition_input = ResponseCompositionInput(
+        current_user_turn=composition_input.current_user_turn,
+        context=composition_input.context,
+        source=composition_input.source,
+        locale=composition_input.locale,
+        session=composition_input.session,
+        clarification_request=clarification,
+    )
+
+    result = CompatibilityResponseComposer(lambda _: "reply").compose(composition_input)
+
+    assert f"rule={clarification.rule_id}" in result.composition_source
+    assert long_rule_id not in result.composition_source
+    assert len(clarification.rule_id) <= MAX_CLARIFICATION_RULE_ID_LENGTH
 
 
 def test_compatibility_composer_sanitizes_output_and_does_not_mutate_session():

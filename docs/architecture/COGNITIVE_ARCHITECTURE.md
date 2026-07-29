@@ -1070,7 +1070,9 @@ Workflow interaction: workflow owns run/step lifecycle.
 Authoritative state owner: cognitive services for conversation state;
 execution services for operation cancellation.
 
-Persisted state: cancellation status for durable goal/plan/clarification.
+Persisted state: cancellation status for durable goal/plan state where those
+records exist. Cognitive clarification has no pending store; continuity is
+represented only by normal authoritative conversation history.
 
 User-visible status: cancelled or cancellation requested.
 
@@ -1403,7 +1405,7 @@ cognition/
     context.py
     intent_interpreter.py
     reference_resolver.py
-    clarification.py
+    clarification_coordinator.py
     goals.py
     planning.py
     plan_policy.py

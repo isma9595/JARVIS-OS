@@ -26,6 +26,11 @@ from cognition import (
     RuleBasedClarificationCoordinator,
     RuleBasedReferenceResolver,
 )
+from cognition.contracts import (
+    MAX_CLARIFICATION_COORDINATOR_ID_LENGTH,
+    MAX_CLARIFICATION_COORDINATOR_VERSION_LENGTH,
+    MAX_CLARIFICATION_RULE_ID_LENGTH,
+)
 
 
 def _intent(category=IntentCategory.CONVERSATION, text="hello"):
@@ -72,6 +77,22 @@ def _coordination_input(*turns, current_text="hello", category=IntentCategory.CO
 
 def _coordinate(coordination_input):
     return RuleBasedClarificationCoordinator().coordinate(coordination_input)
+
+
+def _clarification_request_values(**overrides):
+    values = {
+        "status": ClarificationStatus.NEEDED,
+        "reason": ClarificationReason.UNCLEAR_CONFIRMATION,
+        "safe_question": "What are you confirming?",
+        "options": (),
+        "related_reference_count": 0,
+        "context_turn_count_used": 0,
+        "coordinator_id": "test",
+        "coordinator_version": "1",
+        "rule_id": "test_rule",
+    }
+    values.update(overrides)
+    return values
 
 
 def test_clarification_contracts_are_immutable_json_safe_and_provider_neutral():
@@ -157,21 +178,10 @@ def test_clarification_option_integer_fields_are_strict(field_name, bad_value):
     [True, False, 1.0, 1.5, "1", None, Decimal("1"), Fraction(1, 1), -1],
 )
 def test_clarification_request_integer_fields_are_strict(field_name, bad_value):
-    values = {
-        "status": ClarificationStatus.NEEDED,
-        "reason": ClarificationReason.UNCLEAR_CONFIRMATION,
-        "safe_question": "What are you confirming?",
-        "options": (),
-        "related_reference_count": 0,
-        "context_turn_count_used": 0,
-        "coordinator_id": "test",
-        "coordinator_version": "1",
-        "rule_id": "test_rule",
-    }
-    values[field_name] = bad_value
-
     with pytest.raises(InvalidConversationTurnError):
-        ClarificationRequest(**values)
+        ClarificationRequest(
+            **_clarification_request_values(**{field_name: bad_value})
+        )
 
 
 @pytest.mark.parametrize(
@@ -180,25 +190,107 @@ def test_clarification_request_integer_fields_are_strict(field_name, bad_value):
         ("status", "approved"),
         ("status", True),
         ("reason", "authorization_denied"),
+        ("reason", "_".join(("missing", "subject"))),
+        ("reason", "_".join(("conflicting", "signals"))),
         ("reason", object()),
     ],
 )
 def test_clarification_request_enum_fields_are_validated(field_name, bad_value):
-    values = {
-        "status": ClarificationStatus.NEEDED,
-        "reason": ClarificationReason.UNCLEAR_CONFIRMATION,
-        "safe_question": "What are you confirming?",
-        "options": (),
-        "related_reference_count": 0,
-        "context_turn_count_used": 0,
-        "coordinator_id": "test",
-        "coordinator_version": "1",
-        "rule_id": "test_rule",
-    }
-    values[field_name] = bad_value
-
     with pytest.raises(InvalidConversationTurnError):
-        ClarificationRequest(**values)
+        ClarificationRequest(
+            **_clarification_request_values(**{field_name: bad_value})
+        )
+
+
+def test_clarification_reason_enum_matches_implemented_deterministic_rules():
+    assert {reason.value for reason in ClarificationReason} == {
+        "ambiguous_reference",
+        "unresolved_reference",
+        "unclear_confirmation",
+        "unclear_rejection",
+        "insufficient_context",
+        "unsupported_ambiguity",
+        "none",
+    }
+
+
+def test_remaining_clarification_reasons_are_emitted_by_coordinator_rules():
+    observed = set()
+    scenarios = (
+        _coordination_input(
+            ("user", "first target"),
+            ("assistant", "second target"),
+            current_text="do it",
+            category=IntentCategory.ACTION_REQUEST,
+        )[1],
+        _coordination_input(
+            ("user", "same target"),
+            ("user", "same target"),
+            current_text="do it",
+            category=IntentCategory.ACTION_REQUEST,
+        )[1],
+        _coordination_input(
+            current_text="do it",
+            category=IntentCategory.ACTION_REQUEST,
+        )[1],
+        _coordination_input(
+            current_text="yes",
+            category=IntentCategory.CONFIRMATION,
+        )[1],
+        _coordination_input(
+            current_text="no",
+            category=IntentCategory.REJECTION,
+        )[1],
+        _coordination_input(
+            current_text="the first one",
+            category=IntentCategory.CLARIFICATION_RESPONSE,
+        )[1],
+        _coordination_input(current_text="hello")[1],
+    )
+
+    for scenario in scenarios:
+        observed.add(_coordinate(scenario).reason)
+
+    assert observed == set(ClarificationReason)
+
+
+@pytest.mark.parametrize(
+    ("field_name", "max_length"),
+    [
+        ("coordinator_id", MAX_CLARIFICATION_COORDINATOR_ID_LENGTH),
+        ("coordinator_version", MAX_CLARIFICATION_COORDINATOR_VERSION_LENGTH),
+        ("rule_id", MAX_CLARIFICATION_RULE_ID_LENGTH),
+    ],
+)
+def test_clarification_provenance_fields_are_bounded_redacted_and_required(
+    field_name,
+    max_length,
+):
+    long_secret_value = "prefix " + ("x" * (max_length + 30)) + " token=sk-test-1234567890secret"
+
+    request = ClarificationRequest(
+        **_clarification_request_values(**{field_name: long_secret_value})
+    )
+
+    value = getattr(request, field_name)
+    assert len(value) <= max_length
+    assert "sk-test" not in value
+    assert str(request.to_dict()[field_name]) == value
+
+    for bad_value in (
+        "",
+        "   ",
+        None,
+        True,
+        False,
+        object(),
+        "token=sk-test-1234567890secret",
+        "[redacted sensitive content]",
+    ):
+        with pytest.raises(InvalidConversationTurnError):
+            ClarificationRequest(
+                **_clarification_request_values(**{field_name: bad_value})
+            )
 
 
 def test_no_ambiguity_and_unique_reference_are_not_needed():
@@ -233,6 +325,10 @@ def test_ambiguous_reference_with_distinguishable_candidates_needs_one_question(
         "first target",
     ]
     assert [option.ordinal for option in first.options] == [1, 2]
+    assert coordination_input.reference_resolution.references[0].status is (
+        ReferenceResolutionStatus.AMBIGUOUS
+    )
+    assert coordination_input.reference_resolution.references[0].selected_candidate is None
 
 
 def test_ambiguous_reference_with_indistinguishable_options_is_unavailable():
@@ -334,6 +430,7 @@ def test_russian_templates_are_narrow_and_deterministic():
 
     assert result.status is ClarificationStatus.NEEDED
     assert result.safe_question == "\u041a \u0447\u0435\u043c\u0443 \u043e\u0442\u043d\u043e\u0441\u0438\u0442\u0441\u044f \u00ab\u044d\u0442\u043e\u00bb?"
+    assert "\u0441\u0434\u0435\u043b\u0430\u0439" not in result.safe_question.casefold()
 
 
 def test_options_are_bounded_redacted_and_input_is_not_mutated():

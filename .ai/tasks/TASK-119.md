@@ -47,9 +47,8 @@ mutable defaults:
 
 - `ClarificationStatus`: `not_needed`, `needed`, `unavailable`.
 - `ClarificationReason`: `ambiguous_reference`, `unresolved_reference`,
-  `missing_subject`, `unclear_confirmation`, `unclear_rejection`,
-  `insufficient_context`, `conflicting_signals`, `unsupported_ambiguity`,
-  `none`.
+  `unclear_confirmation`, `unclear_rejection`, `insufficient_context`,
+  `unsupported_ambiguity`, `none`.
 - `ClarificationOption`: safe label, optional detached turn sequence or id,
   safe excerpt, source reason, ordinal.
 - `ClarificationRequest`: status, reason, optional safe question, bounded
@@ -61,6 +60,11 @@ mutable defaults:
 All new integer fields validate with `type(value) is int`; bool, floats,
 strings, `Decimal`, `Fraction`, `None`, negative values, and zero for positive
 fields are rejected.
+
+TASK-119A stabilization removed unused clarification reasons that no
+deterministic coordinator rule emitted and bounded clarification provenance:
+coordinator id to 80 characters, coordinator version to 32 characters, and rule
+id to 96 characters.
 
 ## Deterministic Precedence
 
