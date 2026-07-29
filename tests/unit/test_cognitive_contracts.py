@@ -1,10 +1,15 @@
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import FrozenInstanceError
+from decimal import Decimal
+from fractions import Fraction
 
 import pytest
 
 from cognition import (
     AssistantResponseType,
+    ConversationContextContentClassification,
+    ConversationContextSnapshot,
+    ConversationContextTurn,
     ConversationRole,
     ConversationSessionClosedError,
     ConversationSessionNotFoundError,
@@ -12,6 +17,7 @@ from cognition import (
     ConversationSessionStatus,
     ConversationTurnInput,
     InvalidConversationTurnError,
+    ResponseCompositionResult,
 )
 
 
@@ -125,3 +131,217 @@ def test_concurrent_turn_append_preserves_per_session_sequence():
 
 def test_minimal_response_type_does_not_speculate_about_future_states():
     assert {item.value for item in AssistantResponseType} == {"message", "error"}
+
+
+def test_context_contracts_are_immutable_json_safe_and_provider_neutral():
+    context_turn = ConversationContextTurn(
+        turn_id="turn-1",
+        sequence=1,
+        role=ConversationRole.USER,
+        source="test",
+        safe_text="hello api key=sk-test-1234567890secret",
+        created_at="2026-07-29T00:00:00+00:00",
+        content_classification=ConversationContextContentClassification.BOUNDED_SAFE_TEXT,
+        redaction_reason="bounded",
+    )
+    context = ConversationContextSnapshot(
+        session_id="cog-session-test",
+        session_status=ConversationSessionStatus.ACTIVE,
+        projected_at="2026-07-29T00:00:01+00:00",
+        turns=(context_turn,),
+        total_turn_count=1,
+        included_turn_count=1,
+        omitted_turn_count=0,
+        first_included_sequence=1,
+        last_included_sequence=1,
+    )
+
+    payload = context.to_dict()
+
+    assert payload["turns"][0]["safe_text"] == "hello [REDACTED]"
+    assert payload["turns"][0]["role"] == "user"
+    assert payload["session_status"] == "active"
+    assert "metadata" not in payload
+    assert "provider" not in payload
+    assert "token_count" not in payload
+    with pytest.raises(FrozenInstanceError):
+        context_turn.safe_text = "changed"
+
+
+def test_context_contract_rejects_invalid_ordering_and_counts():
+    later = ConversationContextTurn(
+        turn_id="turn-2",
+        sequence=2,
+        role=ConversationRole.USER,
+        source="test",
+        safe_text="later",
+        created_at="2026-07-29T00:00:02+00:00",
+        content_classification=ConversationContextContentClassification.BOUNDED_SAFE_TEXT,
+    )
+    earlier = ConversationContextTurn(
+        turn_id="turn-1",
+        sequence=1,
+        role=ConversationRole.USER,
+        source="test",
+        safe_text="earlier",
+        created_at="2026-07-29T00:00:01+00:00",
+        content_classification=ConversationContextContentClassification.BOUNDED_SAFE_TEXT,
+    )
+
+    with pytest.raises(InvalidConversationTurnError):
+        ConversationContextSnapshot(
+            session_id="cog-session-test",
+            session_status=ConversationSessionStatus.ACTIVE,
+            projected_at="2026-07-29T00:00:03+00:00",
+            turns=(later, earlier),
+            total_turn_count=2,
+            included_turn_count=2,
+            omitted_turn_count=0,
+            first_included_sequence=2,
+            last_included_sequence=1,
+        )
+
+
+def test_response_composition_result_is_immutable_and_rejects_bad_counts():
+    result = ResponseCompositionResult(
+        response_type=AssistantResponseType.MESSAGE,
+        text="reply token=sk-test-1234567890secret",
+        context_turn_count_used=1,
+        composition_source="test",
+    )
+
+    assert result.to_dict() == {
+        "response_type": "message",
+        "text": "reply [REDACTED]",
+        "context_turn_count_used": 1,
+        "composition_source": "test",
+    }
+    with pytest.raises(FrozenInstanceError):
+        result.text = "changed"
+    with pytest.raises(InvalidConversationTurnError):
+        ResponseCompositionResult(
+            response_type=AssistantResponseType.MESSAGE,
+            text="reply",
+            context_turn_count_used=-1,
+            composition_source="test",
+        )
+
+
+@pytest.mark.parametrize(
+    "bad_value",
+    [True, False, 1.0, 1.5, "1", None, Decimal("1"), Fraction(1, 1), 0, -1],
+)
+def test_context_turn_sequence_requires_strict_positive_integer(bad_value):
+    with pytest.raises(InvalidConversationTurnError):
+        ConversationContextTurn(
+            turn_id="turn-1",
+            sequence=bad_value,
+            role=ConversationRole.USER,
+            source="test",
+            safe_text="hello",
+            created_at="2026-07-29T00:00:00+00:00",
+            content_classification=ConversationContextContentClassification.BOUNDED_SAFE_TEXT,
+        )
+
+
+@pytest.mark.parametrize(
+    "field_name",
+    ["total_turn_count", "included_turn_count", "omitted_turn_count"],
+)
+@pytest.mark.parametrize(
+    "bad_value",
+    [True, False, 1.0, 1.5, "1", None, Decimal("1"), Fraction(1, 1), -1],
+)
+def test_context_snapshot_counters_require_strict_nonnegative_integers(
+    field_name,
+    bad_value,
+):
+    values = {
+        "session_id": "cog-session-test",
+        "session_status": ConversationSessionStatus.ACTIVE,
+        "projected_at": "2026-07-29T00:00:01+00:00",
+        "turns": (),
+        "total_turn_count": 0,
+        "included_turn_count": 0,
+        "omitted_turn_count": 0,
+    }
+    values[field_name] = bad_value
+
+    with pytest.raises(InvalidConversationTurnError):
+        ConversationContextSnapshot(**values)
+
+
+@pytest.mark.parametrize(
+    "field_name",
+    ["first_included_sequence", "last_included_sequence"],
+)
+@pytest.mark.parametrize(
+    "bad_value",
+    [True, False, 1.0, 1.5, "1", Decimal("1"), Fraction(1, 1), 0, -1],
+)
+def test_context_snapshot_optional_sequences_require_strict_positive_integers(
+    field_name,
+    bad_value,
+):
+    values = {
+        "session_id": "cog-session-test",
+        "session_status": ConversationSessionStatus.ACTIVE,
+        "projected_at": "2026-07-29T00:00:01+00:00",
+        "turns": (),
+        "total_turn_count": 0,
+        "included_turn_count": 0,
+        "omitted_turn_count": 0,
+        field_name: bad_value,
+    }
+
+    with pytest.raises(InvalidConversationTurnError):
+        ConversationContextSnapshot(**values)
+
+
+@pytest.mark.parametrize(
+    "bad_value",
+    [True, False, 1.0, 1.5, "1", None, Decimal("1"), Fraction(1, 1), -1],
+)
+def test_response_composition_context_count_requires_strict_nonnegative_integer(
+    bad_value,
+):
+    with pytest.raises(InvalidConversationTurnError):
+        ResponseCompositionResult(
+            response_type=AssistantResponseType.MESSAGE,
+            text="reply",
+            context_turn_count_used=bad_value,
+            composition_source="test",
+        )
+
+
+def test_context_numeric_contracts_accept_plain_integers_only():
+    context_turn = ConversationContextTurn(
+        turn_id="turn-1",
+        sequence=1,
+        role=ConversationRole.USER,
+        source="test",
+        safe_text="hello",
+        created_at="2026-07-29T00:00:00+00:00",
+        content_classification=ConversationContextContentClassification.BOUNDED_SAFE_TEXT,
+    )
+    context = ConversationContextSnapshot(
+        session_id="cog-session-test",
+        session_status=ConversationSessionStatus.ACTIVE,
+        projected_at="2026-07-29T00:00:01+00:00",
+        turns=(context_turn,),
+        total_turn_count=1,
+        included_turn_count=1,
+        omitted_turn_count=0,
+        first_included_sequence=1,
+        last_included_sequence=1,
+    )
+    result = ResponseCompositionResult(
+        response_type=AssistantResponseType.MESSAGE,
+        text="reply",
+        context_turn_count_used=0,
+        composition_source="test",
+    )
+
+    assert context.turns[0].sequence == 1
+    assert context.omitted_turn_count == 0
+    assert result.context_turn_count_used == 0

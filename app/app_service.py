@@ -51,10 +51,12 @@ from app.conversational_loop import (
 from cognition import (
     CognitiveInteractionResult,
     CognitiveInteractionService,
+    CompatibilityResponseComposer,
+    ConversationContextProjector,
     ConversationSessionService,
     ConversationSessionSnapshot,
-    ConversationTurn,
     ConversationTurnInput,
+    ResponseCompositionInput,
 )
 from core.command_registry import (
     CommandCategory,
@@ -242,6 +244,8 @@ class JarvisAppService:
         planner_service=None,
         cognitive_session_service=None,
         cognitive_session_repository=None,
+        cognitive_context_projector=None,
+        cognitive_response_composer=None,
         cognitive_interaction_service=None,
     ):
         self._startup_profiler = StartupProfiler(clock=startup_clock)
@@ -311,11 +315,21 @@ class JarvisAppService:
                 cognitive_session_service
                 or ConversationSessionService(repository=cognitive_session_repository)
             )
+            self.cognitive_context_projector = (
+                cognitive_context_projector or ConversationContextProjector()
+            )
+            self.cognitive_response_composer = (
+                cognitive_response_composer
+                or CompatibilityResponseComposer(
+                    delegate=self._cognitive_compatibility_response,
+                )
+            )
             self.cognitive_interaction_service = (
                 cognitive_interaction_service
                 or CognitiveInteractionService(
                     session_service=self.cognitive_session_service,
-                    response_delegate=self._cognitive_compatibility_response,
+                    context_projector=self.cognitive_context_projector,
+                    response_composer=self.cognitive_response_composer,
                 )
             )
             self.intent_resolver = HybridIntentResolver(self.command_registry)
@@ -1000,14 +1014,12 @@ class JarvisAppService:
 
     def _cognitive_compatibility_response(
         self,
-        turn_input: ConversationTurnInput,
-        user_turn: ConversationTurn,
+        composition_input: ResponseCompositionInput,
     ) -> str:
-        del user_turn
         result = self.conversational_loop.handle(
             ConversationalRequest(
-                text=turn_input.text,
-                source=turn_input.source,
+                text=composition_input.current_user_turn.text,
+                source=composition_input.source,
                 allow_network=False,
                 allow_command_execution=False,
                 allow_risky_actions=False,

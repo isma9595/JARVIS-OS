@@ -131,6 +131,14 @@ class ConversationSessionService:
         with self._lock:
             return tuple(self._record_locked(session_id).turns)
 
+    def context_source(
+        self,
+        session_id: str,
+    ) -> tuple[ConversationSessionSnapshot, tuple[ConversationTurn, ...]]:
+        with self._lock:
+            record = self._record_locked(session_id)
+            return self._snapshot_for_record(record), tuple(record.turns)
+
     def _persist_record_locked(self, record: _SessionRecord) -> None:
         if self._repository is None:
             return

@@ -6,6 +6,7 @@ from cognition import (
     ConversationSessionClosedError,
     ConversationSessionStatus,
     LocalConversationSessionRepository,
+    ResponseCompositionResult,
 )
 
 
@@ -118,3 +119,57 @@ def test_app_service_can_recover_sessions_through_injected_repository(tmp_path):
 
     assert snapshot.session_id == session.session_id
     assert snapshot.turn_count == 2
+
+
+def test_app_service_conversation_turn_flows_through_context_and_composer():
+    calls = []
+
+    class TrackingComposer:
+        def compose(self, composition_input):
+            calls.append(composition_input)
+            return ResponseCompositionResult(
+                response_type=AssistantResponseType.MESSAGE,
+                text=f"used context {composition_input.context.included_turn_count}",
+                context_turn_count_used=composition_input.context.included_turn_count,
+                composition_source="test",
+            )
+
+    service = JarvisAppService(
+        command_processor=FakeCommandProcessor(),
+        cognitive_response_composer=TrackingComposer(),
+    )
+
+    result = service.handle_conversation_turn("hello", AppCommandSource.TEST)
+
+    assert len(calls) == 1
+    assert calls[0].context.included_turn_count == 1
+    assert result.response.text == "used context 1"
+    assert result.composition.context_turn_count_used == 1
+
+
+def test_context_composition_does_not_call_provider_execution_workflow_or_memory():
+    class ForbiddenProviderRuntime:
+        def all_credential_statuses(self):
+            raise AssertionError("conversation composition must not inspect providers")
+
+    class ForbiddenCoordinator:
+        def register(self, *_, **__):
+            raise AssertionError("conversation composition must not register execution")
+
+    class ForbiddenRunner:
+        def start(self, *_, **__):
+            raise AssertionError("conversation composition must not start workflow")
+
+    class ForbiddenMemory:
+        def remember(self, *_, **__):
+            raise AssertionError("conversation composition must not write memory")
+
+    service = JarvisAppService(command_processor=FakeCommandProcessor())
+    service._provider_runtime_component = ForbiddenProviderRuntime()
+    service.execution_coordinator = ForbiddenCoordinator()
+    service.document_review_runner = ForbiddenRunner()
+    service.memory_manager = ForbiddenMemory()
+
+    result = service.handle_conversation_turn("hello", AppCommandSource.TEST)
+
+    assert result.response.response_type is AssistantResponseType.MESSAGE

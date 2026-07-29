@@ -1,6 +1,6 @@
 # JARVIS Roadmap
 
-Status: updated by TASK-115. This roadmap begins after the completed
+Status: updated by TASK-116. This roadmap begins after the completed
 execution/workflow platform milestone and the TASK-112 cognitive architecture
 report, then accounts for the TASK-113 cognitive skeleton implementation and
 the completed TASK-114 roadmap-alignment record.
@@ -83,27 +83,29 @@ persistence boundaries, and response composition without execution.
   provider/network behavior; `ConversationSessionService` remains
   authoritative.
 
-### TASK-116 - Conversation Context & Response Composition
+### TASK-116 - Conversation Context & Response Composition - Completed
 
-- Purpose: introduce bounded context projection from stored session turns; add
-  a narrow response composer or compatibility response boundary; preserve the
-  existing orchestration-only `CognitiveInteractionService`; return safe
-  conversational responses without execution.
-- Main architectural risks: unbounded context growth; cognition becoming a
-  second AppService; response composition executing actions; leaking raw
-  sensitive history; provider behavior being introduced prematurely.
-- Expected production files: `cognition/context.py`,
-  `cognition/response_composer.py`, focused extensions to
-  `cognition/interaction_service.py` only if required.
-- Expected test areas: bounded context snapshots, redaction, no durable state
-  in interaction orchestration, no provider/network/execution, and unchanged
-  command behavior.
+- Delivered scope: bounded immutable context projection from stored session
+  turns; stateless `ConversationContextProjector`; narrow non-executing
+  `ResponseComposer` protocol; compatibility composer around the existing
+  AppService-owned safe conversational delegate; context-aware interaction
+  orchestration.
+- Explicit limits: no intent interpretation, reference resolution,
+  clarification migration, goals, planning, memory, knowledge, providers,
+  network, execution, workflows, Desktop UI, CLI migration, semantic
+  summarization, embeddings, or provider-specific token budgeting.
+- Production files: `cognition/context.py`, `cognition/response_composer.py`,
+  focused extensions to cognition contracts, sessions, interaction
+  orchestration, package exports, and AppService composition wiring.
+- Expected test areas: completed by TASK-116 with contract, context projector,
+  response composer, interaction service, AppService integration, architecture
+  boundary, and existing AppService/conversational-loop compatibility tests.
 - Dependencies: TASK-115.
-- Completion criteria: interaction service can obtain a bounded context
-  snapshot; response composition remains non-executing; no durable state is
-  owned by `CognitiveInteractionService`; existing command behavior remains
-  unchanged; no provider/network dependency unless a later approved task
-  explicitly adds it.
+- Completion criteria: completed by TASK-116; interaction service obtains a
+  bounded context snapshot after accepting the user turn, response composition
+  remains non-executing and provider-neutral, no durable state is owned by
+  `CognitiveInteractionService`, and existing command behavior remains
+  unchanged.
 
 ## Milestone 2: Intent and Clarification
 

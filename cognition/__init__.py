@@ -4,12 +4,23 @@ from cognition.contracts import (
     AssistantResponse,
     AssistantResponseType,
     CognitiveInteractionResult,
+    ConversationContextContentClassification,
+    ConversationContextSnapshot,
+    ConversationContextTurn,
     ConversationRole,
     ConversationSessionSnapshot,
     ConversationSessionStatus,
     ConversationTurn,
     ConversationTurnInput,
     InvalidConversationTurnError,
+    ResponseCompositionInput,
+    ResponseCompositionResult,
+)
+from cognition.context import (
+    DEFAULT_CONTEXT_MAX_TOTAL_CHARS,
+    DEFAULT_CONTEXT_MAX_TURN_CHARS,
+    DEFAULT_CONTEXT_MAX_TURNS,
+    ConversationContextProjector,
 )
 from cognition.interaction_service import CognitiveInteractionService
 from cognition.persistence import (
@@ -31,14 +42,26 @@ from cognition.sessions import (
     ConversationSessionNotFoundError,
     ConversationSessionService,
 )
+from cognition.response_composer import (
+    CompatibilityResponseComposer,
+    ResponseComposer,
+)
 
 __all__ = [
     "AssistantResponse",
     "AssistantResponseType",
     "CognitiveInteractionResult",
     "CognitiveInteractionService",
+    "CompatibilityResponseComposer",
     "CONVERSATION_SESSION_SCHEMA_VERSION",
+    "ConversationContextContentClassification",
+    "ConversationContextProjector",
+    "ConversationContextSnapshot",
+    "ConversationContextTurn",
     "MAX_PERSISTED_TURN_SUMMARY_LENGTH",
+    "DEFAULT_CONTEXT_MAX_TOTAL_CHARS",
+    "DEFAULT_CONTEXT_MAX_TURN_CHARS",
+    "DEFAULT_CONTEXT_MAX_TURNS",
     "ConversationPersistenceCorruptionError",
     "ConversationPersistenceError",
     "ConversationPersistenceLoadError",
@@ -58,4 +81,7 @@ __all__ = [
     "PersistedConversationSessionRecord",
     "PersistedConversationTurnSummary",
     "PersistedTurnContentClassification",
+    "ResponseComposer",
+    "ResponseCompositionInput",
+    "ResponseCompositionResult",
 ]
