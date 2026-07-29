@@ -22,6 +22,13 @@ from cognition import (
     IntentEvidence,
     IntentInterpretationInput,
     InterpretedIntent,
+    DetectedReference,
+    ReferenceCandidate,
+    ReferenceKind,
+    ReferenceResolutionInput,
+    ReferenceResolutionResult,
+    ReferenceResolutionStatus,
+    ResolvedReference,
     ResponseCompositionResult,
 )
 
@@ -453,4 +460,187 @@ def test_intent_context_count_requires_strict_nonnegative_integer(bad_value):
             interpreter_id="test",
             interpreter_version="1",
             context_turn_count_used=bad_value,
+        )
+
+
+def _reference_candidate(*, turn_sequence=1, recency_rank=1):
+    return ReferenceCandidate(
+        turn_id="turn-1",
+        turn_sequence=turn_sequence,
+        role=ConversationRole.USER,
+        safe_excerpt="safe token=sk-test-1234567890secret",
+        match_reason="test",
+        recency_rank=recency_rank,
+        confidence=IntentConfidence.LOW,
+    )
+
+
+def _detected_reference():
+    return DetectedReference(
+        kind=ReferenceKind.PRONOUN,
+        safe_surface_text="it token=sk-test-1234567890secret",
+        rule_id="test",
+    )
+
+
+def test_reference_contracts_are_immutable_json_safe_and_provider_neutral():
+    candidate = _reference_candidate()
+    detected = _detected_reference()
+    resolved = ResolvedReference(
+        detected_reference=detected,
+        status=ReferenceResolutionStatus.RESOLVED,
+        selected_candidate=candidate,
+        candidates=(candidate,),
+        confidence=IntentConfidence.MEDIUM,
+        context_turn_count_used=1,
+        resolver_id="test",
+        resolver_version="1",
+    )
+    result = ReferenceResolutionResult(
+        references=(resolved,),
+        has_unresolved_references=False,
+        has_ambiguous_references=False,
+        context_turn_count_used=1,
+        resolver_id="test",
+        resolver_version="1",
+    )
+
+    payload = result.to_dict()
+
+    assert payload["references"][0]["status"] == "resolved"
+    assert payload["references"][0]["detected_reference"]["kind"] == "pronoun"
+    assert payload["references"][0]["detected_reference"]["safe_surface_text"] == "it [REDACTED]"
+    assert payload["references"][0]["selected_candidate"]["safe_excerpt"] == "safe [REDACTED]"
+    assert "metadata" not in payload
+    assert "provider" not in payload
+    assert "command" not in payload
+    assert "workflow" not in payload
+    with pytest.raises(FrozenInstanceError):
+        candidate.safe_excerpt = "changed"
+
+
+def test_reference_resolution_input_is_compact_and_typed():
+    service = ConversationSessionService()
+    session = service.create_session()
+    user_turn = service.append_user_turn(session.session_id, "what about it?", "test")
+    context = ConversationContextSnapshot(
+        session_id=session.session_id,
+        session_status=ConversationSessionStatus.ACTIVE,
+        projected_at="2026-07-29T00:00:01+00:00",
+        turns=(),
+        total_turn_count=0,
+        included_turn_count=0,
+        omitted_turn_count=0,
+    )
+    intent = InterpretedIntent(
+        category=IntentCategory.QUESTION,
+        confidence=IntentConfidence.MEDIUM,
+        safe_user_text=user_turn.text,
+        evidence=(
+            IntentEvidence(evidence_type="rule", safe_excerpt="what", rule_id="test"),
+        ),
+        requires_reference_resolution=False,
+        may_require_clarification=False,
+        is_actionable_request=False,
+        interpreter_id="test",
+        interpreter_version="1",
+        context_turn_count_used=0,
+    )
+
+    resolution_input = ReferenceResolutionInput(
+        current_user_turn=user_turn,
+        context=context,
+        interpreted_intent=intent,
+    )
+
+    assert resolution_input.current_user_turn is user_turn
+    assert resolution_input.interpreted_intent is intent
+
+
+@pytest.mark.parametrize("field_name", ["turn_sequence", "recency_rank"])
+@pytest.mark.parametrize(
+    "bad_value",
+    [True, False, 1.0, 1.5, "1", None, Decimal("1"), Fraction(1, 1), 0, -1],
+)
+def test_reference_candidate_numeric_fields_require_strict_positive_integer(
+    field_name,
+    bad_value,
+):
+    values = {
+        "turn_id": "turn-1",
+        "turn_sequence": 1,
+        "role": ConversationRole.USER,
+        "safe_excerpt": "safe",
+        "match_reason": "test",
+        "recency_rank": 1,
+        "confidence": IntentConfidence.LOW,
+    }
+    values[field_name] = bad_value
+
+    with pytest.raises(InvalidConversationTurnError):
+        ReferenceCandidate(**values)
+
+
+@pytest.mark.parametrize(
+    "bad_value",
+    [True, False, 1.0, 1.5, "1", None, Decimal("1"), Fraction(1, 1), -1],
+)
+def test_reference_context_count_requires_strict_nonnegative_integer(bad_value):
+    candidate = _reference_candidate()
+    resolved = ResolvedReference(
+        detected_reference=_detected_reference(),
+        status=ReferenceResolutionStatus.RESOLVED,
+        selected_candidate=candidate,
+        candidates=(candidate,),
+        confidence=IntentConfidence.MEDIUM,
+        context_turn_count_used=1,
+        resolver_id="test",
+        resolver_version="1",
+    )
+
+    with pytest.raises(InvalidConversationTurnError):
+        ReferenceResolutionResult(
+            references=(resolved,),
+            has_unresolved_references=False,
+            has_ambiguous_references=False,
+            context_turn_count_used=bad_value,
+            resolver_id="test",
+            resolver_version="1",
+        )
+
+
+def test_reference_contracts_reject_inconsistent_status_and_diagnostics():
+    candidate = _reference_candidate()
+
+    with pytest.raises(InvalidConversationTurnError):
+        ResolvedReference(
+            detected_reference=_detected_reference(),
+            status=ReferenceResolutionStatus.UNRESOLVED,
+            selected_candidate=candidate,
+            candidates=(candidate,),
+            confidence=IntentConfidence.LOW,
+            context_turn_count_used=1,
+            resolver_id="test",
+            resolver_version="1",
+        )
+
+    unresolved = ResolvedReference(
+        detected_reference=_detected_reference(),
+        status=ReferenceResolutionStatus.UNRESOLVED,
+        selected_candidate=None,
+        candidates=(),
+        confidence=IntentConfidence.LOW,
+        context_turn_count_used=1,
+        resolver_id="test",
+        resolver_version="1",
+    )
+
+    with pytest.raises(InvalidConversationTurnError):
+        ReferenceResolutionResult(
+            references=(unresolved,),
+            has_unresolved_references=False,
+            has_ambiguous_references=False,
+            context_turn_count_used=1,
+            resolver_id="test",
+            resolver_version="1",
         )

@@ -11,6 +11,7 @@ from cognition.contracts import (
     ConversationTurn,
     ConversationTurnInput,
     IntentInterpretationInput,
+    ReferenceResolutionInput,
     ResponseCompositionInput,
     ResponseCompositionResult,
     safe_cognitive_text,
@@ -20,6 +21,11 @@ from cognition.intent_interpreter import (
     IntentInterpretationError,
     IntentInterpreter,
     RuleBasedIntentInterpreter,
+)
+from cognition.reference_resolver import (
+    ReferenceResolutionError,
+    ReferenceResolver,
+    RuleBasedReferenceResolver,
 )
 from cognition.response_composer import CompatibilityResponseComposer, ResponseComposer
 from cognition.sessions import ConversationSessionService
@@ -37,6 +43,7 @@ class CognitiveInteractionService:
     response_delegate: CompatibilityResponseDelegate | None = None
     context_projector: ConversationContextProjector = ConversationContextProjector()
     intent_interpreter: IntentInterpreter = RuleBasedIntentInterpreter()
+    reference_resolver: ReferenceResolver = RuleBasedReferenceResolver()
     response_composer: ResponseComposer | None = None
     assistant_source: str = "cognitive_interaction_service"
 
@@ -103,6 +110,43 @@ class CognitiveInteractionService:
                 context=context,
                 composition=composition,
                 intent=None,
+                references=None,
+            )
+        try:
+            reference_resolution = self.reference_resolver.resolve(
+                ReferenceResolutionInput(
+                    current_user_turn=user_turn,
+                    context=context,
+                    interpreted_intent=interpreted_intent,
+                )
+            )
+        except ReferenceResolutionError:
+            composition = ResponseCompositionResult(
+                response_type=AssistantResponseType.ERROR,
+                text="Conversation reference resolution failed safely.",
+                context_turn_count_used=context.included_turn_count,
+                composition_source="reference_error_fallback",
+            )
+            assistant_turn = self.session_service.append_assistant_turn(
+                session.session_id,
+                safe_cognitive_text(composition.text),
+                self.assistant_source,
+            )
+            response = AssistantResponse(
+                response_id=f"cog-response-{uuid4().hex}",
+                session_id=session.session_id,
+                turn_id=assistant_turn.turn_id,
+                response_type=composition.response_type,
+                text=assistant_turn.text,
+                created_at=_utc_now_iso(),
+            )
+            return CognitiveInteractionResult(
+                response=response,
+                session=self.session_service.get_snapshot(session.session_id),
+                context=context,
+                composition=composition,
+                intent=interpreted_intent,
+                references=None,
             )
         composition_input = ResponseCompositionInput(
             current_user_turn=user_turn,
@@ -111,6 +155,7 @@ class CognitiveInteractionService:
             locale=turn_input.locale,
             session=source_session,
             interpreted_intent=interpreted_intent,
+            reference_resolution=reference_resolution,
         )
         try:
             composition = self.response_composer.compose(composition_input)
@@ -140,6 +185,7 @@ class CognitiveInteractionService:
             context=context,
             composition=composition,
             intent=interpreted_intent,
+            references=reference_resolution,
         )
 
 

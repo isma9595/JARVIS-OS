@@ -35,6 +35,22 @@ class CompatibilityResponseComposer:
                 f"{composition_source}:"
                 f"{composition_input.interpreted_intent.category.value}"
             )
+        if composition_input.reference_resolution is not None:
+            references = composition_input.reference_resolution.references
+            resolved_count = sum(
+                1 for item in references if item.status.value == "resolved"
+            )
+            ambiguous_count = sum(
+                1 for item in references if item.status.value == "ambiguous"
+            )
+            unresolved_count = sum(
+                1 for item in references if item.status.value == "unresolved"
+            )
+            composition_source = (
+                f"{composition_source}:refs={len(references)},"
+                f"resolved={resolved_count},ambiguous={ambiguous_count},"
+                f"unresolved={unresolved_count}"
+            )
         return ResponseCompositionResult(
             response_type=AssistantResponseType.MESSAGE,
             text=safe_cognitive_text(response_text),

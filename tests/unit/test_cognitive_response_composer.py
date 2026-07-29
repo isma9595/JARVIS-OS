@@ -9,6 +9,12 @@ from cognition import (
     IntentConfidence,
     IntentEvidence,
     InterpretedIntent,
+    DetectedReference,
+    ReferenceCandidate,
+    ReferenceKind,
+    ReferenceResolutionResult,
+    ReferenceResolutionStatus,
+    ResolvedReference,
     ResponseCompositionInput,
 )
 
@@ -34,7 +40,41 @@ def _intent():
     )
 
 
-def _composition_input(*, interpreted_intent=None):
+def _reference_resolution():
+    candidate = ReferenceCandidate(
+        turn_id="turn-1",
+        turn_sequence=1,
+        role="assistant",
+        safe_excerpt="previous response",
+        match_reason="test",
+        recency_rank=1,
+        confidence=IntentConfidence.MEDIUM,
+    )
+    resolved = ResolvedReference(
+        detected_reference=DetectedReference(
+            kind=ReferenceKind.PREVIOUS_RESPONSE,
+            safe_surface_text="previous response",
+            rule_id="test",
+        ),
+        status=ReferenceResolutionStatus.RESOLVED,
+        selected_candidate=candidate,
+        candidates=(candidate,),
+        confidence=IntentConfidence.MEDIUM,
+        context_turn_count_used=1,
+        resolver_id="test",
+        resolver_version="1",
+    )
+    return ReferenceResolutionResult(
+        references=(resolved,),
+        has_unresolved_references=False,
+        has_ambiguous_references=False,
+        context_turn_count_used=1,
+        resolver_id="test",
+        resolver_version="1",
+    )
+
+
+def _composition_input(*, interpreted_intent=None, reference_resolution=None):
     session_service = ConversationSessionService()
     session = session_service.create_session()
     user_turn = session_service.append_user_turn(session.session_id, "hello", "test")
@@ -47,6 +87,7 @@ def _composition_input(*, interpreted_intent=None):
         locale="en-US",
         session=source_session,
         interpreted_intent=interpreted_intent,
+        reference_resolution=reference_resolution,
     )
 
 
@@ -74,6 +115,21 @@ def test_compatibility_composer_observably_uses_interpreted_intent():
 
     assert result.text == "reply"
     assert result.composition_source == "compatibility_delegate:conversation"
+
+
+def test_compatibility_composer_observably_uses_reference_resolution():
+    _, composition_input = _composition_input(
+        interpreted_intent=_intent(),
+        reference_resolution=_reference_resolution(),
+    )
+
+    result = CompatibilityResponseComposer(lambda _: "reply").compose(composition_input)
+
+    assert result.text == "reply"
+    assert result.composition_source == (
+        "compatibility_delegate:conversation:refs=1,"
+        "resolved=1,ambiguous=0,unresolved=0"
+    )
 
 
 def test_compatibility_composer_sanitizes_output_and_does_not_mutate_session():

@@ -9,6 +9,7 @@ from cognition import (
     IntentConfidence,
     IntentEvidence,
     InterpretedIntent,
+    ReferenceResolutionResult,
     LocalConversationSessionRepository,
     ResponseCompositionResult,
 )
@@ -197,6 +198,44 @@ def test_app_service_conversation_turn_flows_through_interpreter():
     assert calls[0].context.included_turn_count == 1
     assert result.intent.category is IntentCategory.QUESTION
     assert result.response.text == "question"
+
+
+def test_app_service_conversation_turn_flows_through_reference_resolver():
+    calls = []
+
+    class TrackingResolver:
+        def resolve(self, resolution_input):
+            calls.append(resolution_input)
+            return ReferenceResolutionResult(
+                references=(),
+                has_unresolved_references=False,
+                has_ambiguous_references=False,
+                context_turn_count_used=resolution_input.context.included_turn_count,
+                resolver_id="test",
+                resolver_version="1",
+            )
+
+    class TrackingComposer:
+        def compose(self, composition_input):
+            return ResponseCompositionResult(
+                response_type=AssistantResponseType.MESSAGE,
+                text=f"refs {len(composition_input.reference_resolution.references)}",
+                context_turn_count_used=composition_input.context.included_turn_count,
+                composition_source="test",
+            )
+
+    service = JarvisAppService(
+        command_processor=FakeCommandProcessor(),
+        cognitive_reference_resolver=TrackingResolver(),
+        cognitive_response_composer=TrackingComposer(),
+    )
+
+    result = service.handle_conversation_turn("what about it?", AppCommandSource.TEST)
+
+    assert len(calls) == 1
+    assert calls[0].interpreted_intent is result.intent
+    assert result.references.references == ()
+    assert result.response.text == "refs 0"
 
 
 def test_context_composition_does_not_call_provider_execution_workflow_or_memory():

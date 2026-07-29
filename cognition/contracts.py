@@ -61,8 +61,29 @@ class IntentConfidence(Enum):
     HIGH = "high"
 
 
+class ReferenceKind(Enum):
+    PRONOUN = "pronoun"
+    DEMONSTRATIVE = "demonstrative"
+    PREVIOUS_MESSAGE = "previous_message"
+    PREVIOUS_RESPONSE = "previous_response"
+    PREVIOUS_REQUEST = "previous_request"
+    PREVIOUS_RESULT = "previous_result"
+    ORDINAL_TURN = "ordinal_turn"
+    EXPLICIT_QUOTE = "explicit_quote"
+    UNKNOWN = "unknown"
+
+
+class ReferenceResolutionStatus(Enum):
+    RESOLVED = "resolved"
+    UNRESOLVED = "unresolved"
+    AMBIGUOUS = "ambiguous"
+    NOT_APPLICABLE = "not_applicable"
+
+
 MAX_INTENT_SAFE_TEXT_LENGTH = 240
 MAX_INTENT_EVIDENCE_TEXT_LENGTH = 120
+MAX_REFERENCE_SURFACE_TEXT_LENGTH = 80
+MAX_REFERENCE_CANDIDATE_EXCERPT_LENGTH = 160
 
 
 def safe_cognitive_text(text: object) -> str:
@@ -343,6 +364,174 @@ class IntentInterpretationInput(CognitiveContractMixin):
 
 
 @dataclass(frozen=True)
+class ReferenceCandidate(CognitiveContractMixin):
+    turn_id: str
+    turn_sequence: int
+    role: ConversationRole
+    safe_excerpt: str
+    match_reason: str
+    recency_rank: int
+    confidence: IntentConfidence
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "turn_id", _clean_required_text(self.turn_id, "turn_id"))
+        object.__setattr__(
+            self,
+            "turn_sequence",
+            _positive_int(self.turn_sequence, "turn_sequence"),
+        )
+        object.__setattr__(self, "role", _conversation_role(self.role))
+        object.__setattr__(
+            self,
+            "safe_excerpt",
+            _bounded_required_text(
+                self.safe_excerpt,
+                "safe_excerpt",
+                MAX_REFERENCE_CANDIDATE_EXCERPT_LENGTH,
+            ),
+        )
+        object.__setattr__(
+            self,
+            "match_reason",
+            _clean_required_text(self.match_reason, "match_reason"),
+        )
+        object.__setattr__(self, "recency_rank", _positive_int(self.recency_rank, "recency_rank"))
+        object.__setattr__(self, "confidence", _intent_confidence(self.confidence))
+
+
+@dataclass(frozen=True)
+class DetectedReference(CognitiveContractMixin):
+    kind: ReferenceKind
+    safe_surface_text: str
+    rule_id: str
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "kind", _reference_kind(self.kind))
+        object.__setattr__(
+            self,
+            "safe_surface_text",
+            _bounded_required_text(
+                self.safe_surface_text,
+                "safe_surface_text",
+                MAX_REFERENCE_SURFACE_TEXT_LENGTH,
+            ),
+        )
+        object.__setattr__(self, "rule_id", _clean_required_text(self.rule_id, "rule_id"))
+
+
+@dataclass(frozen=True)
+class ResolvedReference(CognitiveContractMixin):
+    detected_reference: DetectedReference
+    status: ReferenceResolutionStatus
+    selected_candidate: ReferenceCandidate | None
+    candidates: tuple[ReferenceCandidate, ...]
+    confidence: IntentConfidence
+    context_turn_count_used: int
+    resolver_id: str
+    resolver_version: str
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.detected_reference, DetectedReference):
+            raise InvalidConversationTurnError("detected_reference must be a detected reference")
+        object.__setattr__(self, "status", _reference_resolution_status(self.status))
+        if self.selected_candidate is not None and not isinstance(
+            self.selected_candidate,
+            ReferenceCandidate,
+        ):
+            raise InvalidConversationTurnError("selected_candidate must be a reference candidate")
+        candidates = tuple(self.candidates)
+        if not all(isinstance(item, ReferenceCandidate) for item in candidates):
+            raise InvalidConversationTurnError("candidates must contain reference candidates")
+        object.__setattr__(self, "candidates", candidates)
+        object.__setattr__(self, "confidence", _intent_confidence(self.confidence))
+        object.__setattr__(
+            self,
+            "context_turn_count_used",
+            _nonnegative_int(self.context_turn_count_used, "context_turn_count_used"),
+        )
+        object.__setattr__(
+            self,
+            "resolver_id",
+            _clean_required_text(self.resolver_id, "resolver_id"),
+        )
+        object.__setattr__(
+            self,
+            "resolver_version",
+            _clean_required_text(self.resolver_version, "resolver_version"),
+        )
+        if self.status is ReferenceResolutionStatus.RESOLVED and self.selected_candidate is None:
+            raise InvalidConversationTurnError("resolved references require a selected candidate")
+        if self.status is not ReferenceResolutionStatus.RESOLVED and self.selected_candidate is not None:
+            raise InvalidConversationTurnError("unresolved references cannot select a candidate")
+
+
+@dataclass(frozen=True)
+class ReferenceResolutionInput(CognitiveContractMixin):
+    current_user_turn: ConversationTurn
+    context: ConversationContextSnapshot
+    interpreted_intent: InterpretedIntent
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.current_user_turn, ConversationTurn):
+            raise InvalidConversationTurnError("current_user_turn must be a conversation turn")
+        if not isinstance(self.context, ConversationContextSnapshot):
+            raise InvalidConversationTurnError("context must be a conversation context snapshot")
+        if not isinstance(self.interpreted_intent, InterpretedIntent):
+            raise InvalidConversationTurnError("interpreted_intent must be an interpreted intent")
+
+
+@dataclass(frozen=True)
+class ReferenceResolutionResult(CognitiveContractMixin):
+    references: tuple[ResolvedReference, ...]
+    has_unresolved_references: bool
+    has_ambiguous_references: bool
+    context_turn_count_used: int
+    resolver_id: str
+    resolver_version: str
+
+    def __post_init__(self) -> None:
+        references = tuple(self.references)
+        if not all(isinstance(item, ResolvedReference) for item in references):
+            raise InvalidConversationTurnError("references must contain resolved references")
+        object.__setattr__(self, "references", references)
+        expected_unresolved = any(
+            item.status is ReferenceResolutionStatus.UNRESOLVED for item in references
+        )
+        expected_ambiguous = any(
+            item.status is ReferenceResolutionStatus.AMBIGUOUS for item in references
+        )
+        object.__setattr__(
+            self,
+            "has_unresolved_references",
+            _strict_bool(self.has_unresolved_references, "has_unresolved_references"),
+        )
+        object.__setattr__(
+            self,
+            "has_ambiguous_references",
+            _strict_bool(self.has_ambiguous_references, "has_ambiguous_references"),
+        )
+        if self.has_unresolved_references != expected_unresolved:
+            raise InvalidConversationTurnError("unresolved reference diagnostics are inconsistent")
+        if self.has_ambiguous_references != expected_ambiguous:
+            raise InvalidConversationTurnError("ambiguous reference diagnostics are inconsistent")
+        object.__setattr__(
+            self,
+            "context_turn_count_used",
+            _nonnegative_int(self.context_turn_count_used, "context_turn_count_used"),
+        )
+        object.__setattr__(
+            self,
+            "resolver_id",
+            _clean_required_text(self.resolver_id, "resolver_id"),
+        )
+        object.__setattr__(
+            self,
+            "resolver_version",
+            _clean_required_text(self.resolver_version, "resolver_version"),
+        )
+
+
+@dataclass(frozen=True)
 class ResponseCompositionInput(CognitiveContractMixin):
     current_user_turn: ConversationTurn
     context: ConversationContextSnapshot
@@ -350,6 +539,7 @@ class ResponseCompositionInput(CognitiveContractMixin):
     locale: str | None = None
     session: ConversationSessionSnapshot | None = None
     interpreted_intent: InterpretedIntent | None = None
+    reference_resolution: ReferenceResolutionResult | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.current_user_turn, ConversationTurn):
@@ -365,6 +555,13 @@ class ResponseCompositionInput(CognitiveContractMixin):
             InterpretedIntent,
         ):
             raise InvalidConversationTurnError("interpreted_intent must be an interpreted intent")
+        if self.reference_resolution is not None and not isinstance(
+            self.reference_resolution,
+            ReferenceResolutionResult,
+        ):
+            raise InvalidConversationTurnError(
+                "reference_resolution must be a reference resolution result"
+            )
 
 
 @dataclass(frozen=True)
@@ -414,6 +611,7 @@ class CognitiveInteractionResult(CognitiveContractMixin):
     context: ConversationContextSnapshot | None = None
     composition: ResponseCompositionResult | None = None
     intent: InterpretedIntent | None = None
+    references: ReferenceResolutionResult | None = None
 
 
 def _session_status(value: object) -> ConversationSessionStatus:
@@ -450,6 +648,18 @@ def _intent_confidence(value: object) -> IntentConfidence:
     if isinstance(value, IntentConfidence):
         return value
     return IntentConfidence(str(value))
+
+
+def _reference_kind(value: object) -> ReferenceKind:
+    if isinstance(value, ReferenceKind):
+        return value
+    return ReferenceKind(str(value))
+
+
+def _reference_resolution_status(value: object) -> ReferenceResolutionStatus:
+    if isinstance(value, ReferenceResolutionStatus):
+        return value
+    return ReferenceResolutionStatus(str(value))
 
 
 def _optional_positive_int(value: object | None, field_name: str) -> int | None:

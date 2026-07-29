@@ -26,6 +26,7 @@ def test_cognition_package_contains_only_approved_cognitive_modules():
         "intent_interpreter.py",
         "interaction_service.py",
         "persistence.py",
+        "reference_resolver.py",
         "response_composer.py",
         "sessions.py",
     }
@@ -86,7 +87,12 @@ def test_context_interpreter_and_response_composer_do_not_import_runtime_owners(
         "memory",
         "platform_adapters",
     }
-    for module_name in ("context.py", "intent_interpreter.py", "response_composer.py"):
+    for module_name in (
+        "context.py",
+        "intent_interpreter.py",
+        "reference_resolver.py",
+        "response_composer.py",
+    ):
         imports = _imports_for(COGNITION_ROOT / module_name)
         assert not forbidden.intersection(imports)
         assert not any(module.startswith("ai.") for module in imports)
@@ -97,12 +103,14 @@ def test_session_state_has_one_authoritative_owner():
     interaction_source = (COGNITION_ROOT / "interaction_service.py").read_text(encoding="utf-8")
     context_source = (COGNITION_ROOT / "context.py").read_text(encoding="utf-8")
     interpreter_source = (COGNITION_ROOT / "intent_interpreter.py").read_text(encoding="utf-8")
+    resolver_source = (COGNITION_ROOT / "reference_resolver.py").read_text(encoding="utf-8")
     composer_source = (COGNITION_ROOT / "response_composer.py").read_text(encoding="utf-8")
 
     assert "self._sessions" in session_source
     assert "self._sessions" not in interaction_source
     assert "self._sessions" not in context_source
     assert "self._sessions" not in interpreter_source
+    assert "self._sessions" not in resolver_source
     assert "self._sessions" not in composer_source
 
 
@@ -116,6 +124,7 @@ def test_interaction_service_owns_no_repository_or_session_cache():
 def test_context_projector_and_response_composer_own_no_durable_state_or_token_counter():
     context_source = (COGNITION_ROOT / "context.py").read_text(encoding="utf-8")
     interpreter_source = (COGNITION_ROOT / "intent_interpreter.py").read_text(encoding="utf-8")
+    resolver_source = (COGNITION_ROOT / "reference_resolver.py").read_text(encoding="utf-8")
     composer_source = (COGNITION_ROOT / "response_composer.py").read_text(encoding="utf-8")
 
     assert "repository" not in context_source
@@ -126,6 +135,10 @@ def test_context_projector_and_response_composer_own_no_durable_state_or_token_c
     assert "save_record" not in interpreter_source
     assert "load_records" not in interpreter_source
     assert "token" not in interpreter_source.lower()
+    assert "repository" not in resolver_source
+    assert "save_record" not in resolver_source
+    assert "load_records" not in resolver_source
+    assert "token" not in resolver_source.lower()
     assert "repository" not in composer_source
     assert "save_record" not in composer_source
     assert "load_records" not in composer_source
@@ -135,7 +148,6 @@ def test_context_projector_and_response_composer_own_no_durable_state_or_token_c
 def test_no_future_placeholder_cognitive_services_are_added():
     modules = {path.name for path in COGNITION_ROOT.glob("*.py")}
 
-    assert "reference_resolver.py" not in modules
     assert "clarification.py" not in modules
     assert "goals.py" not in modules
     assert "planning.py" not in modules

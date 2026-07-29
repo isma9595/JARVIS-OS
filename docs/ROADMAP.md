@@ -1,6 +1,6 @@
 # JARVIS Roadmap
 
-Status: updated by TASK-117. This roadmap begins after the completed
+Status: updated by TASK-118. This roadmap begins after the completed
 execution/workflow platform milestone and the TASK-112 cognitive architecture
 report, then accounts for the TASK-113 cognitive skeleton implementation and
 the completed TASK-114 roadmap-alignment record.
@@ -19,11 +19,12 @@ approved task explicitly changes this rule.
 
 Completion criteria: AppService can create and inspect cognitive conversation
 sessions, persist safe session summaries, project bounded conversation
-context, interpret broad descriptive intent, and route typed/voice turns
-through the existing cognitive facade without changing command execution
-behavior. These tasks establish completed minimal contracts, in-memory session
-ownership, AppService integration, persistence boundaries, response
-composition, and intent interpretation without execution.
+context, interpret broad descriptive intent, resolve simple conversational
+references, and route typed/voice turns through the existing cognitive facade
+without changing command execution behavior. These tasks establish completed
+minimal contracts, in-memory session ownership, AppService integration,
+persistence boundaries, response composition, intent interpretation, and
+reference resolution without execution.
 
 ### TASK-113 - Cognitive Contracts & Interaction Skeleton - Completed
 
@@ -108,11 +109,12 @@ composition, and intent interpretation without execution.
   `CognitiveInteractionService`, and existing command behavior remains
   unchanged.
 
-## Milestone 2: Intent and Clarification
+## Milestone 2: Intent, References, and Clarification
 
 Completion criteria: cognitive interpretation owns non-executing user intent
-for conversation turns, and clarification state is durable-safe and distinct
-from approval.
+for conversation turns, simple conversational references are resolved
+conservatively from bounded context, and clarification state is durable-safe
+and distinct from approval.
 
 ### TASK-117 - IntentInterpreter Adapter - Completed
 
@@ -139,32 +141,45 @@ from approval.
   once before response composition, and existing command behavior remains
   unchanged.
 
-### TASK-118 - ClarificationCoordinator
+### TASK-118 - Reference Resolution - Completed
 
-- Purpose: centralize pending clarification records for ambiguous intent and
-  missing slots.
+- Delivered scope: immutable provider-neutral reference contracts; stateless
+  deterministic `ReferenceResolver` protocol and `RuleBasedReferenceResolver`;
+  conservative resolution from bounded detached context; observable
+  reference-resolution diagnostics in response composition; AppService
+  composition wiring.
+- Explicit limits: no comprehensive coreference, entity extraction, filesystem
+  resolution, application-object lookup, command argument reconstruction,
+  workflow selection, execution routing, clarification coordination, memory,
+  knowledge, providers, network, Desktop UI, NLP frameworks, embeddings, or
+  vector databases.
+- Production files: `cognition/reference_resolver.py`, focused extensions to
+  cognition contracts, interaction orchestration, response composition, package
+  exports, and AppService composition wiring.
+- Expected test areas: completed by TASK-118 with contract, resolver,
+  response composer, interaction service, AppService integration, architecture
+  boundary, and existing AppService/conversational-loop compatibility tests.
+- Dependencies: TASK-117.
+- Completion criteria: completed by TASK-118; simple conversational references
+  resolve only when deterministic bounded-context rules find a unique safe
+  candidate, ambiguous and unresolved states are explicit, no resolved
+  reference authorizes execution, and existing command behavior remains
+  unchanged.
+
+### TASK-119 - ClarificationCoordinator
+
+- Purpose: centralize pending clarification records for ambiguous intent,
+  ambiguous references, unresolved references, and missing slots.
 - Main architectural risk: conflating clarification with risky-action
   confirmation.
 - Expected production files: `cognition/clarification.py`,
   session-store extensions.
 - Expected test areas: option matching, expiry, restart recovery,
-  cancellation, no approval side effects.
-- Dependencies: TASK-117.
-- Completion criteria: ambiguous turns produce a persisted pending
-  clarification and a later answer resolves only meaning.
-
-### TASK-119 - ReferenceResolver Phase 1
-
-- Purpose: resolve references from recent conversation context and read-only
-  AppService history projections.
-- Main architectural risk: guessing unsafe targets for action requests.
-- Expected production files: `cognition/reference_resolver.py`,
-  `cognition/context.py`.
-- Expected test areas: "it/again" references, ambiguous candidates,
-  workflow-run references, low-confidence clarification.
+  cancellation, ambiguous references, unresolved references, no approval side
+  effects.
 - Dependencies: TASK-118.
-- Completion criteria: simple read-only references resolve; mutating ambiguous
-  references ask clarification.
+- Completion criteria: ambiguous or incomplete turns produce a persisted
+  pending clarification and a later answer resolves only meaning.
 
 ## Milestone 3: Personal Memory
 

@@ -14,6 +14,13 @@ from cognition import (
     IntentEvidence,
     IntentInterpretationError,
     InterpretedIntent,
+    DetectedReference,
+    ReferenceCandidate,
+    ReferenceKind,
+    ReferenceResolutionError,
+    ReferenceResolutionResult,
+    ReferenceResolutionStatus,
+    ResolvedReference,
     ResponseCompositionResult,
 )
 
@@ -36,6 +43,40 @@ def _test_intent(*, context_turn_count_used: int = 1) -> InterpretedIntent:
         interpreter_id="test",
         interpreter_version="1",
         context_turn_count_used=context_turn_count_used,
+    )
+
+
+def _test_references(*, context_turn_count_used: int = 1) -> ReferenceResolutionResult:
+    candidate = ReferenceCandidate(
+        turn_id="turn-1",
+        turn_sequence=1,
+        role=ConversationRole.USER,
+        safe_excerpt="hello",
+        match_reason="test",
+        recency_rank=1,
+        confidence=IntentConfidence.LOW,
+    )
+    resolved = ResolvedReference(
+        detected_reference=DetectedReference(
+            kind=ReferenceKind.PREVIOUS_REQUEST,
+            safe_surface_text="previous request",
+            rule_id="test",
+        ),
+        status=ReferenceResolutionStatus.RESOLVED,
+        selected_candidate=candidate,
+        candidates=(candidate,),
+        confidence=IntentConfidence.MEDIUM,
+        context_turn_count_used=context_turn_count_used,
+        resolver_id="test",
+        resolver_version="1",
+    )
+    return ReferenceResolutionResult(
+        references=(resolved,),
+        has_unresolved_references=False,
+        has_ambiguous_references=False,
+        context_turn_count_used=context_turn_count_used,
+        resolver_id="test",
+        resolver_version="1",
     )
 
 
@@ -121,6 +162,7 @@ def test_context_projector_runs_after_user_turn_and_composer_runs_once():
                     composition_input.context.included_turn_count,
                     composition_input.current_user_turn.sequence,
                     composition_input.interpreted_intent.category,
+                    len(composition_input.reference_resolution.references),
                 )
             )
             return ResponseCompositionResult(
@@ -143,10 +185,25 @@ def test_context_projector_runs_after_user_turn_and_composer_runs_once():
                 context_turn_count_used=interpretation_input.context.included_turn_count
             )
 
+    class TrackingResolver:
+        def resolve(self, resolution_input):
+            events.append(
+                (
+                    "resolve",
+                    resolution_input.context.included_turn_count,
+                    resolution_input.current_user_turn.sequence,
+                    resolution_input.interpreted_intent.category,
+                )
+            )
+            return _test_references(
+                context_turn_count_used=resolution_input.context.included_turn_count
+            )
+
     service = CognitiveInteractionService(
         session_service=session_service,
         context_projector=TrackingProjector(),
         intent_interpreter=TrackingInterpreter(),
+        reference_resolver=TrackingResolver(),
         response_composer=TrackingComposer(),
     )
 
@@ -156,12 +213,14 @@ def test_context_projector_runs_after_user_turn_and_composer_runs_once():
     assert events == [
         ("project", 1),
         ("interpret", 1, 1),
-        ("compose", 1, 1, IntentCategory.CONVERSATION),
+        ("resolve", 1, 1, IntentCategory.CONVERSATION),
+        ("compose", 1, 1, IntentCategory.CONVERSATION, 1),
     ]
     assert [turn.sequence for turn in turns] == [1, 2]
     assert result.context.included_turn_count == 1
     assert result.composition.context_turn_count_used == 1
     assert result.intent.category is IntentCategory.CONVERSATION
+    assert result.references.references[0].status is ReferenceResolutionStatus.RESOLVED
 
 
 def test_projection_failure_preserves_user_turn_without_assistant_turn():
@@ -179,10 +238,15 @@ def test_projection_failure_preserves_user_turn_without_assistant_turn():
         def interpret(self, *_):
             raise AssertionError("interpreter should not run")
 
+    class UnusedResolver:
+        def resolve(self, *_):
+            raise AssertionError("resolver should not run")
+
     service = CognitiveInteractionService(
         session_service=session_service,
         context_projector=FailingProjector(),
         intent_interpreter=UnusedInterpreter(),
+        reference_resolver=UnusedResolver(),
         response_composer=UnusedComposer(),
     )
 
@@ -206,10 +270,15 @@ def test_intent_failure_records_safe_error_and_skips_composer():
         def compose(self, *_):
             raise AssertionError("composer should not run")
 
+    class UnusedResolver:
+        def resolve(self, *_):
+            raise AssertionError("resolver should not run")
+
     service = CognitiveInteractionService(
         session_service=session_service,
         context_projector=ConversationContextProjector(),
         intent_interpreter=FailingInterpreter(),
+        reference_resolver=UnusedResolver(),
         response_composer=UnusedComposer(),
     )
 
@@ -220,6 +289,37 @@ def test_intent_failure_records_safe_error_and_skips_composer():
     assert result.response.text == "Conversation intent interpretation failed safely."
     assert result.intent is None
     assert result.composition.composition_source == "intent_error_fallback"
+    assert [turn.sequence for turn in turns] == [1, 2]
+    assert [turn.role for turn in turns] == [ConversationRole.USER, ConversationRole.ASSISTANT]
+    assert "sk-test" not in result.response.text
+
+
+def test_reference_resolution_failure_records_safe_error_and_skips_composer():
+    session_service = ConversationSessionService()
+
+    class FailingResolver:
+        def resolve(self, *_):
+            raise ReferenceResolutionError("secret sk-test-1234567890secret")
+
+    class UnusedComposer:
+        def compose(self, *_):
+            raise AssertionError("composer should not run")
+
+    service = CognitiveInteractionService(
+        session_service=session_service,
+        context_projector=ConversationContextProjector(),
+        reference_resolver=FailingResolver(),
+        response_composer=UnusedComposer(),
+    )
+
+    result = service.handle_turn(ConversationTurnInput(text="hello", source="test"))
+    turns = session_service.turns_snapshot(result.session.session_id)
+
+    assert result.response.response_type is AssistantResponseType.ERROR
+    assert result.response.text == "Conversation reference resolution failed safely."
+    assert result.intent is not None
+    assert result.references is None
+    assert result.composition.composition_source == "reference_error_fallback"
     assert [turn.sequence for turn in turns] == [1, 2]
     assert [turn.role for turn in turns] == [ConversationRole.USER, ConversationRole.ASSISTANT]
     assert "sk-test" not in result.response.text
