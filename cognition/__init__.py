@@ -13,6 +13,11 @@ from cognition.contracts import (
     ConversationTurn,
     ConversationTurnInput,
     InvalidConversationTurnError,
+    IntentCategory,
+    IntentConfidence,
+    IntentEvidence,
+    IntentInterpretationInput,
+    InterpretedIntent,
     ResponseCompositionInput,
     ResponseCompositionResult,
 )
@@ -23,6 +28,12 @@ from cognition.context import (
     ConversationContextProjector,
 )
 from cognition.interaction_service import CognitiveInteractionService
+from cognition.intent_interpreter import (
+    IntentInterpretationError,
+    IntentInterpreter,
+    InvalidIntentInputError,
+    RuleBasedIntentInterpreter,
+)
 from cognition.persistence import (
     CONVERSATION_SESSION_SCHEMA_VERSION,
     MAX_PERSISTED_TURN_SUMMARY_LENGTH,
@@ -77,6 +88,14 @@ __all__ = [
     "ConversationTurn",
     "ConversationTurnInput",
     "InvalidConversationTurnError",
+    "IntentCategory",
+    "IntentConfidence",
+    "IntentEvidence",
+    "IntentInterpretationError",
+    "IntentInterpretationInput",
+    "IntentInterpreter",
+    "InterpretedIntent",
+    "InvalidIntentInputError",
     "LocalConversationSessionRepository",
     "PersistedConversationSessionRecord",
     "PersistedConversationTurnSummary",
@@ -84,4 +103,5 @@ __all__ = [
     "ResponseComposer",
     "ResponseCompositionInput",
     "ResponseCompositionResult",
+    "RuleBasedIntentInterpreter",
 ]

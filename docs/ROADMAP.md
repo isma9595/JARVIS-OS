@@ -1,6 +1,6 @@
 # JARVIS Roadmap
 
-Status: updated by TASK-116. This roadmap begins after the completed
+Status: updated by TASK-117. This roadmap begins after the completed
 execution/workflow platform milestone and the TASK-112 cognitive architecture
 report, then accounts for the TASK-113 cognitive skeleton implementation and
 the completed TASK-114 roadmap-alignment record.
@@ -19,10 +19,11 @@ approved task explicitly changes this rule.
 
 Completion criteria: AppService can create and inspect cognitive conversation
 sessions, persist safe session summaries, project bounded conversation
-context, and route typed/voice turns through the existing cognitive facade
-without changing command execution behavior. These tasks establish completed
-minimal contracts, in-memory session ownership, AppService integration,
-persistence boundaries, and response composition without execution.
+context, interpret broad descriptive intent, and route typed/voice turns
+through the existing cognitive facade without changing command execution
+behavior. These tasks establish completed minimal contracts, in-memory session
+ownership, AppService integration, persistence boundaries, response
+composition, and intent interpretation without execution.
 
 ### TASK-113 - Cognitive Contracts & Interaction Skeleton - Completed
 
@@ -113,19 +114,30 @@ Completion criteria: cognitive interpretation owns non-executing user intent
 for conversation turns, and clarification state is durable-safe and distinct
 from approval.
 
-### TASK-117 - IntentInterpreter Adapter
+### TASK-117 - IntentInterpreter Adapter - Completed
 
-- Purpose: wrap current `HybridIntentResolver`, `CommandResolutionService`, and
-  command registry evidence behind cognitive `UserIntent`.
-- Main architectural risk: changing command recognition semantics during
-  migration.
-- Expected production files: `cognition/intent_interpreter.py`.
-- Expected test areas: parity with current AppService/CommandProcessor
-  characterization tests, confidence/provenance, unsupported inputs.
+- Delivered scope: immutable provider-neutral intent contracts; stateless
+  deterministic `IntentInterpreter` protocol and `RuleBasedIntentInterpreter`;
+  context-aware intent interpretation between context projection and response
+  composition; observable intent diagnostics in response composition; AppService
+  composition wiring.
+- Explicit limits: no command authorization, execution routing, workflow
+  selection, reference resolution, clarification migration, memory, knowledge,
+  providers, network, Desktop UI, embeddings, semantic classifiers, or
+  provider-assisted interpretation.
+- Production files: `cognition/intent_interpreter.py`, focused extensions to
+  cognition contracts, interaction orchestration, response composition, package
+  exports, and AppService composition wiring.
+- Expected test areas: completed by TASK-117 with contract, interpreter,
+  response composer, interaction service, AppService integration, architecture
+  boundary, and existing AppService/conversational-loop compatibility tests.
 - Dependencies: TASK-116, after bounded context and non-executing response
   composition exist.
-- Completion criteria: existing command and ordinary-conversation
-  classifications project into cognitive DTOs without execution.
+- Completion criteria: completed by TASK-117; broad intent categories project
+  into cognitive DTOs without execution, bounded context is used only for
+  conservative conversational disambiguation, interpretation is invoked exactly
+  once before response composition, and existing command behavior remains
+  unchanged.
 
 ### TASK-118 - ClarificationCoordinator
 

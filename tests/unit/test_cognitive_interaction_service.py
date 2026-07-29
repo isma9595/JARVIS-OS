@@ -9,8 +9,34 @@ from cognition import (
     ConversationSessionNotFoundError,
     ConversationSessionService,
     ConversationTurnInput,
+    IntentCategory,
+    IntentConfidence,
+    IntentEvidence,
+    IntentInterpretationError,
+    InterpretedIntent,
     ResponseCompositionResult,
 )
+
+
+def _test_intent(*, context_turn_count_used: int = 1) -> InterpretedIntent:
+    return InterpretedIntent(
+        category=IntentCategory.CONVERSATION,
+        confidence=IntentConfidence.LOW,
+        safe_user_text="hello",
+        evidence=(
+            IntentEvidence(
+                evidence_type="rule",
+                safe_excerpt="hello",
+                rule_id="conversation_fallback",
+            ),
+        ),
+        requires_reference_resolution=False,
+        may_require_clarification=False,
+        is_actionable_request=False,
+        interpreter_id="test",
+        interpreter_version="1",
+        context_turn_count_used=context_turn_count_used,
+    )
 
 
 def test_missing_session_id_creates_session_and_invokes_delegate_once():
@@ -94,6 +120,7 @@ def test_context_projector_runs_after_user_turn_and_composer_runs_once():
                     "compose",
                     composition_input.context.included_turn_count,
                     composition_input.current_user_turn.sequence,
+                    composition_input.interpreted_intent.category,
                 )
             )
             return ResponseCompositionResult(
@@ -103,19 +130,38 @@ def test_context_projector_runs_after_user_turn_and_composer_runs_once():
                 composition_source="test",
             )
 
+    class TrackingInterpreter:
+        def interpret(self, interpretation_input):
+            events.append(
+                (
+                    "interpret",
+                    interpretation_input.context.included_turn_count,
+                    interpretation_input.current_user_turn.sequence,
+                )
+            )
+            return _test_intent(
+                context_turn_count_used=interpretation_input.context.included_turn_count
+            )
+
     service = CognitiveInteractionService(
         session_service=session_service,
         context_projector=TrackingProjector(),
+        intent_interpreter=TrackingInterpreter(),
         response_composer=TrackingComposer(),
     )
 
     result = service.handle_turn(ConversationTurnInput(text="hello", source="test"))
     turns = session_service.turns_snapshot(result.session.session_id)
 
-    assert events == [("project", 1), ("compose", 1, 1)]
+    assert events == [
+        ("project", 1),
+        ("interpret", 1, 1),
+        ("compose", 1, 1, IntentCategory.CONVERSATION),
+    ]
     assert [turn.sequence for turn in turns] == [1, 2]
     assert result.context.included_turn_count == 1
     assert result.composition.context_turn_count_used == 1
+    assert result.intent.category is IntentCategory.CONVERSATION
 
 
 def test_projection_failure_preserves_user_turn_without_assistant_turn():
@@ -129,9 +175,14 @@ def test_projection_failure_preserves_user_turn_without_assistant_turn():
         def compose(self, *_):
             raise AssertionError("composer should not run")
 
+    class UnusedInterpreter:
+        def interpret(self, *_):
+            raise AssertionError("interpreter should not run")
+
     service = CognitiveInteractionService(
         session_service=session_service,
         context_projector=FailingProjector(),
+        intent_interpreter=UnusedInterpreter(),
         response_composer=UnusedComposer(),
     )
 
@@ -142,6 +193,36 @@ def test_projection_failure_preserves_user_turn_without_assistant_turn():
     turns = session_service.turns_snapshot(sessions[0])
     assert [turn.sequence for turn in turns] == [1]
     assert [turn.role for turn in turns] == [ConversationRole.USER]
+
+
+def test_intent_failure_records_safe_error_and_skips_composer():
+    session_service = ConversationSessionService()
+
+    class FailingInterpreter:
+        def interpret(self, *_):
+            raise IntentInterpretationError("secret sk-test-1234567890secret")
+
+    class UnusedComposer:
+        def compose(self, *_):
+            raise AssertionError("composer should not run")
+
+    service = CognitiveInteractionService(
+        session_service=session_service,
+        context_projector=ConversationContextProjector(),
+        intent_interpreter=FailingInterpreter(),
+        response_composer=UnusedComposer(),
+    )
+
+    result = service.handle_turn(ConversationTurnInput(text="hello", source="test"))
+    turns = session_service.turns_snapshot(result.session.session_id)
+
+    assert result.response.response_type is AssistantResponseType.ERROR
+    assert result.response.text == "Conversation intent interpretation failed safely."
+    assert result.intent is None
+    assert result.composition.composition_source == "intent_error_fallback"
+    assert [turn.sequence for turn in turns] == [1, 2]
+    assert [turn.role for turn in turns] == [ConversationRole.USER, ConversationRole.ASSISTANT]
+    assert "sk-test" not in result.response.text
 
 
 def test_composition_failure_records_safe_error_response():

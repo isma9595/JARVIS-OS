@@ -43,6 +43,28 @@ class ConversationContextContentClassification(Enum):
     REDACTED_SENSITIVE_CONTENT = "redacted_sensitive_content"
 
 
+class IntentCategory(Enum):
+    CONVERSATION = "conversation"
+    QUESTION = "question"
+    INFORMATION_REQUEST = "information_request"
+    ACTION_REQUEST = "action_request"
+    CLARIFICATION_RESPONSE = "clarification_response"
+    CANCELLATION = "cancellation"
+    CONFIRMATION = "confirmation"
+    REJECTION = "rejection"
+    UNKNOWN = "unknown"
+
+
+class IntentConfidence(Enum):
+    LOW = "low"
+    MEDIUM = "medium"
+    HIGH = "high"
+
+
+MAX_INTENT_SAFE_TEXT_LENGTH = 240
+MAX_INTENT_EVIDENCE_TEXT_LENGTH = 120
+
+
 def safe_cognitive_text(text: object) -> str:
     return _SECRET_PATTERN.sub("[REDACTED]", str(text or ""))
 
@@ -217,16 +239,132 @@ class ConversationContextSnapshot(CognitiveContractMixin):
 
 
 @dataclass(frozen=True)
+class IntentEvidence(CognitiveContractMixin):
+    evidence_type: str
+    safe_excerpt: str
+    rule_id: str
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "evidence_type",
+            _clean_required_text(self.evidence_type, "evidence_type"),
+        )
+        object.__setattr__(
+            self,
+            "safe_excerpt",
+            _bounded_required_text(
+                self.safe_excerpt,
+                "safe_excerpt",
+                MAX_INTENT_EVIDENCE_TEXT_LENGTH,
+            ),
+        )
+        object.__setattr__(self, "rule_id", _clean_required_text(self.rule_id, "rule_id"))
+
+
+@dataclass(frozen=True)
+class InterpretedIntent(CognitiveContractMixin):
+    category: IntentCategory
+    confidence: IntentConfidence
+    safe_user_text: str
+    evidence: tuple[IntentEvidence, ...]
+    requires_reference_resolution: bool
+    may_require_clarification: bool
+    is_actionable_request: bool
+    interpreter_id: str
+    interpreter_version: str
+    context_turn_count_used: int
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "category", _intent_category(self.category))
+        object.__setattr__(self, "confidence", _intent_confidence(self.confidence))
+        object.__setattr__(
+            self,
+            "safe_user_text",
+            _bounded_required_text(
+                self.safe_user_text,
+                "safe_user_text",
+                MAX_INTENT_SAFE_TEXT_LENGTH,
+            ),
+        )
+        evidence = tuple(self.evidence)
+        if not all(isinstance(item, IntentEvidence) for item in evidence):
+            raise InvalidConversationTurnError("evidence must contain intent evidence")
+        object.__setattr__(self, "evidence", evidence)
+        object.__setattr__(
+            self,
+            "requires_reference_resolution",
+            _strict_bool(
+                self.requires_reference_resolution,
+                "requires_reference_resolution",
+            ),
+        )
+        object.__setattr__(
+            self,
+            "may_require_clarification",
+            _strict_bool(self.may_require_clarification, "may_require_clarification"),
+        )
+        object.__setattr__(
+            self,
+            "is_actionable_request",
+            _strict_bool(self.is_actionable_request, "is_actionable_request"),
+        )
+        object.__setattr__(
+            self,
+            "interpreter_id",
+            _clean_required_text(self.interpreter_id, "interpreter_id"),
+        )
+        object.__setattr__(
+            self,
+            "interpreter_version",
+            _clean_required_text(self.interpreter_version, "interpreter_version"),
+        )
+        object.__setattr__(
+            self,
+            "context_turn_count_used",
+            _nonnegative_int(self.context_turn_count_used, "context_turn_count_used"),
+        )
+
+
+@dataclass(frozen=True)
+class IntentInterpretationInput(CognitiveContractMixin):
+    current_user_turn: ConversationTurn
+    context: ConversationContextSnapshot
+    source: str
+    locale: str | None = None
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.current_user_turn, ConversationTurn):
+            raise InvalidConversationTurnError("current_user_turn must be a conversation turn")
+        if not isinstance(self.context, ConversationContextSnapshot):
+            raise InvalidConversationTurnError("context must be a conversation context snapshot")
+        object.__setattr__(self, "source", _clean_required_text(self.source, "source"))
+        object.__setattr__(self, "locale", _optional_clean_text(self.locale))
+
+
+@dataclass(frozen=True)
 class ResponseCompositionInput(CognitiveContractMixin):
     current_user_turn: ConversationTurn
     context: ConversationContextSnapshot
     source: str
     locale: str | None = None
     session: ConversationSessionSnapshot | None = None
+    interpreted_intent: InterpretedIntent | None = None
 
     def __post_init__(self) -> None:
+        if not isinstance(self.current_user_turn, ConversationTurn):
+            raise InvalidConversationTurnError("current_user_turn must be a conversation turn")
+        if not isinstance(self.context, ConversationContextSnapshot):
+            raise InvalidConversationTurnError("context must be a conversation context snapshot")
         object.__setattr__(self, "source", _clean_required_text(self.source, "source"))
         object.__setattr__(self, "locale", _optional_clean_text(self.locale))
+        if self.session is not None and not isinstance(self.session, ConversationSessionSnapshot):
+            raise InvalidConversationTurnError("session must be a conversation session snapshot")
+        if self.interpreted_intent is not None and not isinstance(
+            self.interpreted_intent,
+            InterpretedIntent,
+        ):
+            raise InvalidConversationTurnError("interpreted_intent must be an interpreted intent")
 
 
 @dataclass(frozen=True)
@@ -275,6 +413,7 @@ class CognitiveInteractionResult(CognitiveContractMixin):
     session: ConversationSessionSnapshot
     context: ConversationContextSnapshot | None = None
     composition: ResponseCompositionResult | None = None
+    intent: InterpretedIntent | None = None
 
 
 def _session_status(value: object) -> ConversationSessionStatus:
@@ -301,7 +440,44 @@ def _context_content_classification(value: object) -> ConversationContextContent
     return ConversationContextContentClassification(str(value))
 
 
+def _intent_category(value: object) -> IntentCategory:
+    if isinstance(value, IntentCategory):
+        return value
+    return IntentCategory(str(value))
+
+
+def _intent_confidence(value: object) -> IntentConfidence:
+    if isinstance(value, IntentConfidence):
+        return value
+    return IntentConfidence(str(value))
+
+
 def _optional_positive_int(value: object | None, field_name: str) -> int | None:
     if value is None:
         return None
     return _positive_int(value, field_name)
+
+
+def _strict_bool(value: object, field_name: str) -> bool:
+    if type(value) is not bool:
+        raise InvalidConversationTurnError(f"{field_name} must be a boolean")
+    return value
+
+
+def _bounded_optional_text(value: object | None, max_length: int) -> str | None:
+    cleaned = _optional_clean_text(value)
+    if cleaned is None:
+        return None
+    return _truncate_contract_text(cleaned, max_length)
+
+
+def _bounded_required_text(value: object, field_name: str, max_length: int) -> str:
+    return _truncate_contract_text(_clean_required_text(value, field_name), max_length)
+
+
+def _truncate_contract_text(text: str, max_length: int) -> str:
+    if len(text) <= max_length:
+        return text
+    if max_length <= 3:
+        return "." * max_length
+    return text[: max_length - 3].rstrip() + "..."

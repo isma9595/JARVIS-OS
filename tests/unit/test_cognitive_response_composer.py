@@ -5,11 +5,36 @@ from cognition import (
     CompatibilityResponseComposer,
     ConversationContextProjector,
     ConversationSessionService,
+    IntentCategory,
+    IntentConfidence,
+    IntentEvidence,
+    InterpretedIntent,
     ResponseCompositionInput,
 )
 
 
-def _composition_input():
+def _intent():
+    return InterpretedIntent(
+        category=IntentCategory.CONVERSATION,
+        confidence=IntentConfidence.LOW,
+        safe_user_text="hello",
+        evidence=(
+            IntentEvidence(
+                evidence_type="rule",
+                safe_excerpt="hello",
+                rule_id="conversation_fallback",
+            ),
+        ),
+        requires_reference_resolution=False,
+        may_require_clarification=False,
+        is_actionable_request=False,
+        interpreter_id="test",
+        interpreter_version="1",
+        context_turn_count_used=1,
+    )
+
+
+def _composition_input(*, interpreted_intent=None):
     session_service = ConversationSessionService()
     session = session_service.create_session()
     user_turn = session_service.append_user_turn(session.session_id, "hello", "test")
@@ -21,6 +46,7 @@ def _composition_input():
         source="test",
         locale="en-US",
         session=source_session,
+        interpreted_intent=interpreted_intent,
     )
 
 
@@ -39,6 +65,15 @@ def test_compatibility_composer_invokes_delegate_once_with_bounded_context():
     assert result.text == "context turns: 1"
     assert result.context_turn_count_used == 1
     assert result.composition_source == "compatibility_delegate"
+
+
+def test_compatibility_composer_observably_uses_interpreted_intent():
+    _, composition_input = _composition_input(interpreted_intent=_intent())
+
+    result = CompatibilityResponseComposer(lambda _: "reply").compose(composition_input)
+
+    assert result.text == "reply"
+    assert result.composition_source == "compatibility_delegate:conversation"
 
 
 def test_compatibility_composer_sanitizes_output_and_does_not_mutate_session():

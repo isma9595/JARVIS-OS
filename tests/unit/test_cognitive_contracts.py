@@ -17,6 +17,11 @@ from cognition import (
     ConversationSessionStatus,
     ConversationTurnInput,
     InvalidConversationTurnError,
+    IntentCategory,
+    IntentConfidence,
+    IntentEvidence,
+    IntentInterpretationInput,
+    InterpretedIntent,
     ResponseCompositionResult,
 )
 
@@ -345,3 +350,107 @@ def test_context_numeric_contracts_accept_plain_integers_only():
     assert context.turns[0].sequence == 1
     assert context.omitted_turn_count == 0
     assert result.context_turn_count_used == 0
+
+
+def test_intent_contracts_are_immutable_json_safe_and_provider_neutral():
+    service = ConversationSessionService()
+    session = service.create_session()
+    user_turn = service.append_user_turn(
+        session.session_id,
+        "tell me token=sk-test-1234567890secret",
+        "test",
+    )
+    context = ConversationContextSnapshot(
+        session_id=session.session_id,
+        session_status=ConversationSessionStatus.ACTIVE,
+        projected_at="2026-07-29T00:00:01+00:00",
+        turns=(),
+        total_turn_count=0,
+        included_turn_count=0,
+        omitted_turn_count=0,
+    )
+    evidence = IntentEvidence(
+        evidence_type="rule",
+        safe_excerpt="matched token=sk-test-1234567890secret",
+        rule_id="rule.test",
+    )
+    intent = InterpretedIntent(
+        category=IntentCategory.INFORMATION_REQUEST,
+        confidence=IntentConfidence.MEDIUM,
+        safe_user_text=user_turn.text,
+        evidence=(evidence,),
+        requires_reference_resolution=False,
+        may_require_clarification=False,
+        is_actionable_request=False,
+        interpreter_id="test",
+        interpreter_version="1",
+        context_turn_count_used=0,
+    )
+    interpretation_input = IntentInterpretationInput(
+        current_user_turn=user_turn,
+        context=context,
+        source="test",
+    )
+
+    assert intent.to_dict() == {
+        "category": "information_request",
+        "confidence": "medium",
+        "safe_user_text": "tell me [REDACTED]",
+        "evidence": (
+            {
+                "evidence_type": "rule",
+                "safe_excerpt": "matched [REDACTED]",
+                "rule_id": "rule.test",
+            },
+        ),
+        "requires_reference_resolution": False,
+        "may_require_clarification": False,
+        "is_actionable_request": False,
+        "interpreter_id": "test",
+        "interpreter_version": "1",
+        "context_turn_count_used": 0,
+    }
+    assert interpretation_input.current_user_turn is user_turn
+    assert "metadata" not in intent.to_dict()
+    assert "provider" not in intent.to_dict()
+    assert "command" not in intent.to_dict()
+    with pytest.raises(FrozenInstanceError):
+        intent.category = IntentCategory.UNKNOWN
+
+
+def test_intent_evidence_is_bounded_and_rejects_empty_fields():
+    evidence = IntentEvidence(
+        evidence_type="rule",
+        safe_excerpt="x" * 200,
+        rule_id="rule.long",
+    )
+
+    assert len(evidence.safe_excerpt) <= 120
+    with pytest.raises(InvalidConversationTurnError):
+        IntentEvidence(evidence_type="", safe_excerpt="value", rule_id="rule.test")
+
+
+@pytest.mark.parametrize(
+    "bad_value",
+    [True, False, 1.0, 1.5, "1", None, Decimal("1"), Fraction(1, 1), -1],
+)
+def test_intent_context_count_requires_strict_nonnegative_integer(bad_value):
+    with pytest.raises(InvalidConversationTurnError):
+        InterpretedIntent(
+            category=IntentCategory.CONVERSATION,
+            confidence=IntentConfidence.LOW,
+            safe_user_text="hello",
+            evidence=(
+                IntentEvidence(
+                    evidence_type="rule",
+                    safe_excerpt="hello",
+                    rule_id="rule.test",
+                ),
+            ),
+            requires_reference_resolution=False,
+            may_require_clarification=False,
+            is_actionable_request=False,
+            interpreter_id="test",
+            interpreter_version="1",
+            context_turn_count_used=bad_value,
+        )

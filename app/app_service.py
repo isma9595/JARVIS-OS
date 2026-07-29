@@ -56,6 +56,7 @@ from cognition import (
     ConversationSessionService,
     ConversationSessionSnapshot,
     ConversationTurnInput,
+    RuleBasedIntentInterpreter,
     ResponseCompositionInput,
 )
 from core.command_registry import (
@@ -245,6 +246,7 @@ class JarvisAppService:
         cognitive_session_service=None,
         cognitive_session_repository=None,
         cognitive_context_projector=None,
+        cognitive_intent_interpreter=None,
         cognitive_response_composer=None,
         cognitive_interaction_service=None,
     ):
@@ -318,6 +320,9 @@ class JarvisAppService:
             self.cognitive_context_projector = (
                 cognitive_context_projector or ConversationContextProjector()
             )
+            self.cognitive_intent_interpreter = (
+                cognitive_intent_interpreter or RuleBasedIntentInterpreter()
+            )
             self.cognitive_response_composer = (
                 cognitive_response_composer
                 or CompatibilityResponseComposer(
@@ -329,6 +334,7 @@ class JarvisAppService:
                 or CognitiveInteractionService(
                     session_service=self.cognitive_session_service,
                     context_projector=self.cognitive_context_projector,
+                    intent_interpreter=self.cognitive_intent_interpreter,
                     response_composer=self.cognitive_response_composer,
                 )
             )

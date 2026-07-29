@@ -5,6 +5,10 @@ from cognition import (
     AssistantResponseType,
     ConversationSessionClosedError,
     ConversationSessionStatus,
+    IntentCategory,
+    IntentConfidence,
+    IntentEvidence,
+    InterpretedIntent,
     LocalConversationSessionRepository,
     ResponseCompositionResult,
 )
@@ -145,6 +149,54 @@ def test_app_service_conversation_turn_flows_through_context_and_composer():
     assert calls[0].context.included_turn_count == 1
     assert result.response.text == "used context 1"
     assert result.composition.context_turn_count_used == 1
+
+
+def test_app_service_conversation_turn_flows_through_interpreter():
+    calls = []
+
+    class TrackingInterpreter:
+        def interpret(self, interpretation_input):
+            calls.append(interpretation_input)
+            return InterpretedIntent(
+                category=IntentCategory.QUESTION,
+                confidence=IntentConfidence.MEDIUM,
+                safe_user_text=interpretation_input.current_user_turn.text,
+                evidence=(
+                    IntentEvidence(
+                        evidence_type="rule",
+                        safe_excerpt=interpretation_input.current_user_turn.text,
+                        rule_id="direct_question",
+                    ),
+                ),
+                requires_reference_resolution=False,
+                may_require_clarification=False,
+                is_actionable_request=False,
+                interpreter_id="test",
+                interpreter_version="1",
+                context_turn_count_used=interpretation_input.context.included_turn_count,
+            )
+
+    class TrackingComposer:
+        def compose(self, composition_input):
+            return ResponseCompositionResult(
+                response_type=AssistantResponseType.MESSAGE,
+                text=composition_input.interpreted_intent.category.value,
+                context_turn_count_used=composition_input.context.included_turn_count,
+                composition_source="test",
+            )
+
+    service = JarvisAppService(
+        command_processor=FakeCommandProcessor(),
+        cognitive_intent_interpreter=TrackingInterpreter(),
+        cognitive_response_composer=TrackingComposer(),
+    )
+
+    result = service.handle_conversation_turn("what is this?", AppCommandSource.TEST)
+
+    assert len(calls) == 1
+    assert calls[0].context.included_turn_count == 1
+    assert result.intent.category is IntentCategory.QUESTION
+    assert result.response.text == "question"
 
 
 def test_context_composition_does_not_call_provider_execution_workflow_or_memory():
