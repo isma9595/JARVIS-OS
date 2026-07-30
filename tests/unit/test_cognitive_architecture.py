@@ -29,6 +29,7 @@ def test_cognition_package_contains_only_approved_cognitive_modules():
         "clarification_coordinator.py",
         "intent_interpreter.py",
         "interaction_service.py",
+        "memory_policy.py",
         "persistence.py",
         "reference_resolver.py",
         "response_composer.py",
@@ -101,6 +102,36 @@ def test_context_interpreter_and_response_composer_do_not_import_runtime_owners(
         imports = _imports_for(COGNITION_ROOT / module_name)
         assert not forbidden.intersection(imports)
         assert not any(module.startswith("ai.") for module in imports)
+
+
+def test_memory_policy_has_no_runtime_owner_or_storage_dependencies():
+    imports = _imports_for(COGNITION_ROOT / "memory_policy.py")
+    forbidden_prefixes = (
+        "ai",
+        "app",
+        "core.execution",
+        "datetime",
+        "http",
+        "memory",
+        "os",
+        "pathlib",
+        "platform_adapters",
+        "requests",
+        "socket",
+        "subprocess",
+        "time",
+        "urllib",
+        "workflows",
+    )
+
+    assert not {
+        module
+        for module in imports
+        if any(
+            module == prefix or module.startswith(f"{prefix}.")
+            for prefix in forbidden_prefixes
+        )
+    }
 
 
 def test_session_state_has_one_authoritative_owner():
@@ -180,5 +211,4 @@ def test_no_future_placeholder_cognitive_services_are_added():
     assert "clarification.py" not in modules
     assert "goals.py" not in modules
     assert "planning.py" not in modules
-    assert "memory_policy.py" not in modules
     assert "knowledge_service.py" not in modules
