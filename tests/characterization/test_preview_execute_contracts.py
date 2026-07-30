@@ -71,7 +71,7 @@ def assert_memory_preview_recognized_and_non_mutating(
 
 
 def assert_desktop_fields(
-    text,
+    diagnostics,
     *,
     command_id,
     category,
@@ -79,13 +79,14 @@ def assert_desktop_fields(
     requires_confirmation,
     operation_status,
 ):
-    assert f"- command id: {command_id}" in text
-    assert f"- category: {category}" in text
-    assert f"- risk: {risk}" in text
-    assert f"- requires confirmation: {requires_confirmation}" in text
-    assert "- operation id: op-" in text
-    assert f"- operation status: {operation_status}" in text
-    assert "- executed through AppService: yes" in text
+    assert "Desktop turn diagnostics:" in diagnostics
+    assert "- route: execution" in diagnostics
+    assert f"- command id: {command_id}" in diagnostics
+    assert f"- category: {category}" in diagnostics
+    assert f"- risk: {risk}" in diagnostics
+    assert f"- requires confirmation: {requires_confirmation}" in diagnostics
+    assert "- operation id: op-" in diagnostics
+    assert f"- operation status: {operation_status}" in diagnostics
 
 
 def test_characterizes_current_preview_execute_memory_remember(tmp_path):
@@ -201,7 +202,8 @@ def test_characterizes_current_state_changing_metadata_for_memory_and_language(t
     desktop_service, _desktop_processor, _desktop_memory, _desktop_language = make_service(
         tmp_path / "desktop_route"
     )
-    desktop_text = DesktopShellViewModel(desktop_service).execute_command(SET_LANGUAGE_EN)
+    desktop = DesktopShellViewModel(desktop_service)
+    desktop_text = desktop.execute_command(SET_LANGUAGE_EN)
 
     # TASK-096 CONTRACT: state-changing routes preserve local-write metadata
     # and operation journal identity when they mutate isolated state.
@@ -258,34 +260,37 @@ def test_characterizes_current_state_changing_metadata_for_memory_and_language(t
     assert operation["metadata"]["risk_level"] == "local_write"
     assert language_after_execute == "en-US"
 
-    assert "command id: profile.language.set" in desktop_text
-    assert "risk: local_write" in desktop_text
-    assert "requires confirmation: no" in desktop_text
+    assert desktop_text == "Language preference changed to English."
+    assert "command id: profile.language.set" not in desktop_text
+    assert "command id: profile.language.set" in desktop.state.diagnostics_text
+    assert "risk: local_write" in desktop.state.diagnostics_text
+    assert "requires confirmation: no" in desktop.state.diagnostics_text
 
 
 def test_characterizes_current_desktop_memory_and_language_execution_fields(tmp_path):
     remember_service, remember_processor, remember_memory, _remember_language = make_service(
         tmp_path / "desktop_remember"
     )
-    remember_text = DesktopShellViewModel(remember_service).execute_command(
-        REMEMBER_AUDIT_KEY
-    )
+    remember_desktop = DesktopShellViewModel(remember_service)
+    remember_text = remember_desktop.execute_command(REMEMBER_AUDIT_KEY)
 
     forget_service, forget_processor, forget_memory, _forget_language = make_service(
         tmp_path / "desktop_forget"
     )
     forget_memory.remember_user_fact("audit091key", "north")
-    forget_text = DesktopShellViewModel(forget_service).execute_command(FORGET_AUDIT_KEY)
+    forget_desktop = DesktopShellViewModel(forget_service)
+    forget_text = forget_desktop.execute_command(FORGET_AUDIT_KEY)
 
     language_service, language_processor, _language_memory, language = make_service(
         tmp_path / "desktop_language"
     )
-    language_text = DesktopShellViewModel(language_service).execute_command(SET_LANGUAGE_EN)
+    language_desktop = DesktopShellViewModel(language_service)
+    language_text = language_desktop.execute_command(SET_LANGUAGE_EN)
 
-    # TASK-096 CONTRACT: Desktop Shell output renders AppService metadata,
-    # including confirmation and operation status for state-changing commands.
+    # TASK-096 metadata remains available through the TASK-120 diagnostics
+    # projection while the primary Desktop output stays user-facing.
     assert_desktop_fields(
-        remember_text,
+        remember_desktop.state.diagnostics_text,
         command_id="memory.remember",
         category="memory",
         risk="local_write",
@@ -295,7 +300,7 @@ def test_characterizes_current_desktop_memory_and_language_execution_fields(tmp_
     assert remember_memory.recall_user_fact("audit091key").value == "north"
 
     assert_desktop_fields(
-        forget_text,
+        forget_desktop.state.diagnostics_text,
         command_id="memory.forget",
         category="memory",
         risk="local_write",
@@ -305,7 +310,7 @@ def test_characterizes_current_desktop_memory_and_language_execution_fields(tmp_
     assert forget_memory.recall_user_fact("audit091key").found is False
 
     assert_desktop_fields(
-        language_text,
+        language_desktop.state.diagnostics_text,
         command_id="profile.language.set",
         category="profile",
         risk="local_write",
@@ -313,6 +318,9 @@ def test_characterizes_current_desktop_memory_and_language_execution_fields(tmp_
         operation_status="succeeded",
     )
     assert language.get_preference().language_code == "en-US"
+    assert "command id:" not in remember_text
+    assert "command id:" not in forget_text
+    assert "command id:" not in language_text
     assert remember_processor.calls == []
     assert forget_processor.calls == []
     assert language_processor.calls == []

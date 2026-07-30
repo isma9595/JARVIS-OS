@@ -28,11 +28,23 @@ class DeterministicRecognition:
 class SpyAppService(JarvisAppService):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.execute_contract_calls = []
+        self.desktop_turn_calls = []
 
-    def execute_contract(self, text, source=AppCommandSource.DESKTOP_UI):
-        self.execute_contract_calls.append((text, source))
-        return super().execute_contract(text, source)
+    def handle_desktop_turn(
+        self,
+        text,
+        source=AppCommandSource.DESKTOP_UI,
+        *,
+        session_id=None,
+        idempotency_key=None,
+    ):
+        self.desktop_turn_calls.append((text, source, session_id))
+        return super().handle_desktop_turn(
+            text,
+            source,
+            session_id=session_id,
+            idempotency_key=idempotency_key,
+        )
 
 
 class FakeRussianProviderRouter:
@@ -76,7 +88,9 @@ def test_one_shot_voice_vertical_russian_local_command_reaches_normal_text_path(
     assert result.ok is True
     assert result.recognition_succeeded is True
     assert result.recognized_text == "статус app service"
-    assert service.execute_contract_calls == [("статус app service", AppCommandSource.TEST)]
+    assert service.desktop_turn_calls == [
+        ("статус app service", AppCommandSource.TEST, None)
+    ]
     assert result.text_result is not None
     assert result.text_result.command_id == "app_service.status"
     assert result.text_result.network_may_be_used is False
@@ -98,8 +112,8 @@ def test_one_shot_voice_vertical_russian_provider_question_uses_fake_transport()
 
     assert result.ok is True
     assert result.recognized_text == "спроси ai: какая сегодня задача?"
-    assert service.execute_contract_calls == [
-        ("спроси ai: какая сегодня задача?", AppCommandSource.TEST)
+    assert service.desktop_turn_calls == [
+        ("спроси ai: какая сегодня задача?", AppCommandSource.TEST, None)
     ]
     assert result.text_result is not None
     assert result.text_result.output_text == "Русский ответ от fake provider."
@@ -122,7 +136,9 @@ def test_one_shot_voice_vertical_russian_dry_run_preserves_cyrillic():
 
     assert result.ok is True
     assert result.recognized_text == "спроси ai: привет"
-    assert service.execute_contract_calls == [("спроси ai: привет", AppCommandSource.TEST)]
+    assert service.desktop_turn_calls == [
+        ("спроси ai: привет", AppCommandSource.TEST, None)
+    ]
     assert result.text_result is not None
     assert result.text_result.network_may_be_used is False
     assert "привет" in result.text_result.output_text
@@ -144,7 +160,7 @@ def test_one_shot_voice_vertical_russian_confirmation_required_is_not_executed()
     assert result.requires_confirmation is True
     assert result.result_type == "confirmation_required"
     assert result.recognized_text == phrase
-    assert service.execute_contract_calls == [(phrase, AppCommandSource.TEST)]
+    assert service.desktop_turn_calls == [(phrase, AppCommandSource.TEST, None)]
     assert result.text_result is not None
     assert result.text_result.requires_confirmation is True
     assert result.text_result.executed is False

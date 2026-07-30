@@ -6014,7 +6014,9 @@ def test_task095_manual_smoke_routes_preserve_baseline_app_and_desktop_metadata(
             command_processor=make_processor(),
             memory_manager=FakeMemory(),
         )
-        output = DesktopShellViewModel(service).execute_command(text)
+        shell = DesktopShellViewModel(service)
+        shell.execute_command(text)
+        output = shell.state.diagnostics_text
         fields = {}
         for line in output.splitlines():
             for key in ("command id", "category", "risk"):

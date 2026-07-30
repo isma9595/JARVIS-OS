@@ -463,6 +463,79 @@ class AppExecutionContract(_ContractMixin):
 
 
 @dataclass(frozen=True)
+class AppDesktopTurnDiagnostics(_ContractMixin):
+    route: str
+    source: str
+    cognitive_intent: str | None
+    cognitive_response_type: str | None
+    context_turn_count_used: int
+    composition_source: str | None
+    command_category: str | None
+    command_risk_level: str | None
+    requires_clarification: bool
+    requires_confirmation: bool
+    network_may_be_used: bool
+    response_executed_as_command: bool
+
+    def safe_text_ru(self) -> str:
+        return "\n".join(
+            [
+                "Desktop turn diagnostics:",
+                f"- route: {safe_contract_text(self.route)}",
+                f"- source: {safe_contract_text(self.source)}",
+                f"- cognitive intent: {safe_contract_text(self.cognitive_intent or 'none')}",
+                f"- cognitive response type: {safe_contract_text(self.cognitive_response_type or 'none')}",
+                f"- context turns used: {self.context_turn_count_used}",
+                f"- composition source: {safe_contract_text(self.composition_source or 'none')}",
+                f"- command category: {safe_contract_text(self.command_category or 'none')}",
+                f"- command risk: {safe_contract_text(self.command_risk_level or 'none')}",
+                f"- requires clarification: {'yes' if self.requires_clarification else 'no'}",
+                f"- requires confirmation: {'yes' if self.requires_confirmation else 'no'}",
+                f"- network may be used: {'yes' if self.network_may_be_used else 'no'}",
+                "- response executed as command: no",
+            ]
+        )
+
+
+@dataclass(frozen=True)
+class AppDesktopTurnResult(_ContractMixin):
+    ok: bool
+    input_text: str
+    response_text: str
+    source: str
+    cognitive_session_id: str | None
+    diagnostics: AppDesktopTurnDiagnostics
+    execution: AppExecutionContract | None
+    error: str | None = None
+
+    @property
+    def operation_id(self) -> str | None:
+        return self.execution.operation_id if self.execution is not None else None
+
+    @property
+    def operation_status(self) -> str | None:
+        return self.execution.operation_status if self.execution is not None else None
+
+    @property
+    def requires_clarification(self) -> bool:
+        return bool(
+            self.diagnostics.requires_clarification
+            or (self.execution and self.execution.requires_clarification)
+        )
+
+    @property
+    def requires_confirmation(self) -> bool:
+        return bool(
+            self.diagnostics.requires_confirmation
+            or (self.execution and self.execution.requires_confirmation)
+        )
+
+    @property
+    def executed(self) -> bool:
+        return bool(self.execution and self.execution.executed)
+
+
+@dataclass(frozen=True)
 class AppVoiceRequestResult(_ContractMixin):
     ok: bool
     voice_capture_succeeded: bool
@@ -487,6 +560,8 @@ class AppVoiceRequestResult(_ContractMixin):
     idempotency_key: str | None = None
     duplicate_suppressed: bool = False
     cancellable: bool = False
+    desktop_turn_result: AppDesktopTurnResult | None = None
+    cognitive_session_id: str | None = None
 
     def safe_text_ru(self) -> str:
         lines = [
@@ -516,6 +591,9 @@ class AppVoiceRequestResult(_ContractMixin):
         if self.text_result is not None:
             lines.append("Text result:")
             lines.append(self.text_result.safe_text_ru())
+        if self.desktop_turn_result is not None:
+            lines.append("Desktop turn result:")
+            lines.append(self.desktop_turn_result.diagnostics.safe_text_ru())
         return "\n".join(lines)
 
 

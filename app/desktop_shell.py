@@ -18,6 +18,15 @@ class DesktopShellState:
     command_input: str
     preview_text: str
     output_text: str
+    diagnostics_text: str
+    cognitive_session_id: str | None
+    current_turn_result: object | None
+    execution_metadata: object | None
+    requires_clarification: bool
+    requires_confirmation: bool
+    clarification_question: str | None
+    clarification_options: tuple[object, ...]
+    confirmation_prompt: str | None
     selected_category: str | None
     command_list_text: str
     history_list_text: str
@@ -70,8 +79,13 @@ class DesktopShellViewModel:
         "Preview",
     )
 
-    def __init__(self, app_service: JarvisAppService):
+    def __init__(
+        self,
+        app_service: JarvisAppService,
+        cognitive_session_id: str | None = None,
+    ):
         self.app_service = app_service
+        self._initial_cognitive_session_id = cognitive_session_id
         self.state = self.build_initial_state()
 
     def build_initial_state(self) -> DesktopShellState:
@@ -96,6 +110,18 @@ class DesktopShellViewModel:
                 "No command has been executed.\n"
                 "Risky/network commands require explicit command text."
             ),
+            diagnostics_text=(
+                "Desktop turn diagnostics are idle.\n"
+                "- no user turn has been submitted"
+            ),
+            cognitive_session_id=self._initial_cognitive_session_id,
+            current_turn_result=None,
+            execution_metadata=None,
+            requires_clarification=False,
+            requires_confirmation=False,
+            clarification_question=None,
+            clarification_options=(),
+            confirmation_prompt=None,
             selected_category=None,
             command_list_text=command_list_text,
             history_list_text=history["history_list_text"],
@@ -177,28 +203,49 @@ class DesktopShellViewModel:
 
     def execute_command(self, text: str) -> str:
         try:
-            result = self.app_service.execute_command(
+            result = self.app_service.handle_desktop_turn(
                 text,
                 AppCommandSource.DESKTOP_UI,
+                session_id=self.state.cognitive_session_id,
             )
-            output_text = self._format_execution_result(result)
+            output_text = self._safe_text(result.response_text)
+            diagnostics_text = self._format_desktop_turn_diagnostics(result)
+            turn_projection = self._desktop_turn_state_projection(
+                result,
+                output_text=output_text,
+                diagnostics_text=diagnostics_text,
+            )
             self.state = self._replace(
                 command_input=str(text or ""),
-                output_text=output_text,
-                last_error=None if getattr(result, "ok", False) else output_text,
+                **turn_projection,
             )
             return output_text
         except Exception as exc:
             error = self._safe_error(exc)
-            self.state = self._replace(output_text=error, last_error=error)
+            self.state = self._replace(
+                **self._empty_turn_state_projection(
+                    output_text=error,
+                    diagnostics_text="Desktop turn failed safely.",
+                    cognitive_session_id=self.state.cognitive_session_id,
+                    last_error=error,
+                )
+            )
             return error
 
     def process_one_shot_voice_request(self) -> str:
         try:
             result = self.app_service.process_one_shot_voice_request(
                 AppCommandSource.DESKTOP_UI,
+                session_id=self.state.cognitive_session_id,
             )
-            output_text = self._format_voice_result(result)
+            desktop_turn = getattr(result, "desktop_turn_result", None)
+            text_result = getattr(result, "text_result", None)
+            output_text = self._safe_text(
+                getattr(desktop_turn, "response_text", None)
+                or getattr(text_result, "output_text", None)
+                or getattr(result, "user_message", "")
+            )
+            diagnostics_text = self._format_voice_result(result)
             recognized_text = getattr(result, "recognized_text", None)
             normalized_text = getattr(result, "normalized_text", None)
             normalization_applied = getattr(result, "normalization_applied", False)
@@ -208,16 +255,40 @@ class DesktopShellViewModel:
             ]
             if normalization_applied and normalized_text:
                 preview_lines.append(f"Нормализовано: {normalized_text}")
+            if desktop_turn is not None:
+                turn_projection = self._desktop_turn_state_projection(
+                    desktop_turn,
+                    output_text=output_text,
+                    diagnostics_text=diagnostics_text,
+                )
+            else:
+                turn_projection = self._turn_state_projection(
+                    current_turn_result=result,
+                    execution_metadata=text_result,
+                    output_text=output_text,
+                    diagnostics_text=diagnostics_text,
+                    cognitive_session_id=(
+                        getattr(result, "cognitive_session_id", None)
+                        or self.state.cognitive_session_id
+                    ),
+                    ok=getattr(result, "ok", False),
+                )
             self.state = self._replace(
                 command_input=str(recognized_text or self.state.command_input),
                 preview_text="\n".join(preview_lines),
-                output_text=output_text,
-                last_error=None if getattr(result, "ok", False) else output_text,
+                **turn_projection,
             )
             return output_text
         except Exception as exc:
             error = self._safe_error(exc)
-            self.state = self._replace(output_text=error, last_error=error)
+            self.state = self._replace(
+                **self._empty_turn_state_projection(
+                    output_text=error,
+                    diagnostics_text="Desktop voice turn failed safely.",
+                    cognitive_session_id=self.state.cognitive_session_id,
+                    last_error=error,
+                )
+            )
             return error
 
     def clear_output(self) -> str:
@@ -225,12 +296,25 @@ class DesktopShellViewModel:
         self.state = self._replace(
             preview_text="Command preview cleared.",
             output_text=output_text,
+            diagnostics_text="Desktop turn diagnostics cleared.",
+            current_turn_result=None,
+            execution_metadata=None,
+            requires_clarification=False,
+            requires_confirmation=False,
+            clarification_question=None,
+            clarification_options=(),
+            confirmation_prompt=None,
             last_error=None,
         )
         return output_text
 
     def refresh_execution_history(self, limit: int | None = None) -> str:
-        previous_selected_id = self.state.selected_history_id
+        current_operation_id = getattr(
+            self.state.execution_metadata,
+            "operation_id",
+            None,
+        )
+        previous_selected_id = current_operation_id or self.state.selected_history_id
         history = self._load_history_state(limit=limit)
         if history["last_error"] is None:
             history = self._apply_history_filters(
@@ -1318,6 +1402,62 @@ class DesktopShellViewModel:
                 lines.append(str(output_text))
         return self._safe_text("\n".join(lines))
 
+    def _format_desktop_turn_diagnostics(self, result) -> str:
+        diagnostics = getattr(result, "diagnostics", None)
+        if diagnostics is None:
+            return "Desktop turn diagnostics unavailable."
+        if hasattr(diagnostics, "safe_text_ru"):
+            lines = [diagnostics.safe_text_ru()]
+        else:
+            lines = [str(diagnostics)]
+        execution = getattr(result, "execution", None)
+        if execution is not None:
+            lines.extend(
+                [
+                    "Execution metadata:",
+                    f"- ok: {'yes' if getattr(execution, 'ok', False) else 'no'}",
+                    f"- command id: {getattr(execution, 'command_id', None) or getattr(execution, 'registry_match_id', None) or 'none'}",
+                    f"- category: {getattr(execution, 'category', None) or 'unknown'}",
+                    f"- risk: {getattr(execution, 'risk_level', None) or 'unknown'}",
+                    f"- requires confirmation: {'yes' if getattr(execution, 'requires_confirmation', False) else 'no'}",
+                    f"- requires clarification: {'yes' if getattr(execution, 'requires_clarification', False) else 'no'}",
+                    f"- operation id: {getattr(execution, 'operation_id', None) or 'none'}",
+                    f"- operation status: {getattr(execution, 'operation_status', None) or 'none'}",
+                    f"- executed: {'yes' if getattr(execution, 'executed', False) else 'no'}",
+                    f"- duplicate suppressed: {'yes' if getattr(execution, 'duplicate_suppressed', False) else 'no'}",
+                    f"- network may be used: {'yes' if getattr(execution, 'network_may_be_used', False) else 'no'}",
+                    "- response executed as command: no",
+                ]
+            )
+            if getattr(execution, "plan_id", None):
+                lines.extend(
+                    [
+                        f"- plan id: {execution.plan_id}",
+                        f"- plan status: {execution.plan_status or 'none'}",
+                        f"- plan step count: {execution.plan_step_count or 0}",
+                    ]
+                )
+            if getattr(execution, "workflow_id", None):
+                lines.extend(
+                    [
+                        f"- workflow id: {execution.workflow_id}",
+                        f"- workflow status: {execution.workflow_status or 'none'}",
+                        f"- current step id: {execution.current_step_id or 'none'}",
+                        f"- current step name: {execution.current_step_name or 'none'}",
+                        f"- progress percent: {execution.progress_percent if execution.progress_percent is not None else 0}",
+                        f"- awaiting confirmation: {'yes' if execution.awaiting_confirmation else 'no'}",
+                        f"- issue count: {execution.issue_count if execution.issue_count is not None else 0}",
+                        f"- proposed output path: {execution.proposed_output_path or 'none'}",
+                    ]
+                )
+            if getattr(execution, "error", None):
+                lines.append(f"- error: {execution.error}")
+        lines.append(
+            "- cognitive session id: "
+            + (getattr(result, "cognitive_session_id", None) or "none")
+        )
+        return self._safe_text("\n".join(lines))
+
     def _format_voice_result(self, result) -> str:
         lines = [
             "Голосовой запрос Desktop Shell:",
@@ -1344,11 +1484,99 @@ class DesktopShellViewModel:
         user_message = getattr(result, "user_message", "")
         if user_message:
             lines.append(f"- сообщение: {user_message}")
+        desktop_turn = getattr(result, "desktop_turn_result", None)
+        if desktop_turn is not None:
+            lines.append(self._format_desktop_turn_diagnostics(desktop_turn))
         text_result = getattr(result, "text_result", None)
-        if text_result is not None:
+        if text_result is not None and desktop_turn is None:
             lines.append("Ответ:")
             lines.append(getattr(text_result, "output_text", ""))
         return self._safe_text("\n".join(lines))
+
+    def _desktop_turn_state_projection(
+        self,
+        result,
+        *,
+        output_text: str,
+        diagnostics_text: str,
+    ) -> dict[str, object]:
+        return self._turn_state_projection(
+            current_turn_result=result,
+            execution_metadata=getattr(result, "execution", None),
+            output_text=output_text,
+            diagnostics_text=diagnostics_text,
+            cognitive_session_id=getattr(result, "cognitive_session_id", None),
+            ok=getattr(result, "ok", False),
+        )
+
+    def _turn_state_projection(
+        self,
+        *,
+        current_turn_result,
+        execution_metadata,
+        output_text: str,
+        diagnostics_text: str,
+        cognitive_session_id: str | None,
+        ok: bool,
+    ) -> dict[str, object]:
+        diagnostics = getattr(current_turn_result, "diagnostics", None)
+        requires_clarification = bool(
+            getattr(current_turn_result, "requires_clarification", False)
+            or getattr(execution_metadata, "requires_clarification", False)
+            or getattr(diagnostics, "requires_clarification", False)
+        )
+        requires_confirmation = bool(
+            getattr(current_turn_result, "requires_confirmation", False)
+            or getattr(execution_metadata, "requires_confirmation", False)
+            or getattr(diagnostics, "requires_confirmation", False)
+        )
+        clarification_question = (
+            getattr(execution_metadata, "clarification_question", None)
+            if requires_clarification
+            else None
+        )
+        if requires_clarification and not clarification_question:
+            clarification_question = output_text
+        clarification_options = (
+            tuple(getattr(execution_metadata, "clarification_options", ()) or ())
+            if requires_clarification
+            else ()
+        )
+        return {
+            "output_text": output_text,
+            "diagnostics_text": diagnostics_text,
+            "cognitive_session_id": cognitive_session_id,
+            "current_turn_result": current_turn_result,
+            "execution_metadata": execution_metadata,
+            "requires_clarification": requires_clarification,
+            "requires_confirmation": requires_confirmation,
+            "clarification_question": clarification_question,
+            "clarification_options": clarification_options,
+            "confirmation_prompt": output_text if requires_confirmation else None,
+            "last_error": None if ok else output_text,
+        }
+
+    @staticmethod
+    def _empty_turn_state_projection(
+        *,
+        output_text: str,
+        diagnostics_text: str,
+        cognitive_session_id: str | None,
+        last_error: str | None,
+    ) -> dict[str, object]:
+        return {
+            "output_text": output_text,
+            "diagnostics_text": diagnostics_text,
+            "cognitive_session_id": cognitive_session_id,
+            "current_turn_result": None,
+            "execution_metadata": None,
+            "requires_clarification": False,
+            "requires_confirmation": False,
+            "clarification_question": None,
+            "clarification_options": (),
+            "confirmation_prompt": None,
+            "last_error": last_error,
+        }
 
     def _format_workflow_resume_result(self, result) -> str:
         status = self._state_value(getattr(result, "status", None))
@@ -1847,11 +2075,18 @@ class JarvisDesktopShell:
         split.grid(row=5, column=0, sticky="nsew")
         self.preview_box = self._text_box(split, height=10)
         self.output_box = self._text_box(split, height=14)
+        self.diagnostics_box = self._text_box(split, height=8)
         self.command_list_box = self._text_box(split, height=10)
-        for text_widget in (self.preview_box, self.output_box, self.command_list_box):
+        for text_widget in (
+            self.preview_box,
+            self.output_box,
+            self.diagnostics_box,
+            self.command_list_box,
+        ):
             self._bind_readonly_text_copy(text_widget)
         split.add(self.preview_box)
         split.add(self.output_box)
+        split.add(self.diagnostics_box)
         split.add(self.command_list_box)
 
     def _text_box(self, parent, height):
@@ -1980,6 +2215,7 @@ class JarvisDesktopShell:
         self._set_text(self.status_box, state.status_text)
         self._set_text(self.preview_box, state.preview_text)
         self._set_text(self.output_box, state.output_text)
+        self._set_text(self.diagnostics_box, state.diagnostics_text)
         self._set_text(self.command_list_box, state.command_list_text)
         self._set_text(self.activity_box, state.activity_text)
         self.activity_refresh_button.configure(

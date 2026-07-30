@@ -1,6 +1,7 @@
 import json
 from dataclasses import FrozenInstanceError
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -182,22 +183,41 @@ def test_desktop_shell_uses_appservice_only_for_language():
         def list_commands(self, category=None):
             return "commands"
 
-        def execute_command(self, text, source):
+        def handle_desktop_turn(
+            self,
+            text,
+            source,
+            *,
+            session_id=None,
+            idempotency_key=None,
+        ):
             self.executed.append((text, source))
-            return type(
-                "Result",
-                (),
-                {
-                    "ok": True,
-                    "output_text": "Language preference changed to English.",
-                    "registry_match_id": "profile.language.set",
-                    "category": "profile",
-                    "risk_level": "read_only",
-                    "network_may_be_used": False,
-                    "response_executed_as_command": False,
-                    "requires_clarification": False,
-                },
-            )()
+            return SimpleNamespace(
+                ok=True,
+                response_text="Language preference changed to English.",
+                cognitive_session_id=session_id,
+                diagnostics=SimpleNamespace(
+                    safe_text_ru=lambda: "Desktop turn diagnostics:\n- route: execution"
+                ),
+                execution=SimpleNamespace(
+                    ok=True,
+                    command_id="profile.language.set",
+                    registry_match_id="profile.language.set",
+                    category="profile",
+                    risk_level="local_write",
+                    requires_confirmation=False,
+                    requires_clarification=False,
+                    operation_id="op-language-test",
+                    operation_status="succeeded",
+                    executed=True,
+                    duplicate_suppressed=False,
+                    network_may_be_used=False,
+                    plan_id=None,
+                    workflow_id=None,
+                    error=None,
+                ),
+                error=None,
+            )
 
     fake = FakeService()
     text = DesktopShellViewModel(fake).execute_command("язык английский")
@@ -268,4 +288,3 @@ def test_voice_runtime_receives_language_without_real_microphone(tmp_path):
 
     assert result.ok is False
     assert recognizer.calls[0][1]["language_code"] == "en-US"
-

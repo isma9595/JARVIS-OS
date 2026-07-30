@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from app.app_contracts import (
     AppExecutionHistoryEntry,
@@ -286,6 +286,24 @@ class FakeExecutionResult:
 
 
 @dataclass
+class FakeDesktopDiagnostics:
+    route: str = "execution"
+
+    def safe_text_ru(self):
+        return f"Desktop turn diagnostics:\n- route: {self.route}"
+
+
+@dataclass
+class FakeDesktopTurnResult:
+    ok: bool = True
+    response_text: str = "processed safely"
+    cognitive_session_id: str | None = None
+    diagnostics: FakeDesktopDiagnostics = field(default_factory=FakeDesktopDiagnostics)
+    execution: object | None = None
+    error: str | None = None
+
+
+@dataclass
 class FakeVoiceResult:
     ok: bool = True
     voice_capture_succeeded: bool = True
@@ -301,6 +319,8 @@ class FakeVoiceResult:
     normalized_text: str | None = None
     normalization_applied: bool = False
     normalization_rules: tuple[str, ...] = ()
+    desktop_turn_result: FakeDesktopTurnResult | None = None
+    cognitive_session_id: str | None = None
 
 
 def _operation_id_from_desktop_text(text: str) -> str:
@@ -428,10 +448,32 @@ class FakeAppService:
         self.execute_calls.append((text, source))
         return FakeExecutionResult(output_text=f"processed: {text}")
 
-    def process_one_shot_voice_request(self, source):
+    def handle_desktop_turn(self, text, source, *, session_id=None):
+        execution = self.execute_command(text, source)
+        return FakeDesktopTurnResult(
+            ok=execution.ok,
+            response_text=execution.output_text,
+            cognitive_session_id=session_id,
+            diagnostics=FakeDesktopDiagnostics(),
+            execution=execution,
+            error=execution.error,
+        )
+
+    def process_one_shot_voice_request(self, source, *, session_id=None):
         self.voice_calls.append(source)
-        return getattr(self, "voice_result", None) or FakeVoiceResult(
-            text_result=FakeExecutionResult(output_text="processed voice command")
+        configured = getattr(self, "voice_result", None)
+        if configured is not None:
+            return configured
+        turn_result = FakeDesktopTurnResult(
+            response_text="processed voice command",
+            cognitive_session_id=session_id,
+            diagnostics=FakeDesktopDiagnostics(route="conversation"),
+            execution=None,
+        )
+        return FakeVoiceResult(
+            text_result=FakeExecutionResult(output_text="processed voice command"),
+            desktop_turn_result=turn_result,
+            cognitive_session_id=session_id,
         )
 
     def execution_history(self, limit=None):
@@ -1951,9 +1993,11 @@ def test_desktop_shell_projects_execute_plan_confirmation_with_real_service(tmp_
     view_model = DesktopShellViewModel(service)
 
     create_text = view_model.execute_command("create plan: forget everything you remember about me")
+    create_diagnostics = view_model.state.diagnostics_text
     preview_text = view_model.preview_command("execute plan")
 
-    assert "plan status: proposed" in create_text.lower()
+    assert "status: proposed" in create_text.lower()
+    assert "- plan status: proposed" in create_diagnostics.lower()
     assert "- command id: planner.general_multi_step" in preview_text
     assert "- active plan id: plan-" in preview_text
     assert "- active plan status: proposed" in preview_text
@@ -1981,8 +2025,11 @@ def test_desktop_shell_projects_russian_create_plan_forget_all_confirmation(tmp_
     create_text = view_model.execute_command(
         "составь план: забудь всё, что ты обо мне помнишь"
     )
+    create_diagnostics = view_model.state.diagnostics_text
     execute_text = view_model.execute_command("execute plan")
+    execute_diagnostics = view_model.state.diagnostics_text
     cancel_text = view_model.execute_command("cancel plan")
+    cancel_diagnostics = view_model.state.diagnostics_text
 
     assert "- command id: planner.general_multi_step" in preview_text
     assert "- active step id: step-1" in preview_text
@@ -1990,13 +2037,14 @@ def test_desktop_shell_projects_russian_create_plan_forget_all_confirmation(tmp_
     assert "- operation id: none" in preview_text
     assert "- risk: confirmation_required" in preview_text
     assert "- requires_confirmation: yes" in preview_text
-    assert "plan status: proposed" in create_text.lower()
-    assert "- operation id: none" in create_text
-    assert "- plan status: awaiting_confirmation" in execute_text
-    assert "- awaiting confirmation: yes" in execute_text
-    assert "- operation status: awaiting_confirmation" in execute_text
-    assert "- plan status: cancelled" in cancel_text
-    assert "- awaiting confirmation: yes" not in cancel_text
+    assert "status: proposed" in create_text.lower()
+    assert "- plan status: proposed" in create_diagnostics
+    assert "- operation id: none" in create_diagnostics
+    assert "- plan status: awaiting_confirmation" in execute_diagnostics
+    assert "awaiting_confirmation" in execute_text
+    assert "- operation status: awaiting_confirmation" in execute_diagnostics
+    assert "- plan status: cancelled" in cancel_diagnostics
+    assert "- requires confirmation: yes" not in cancel_diagnostics
     assert "Memory cleared" not in preview_text
     assert "Memory cleared" not in create_text
     assert "Memory cleared" not in execute_text
@@ -2014,9 +2062,10 @@ def test_desktop_shell_awaiting_confirmation_plan_text_does_not_show_pending_ste
 
     view_model.execute_command("create plan: forget everything you remember about me")
     text = view_model.execute_command("execute plan")
+    diagnostics = view_model.state.diagnostics_text
 
-    assert "- plan status: awaiting_confirmation" in text
-    assert "- awaiting confirmation: yes" in text
+    assert "- plan status: awaiting_confirmation" in diagnostics
+    assert "- requires confirmation: yes" in diagnostics
     assert "awaiting_confirmation: awaiting_confirmation" in text
     assert "awaiting_confirmation: Step is pending." not in text
     assert service.memory_manager.recall_user_fact("marker").found is True
@@ -2052,13 +2101,15 @@ def test_desktop_shell_projects_state_changing_execution_confirmation_and_operat
     view_model = DesktopShellViewModel(service)
 
     text = view_model.execute_command("remember that task096marker is west")
+    diagnostics = view_model.state.diagnostics_text
 
-    assert "- command id: memory.remember" in text
-    assert "- category: memory" in text
-    assert "- risk: local_write" in text
-    assert "- requires confirmation: no" in text
-    assert "- operation id: op-" in text
-    assert "- operation status: succeeded" in text
+    assert "task096marker" in text
+    assert "- command id: memory.remember" in diagnostics
+    assert "- category: memory" in diagnostics
+    assert "- risk: local_write" in diagnostics
+    assert "- requires confirmation: no" in diagnostics
+    assert "- operation id: op-" in diagnostics
+    assert "- operation status: succeeded" in diagnostics
     assert service.memory_manager.recall_user_fact("task096marker").value == "west"
 
 
@@ -2072,13 +2123,14 @@ def test_desktop_shell_projects_microphone_status_confirmation_from_app_service(
     text = view_model.execute_command(
         "\u0441\u0442\u0430\u0442\u0443\u0441 \u043c\u0438\u043a\u0440\u043e\u0444\u043e\u043d\u0430"
     )
+    diagnostics = view_model.state.diagnostics_text
 
-    assert "- command id: none" in text
-    assert "- category: unknown" in text
-    assert "- risk: unknown" in text
-    assert "- requires confirmation: no" in text
-    assert "- operation status: succeeded" in text
-    assert "- awaiting confirmation: yes" not in text
+    assert text
+    assert "- command id: none" in diagnostics
+    assert "- category: unknown" in diagnostics
+    assert "- risk: unknown" in diagnostics
+    assert "- requires confirmation: no" in diagnostics
+    assert "- operation status: succeeded" in diagnostics
     assert service.memory_manager.recall_user_fact("task096marker").found is False
 
 
@@ -2092,13 +2144,14 @@ def test_desktop_shell_projects_unknown_fallback_confirmation_from_app_service(t
     text = view_model.execute_command(
         "task096 \u043d\u0435\u0438\u0437\u0432\u0435\u0441\u0442\u043d\u0430\u044f \u0431\u0435\u0437\u043e\u043f\u0430\u0441\u043d\u0430\u044f \u043a\u043e\u043c\u0430\u043d\u0434\u0430"
     )
+    diagnostics = view_model.state.diagnostics_text
 
-    assert "- command id: none" in text
-    assert "- category: unknown" in text
-    assert "- risk: unknown" in text
-    assert "- requires confirmation: no" in text
-    assert "- operation status: succeeded" in text
-    assert "- awaiting confirmation: yes" not in text
+    assert text
+    assert "- command id: none" in diagnostics
+    assert "- category: unknown" in diagnostics
+    assert "- risk: unknown" in diagnostics
+    assert "- requires confirmation: no" in diagnostics
+    assert "- operation status: succeeded" in diagnostics
     assert service.memory_manager.recall_user_fact("task096marker").found is False
 
 
@@ -2107,10 +2160,11 @@ def test_desktop_shell_routes_russian_do_it_to_clarification_without_voice_fallb
     view_model = DesktopShellViewModel(service)
 
     text = view_model.execute_command("\u0421\u0434\u0435\u043b\u0430\u0439 \u044d\u0442\u043e")
+    diagnostics = view_model.state.diagnostics_text
 
-    assert "- category: clarification" in text
-    assert "- requires confirmation: no" in text
-    assert "- operation status: awaiting_clarification" in text
+    assert "- category: clarification" in diagnostics
+    assert "- requires confirmation: no" in diagnostics
+    assert "- operation status: awaiting_clarification" in diagnostics
     assert "\u044d\u0442\u043e" in text.casefold()
     assert "unsupported" not in text.casefold()
     assert "voice.confirmation" not in text.casefold()
@@ -2120,18 +2174,184 @@ def test_desktop_shell_clarification_confirmation_and_cancel_avoid_voice_fallbac
     service = JarvisAppService(command_processor=FakeAppServiceCommandProcessor())
     view_model = DesktopShellViewModel(service)
     first = view_model.execute_command("\u0421\u0434\u0435\u043b\u0430\u0439 \u044d\u0442\u043e")
+    first_diagnostics = view_model.state.diagnostics_text
 
     confirm = view_model.execute_command("\u041f\u043e\u0434\u0442\u0432\u0435\u0440\u0436\u0434\u0430\u044e")
+    confirm_diagnostics = view_model.state.diagnostics_text
     cancel = view_model.execute_command("\u043e\u0442\u043c\u0435\u043d\u0430")
+    cancel_diagnostics = view_model.state.diagnostics_text
 
-    assert "- category: clarification" in confirm
-    assert "- operation status: awaiting_clarification" in confirm
-    assert "- category: clarification" in cancel
-    assert "- operation status: cancelled" in cancel
+    assert "- category: clarification" in confirm_diagnostics
+    assert "- operation status: awaiting_clarification" in confirm_diagnostics
+    assert "- category: clarification" in cancel_diagnostics
+    assert "- operation status: cancelled" in cancel_diagnostics
     assert "voice.confirmation" not in confirm.casefold()
     assert "voice.confirmation" not in cancel.casefold()
-    assert _operation_id_from_desktop_text(first) == _operation_id_from_desktop_text(confirm)
-    assert _operation_id_from_desktop_text(confirm) == _operation_id_from_desktop_text(cancel)
+    assert _operation_id_from_desktop_text(first_diagnostics) == _operation_id_from_desktop_text(confirm_diagnostics)
+    assert _operation_id_from_desktop_text(confirm_diagnostics) == _operation_id_from_desktop_text(cancel_diagnostics)
+
+
+def test_desktop_shell_atomically_replaces_multiturn_execution_projection():
+    processor = FakeAppServiceCommandProcessor()
+    service = JarvisAppService(command_processor=processor)
+    view_model = DesktopShellViewModel(service)
+
+    def submit(text):
+        output = view_model.execute_command(text)
+        view_model.refresh_application_activity()
+        view_model.refresh_execution_history()
+        view_model.refresh_workflow_history()
+        return output, view_model.state
+
+    _status_output, status_state = submit(
+        "\u0441\u0442\u0430\u0442\u0443\u0441 app service"
+    )
+    status_operation_id = status_state.execution_metadata.operation_id
+
+    assert status_state.execution_metadata.command_id == "app_service.status"
+    assert status_state.execution_metadata.operation_status == "succeeded"
+    assert status_state.execution_metadata.executed is True
+    assert status_state.selected_history_id == status_operation_id
+
+    clarification_output, clarification_state = submit(
+        "\u0441\u0434\u0435\u043b\u0430\u0439 \u044d\u0442\u043e"
+    )
+    clarification_operation_id = (
+        clarification_state.execution_metadata.operation_id
+    )
+
+    assert clarification_state.output_text == clarification_output
+    assert clarification_state.current_turn_result.execution is (
+        clarification_state.execution_metadata
+    )
+    assert clarification_state.execution_metadata.category == "clarification"
+    assert (
+        clarification_state.execution_metadata.operation_status
+        == "awaiting_clarification"
+    )
+    assert clarification_state.execution_metadata.executed is False
+    assert clarification_state.requires_clarification is True
+    assert clarification_state.requires_confirmation is False
+    assert clarification_state.clarification_question == clarification_output
+    assert clarification_state.confirmation_prompt is None
+    assert clarification_operation_id != status_operation_id
+    assert "app_service.status" not in clarification_state.diagnostics_text
+    assert status_operation_id not in clarification_state.diagnostics_text
+    assert "- category: clarification" in clarification_state.diagnostics_text
+    assert "- requires clarification: yes" in clarification_state.diagnostics_text
+    assert (
+        "- operation status: awaiting_clarification"
+        in clarification_state.diagnostics_text
+    )
+    assert "- executed: no" in clarification_state.diagnostics_text
+    assert clarification_state.selected_history_id == clarification_operation_id
+    assert (
+        "\u0441\u0434\u0435\u043b\u0430\u0439 \u044d\u0442\u043e"
+        in clarification_state.selected_history_details_text
+    )
+
+    _confirm_output, confirm_state = submit("\u0434\u0430")
+
+    assert confirm_state.execution_metadata.operation_id == clarification_operation_id
+    assert (
+        confirm_state.execution_metadata.operation_status
+        == "awaiting_clarification"
+    )
+    assert confirm_state.execution_metadata.executed is False
+    assert confirm_state.requires_clarification is True
+    assert confirm_state.requires_confirmation is False
+    assert confirm_state.selected_history_id == clarification_operation_id
+
+    _cancel_output, cancel_state = submit("\u043e\u0442\u043c\u0435\u043d\u0430")
+
+    assert cancel_state.execution_metadata.operation_id == clarification_operation_id
+    assert cancel_state.execution_metadata.operation_status == "cancelled"
+    assert cancel_state.execution_metadata.executed is False
+    assert cancel_state.requires_clarification is False
+    assert cancel_state.requires_confirmation is False
+    assert cancel_state.clarification_question is None
+    assert cancel_state.clarification_options == ()
+    assert cancel_state.confirmation_prompt is None
+    assert cancel_state.selected_history_id == clarification_operation_id
+
+    _unsupported_output, unsupported_state = submit(
+        "\u0443\u0434\u0430\u043b\u0438 \u044d\u0442\u043e"
+    )
+    unsupported_operation_id = unsupported_state.execution_metadata.operation_id
+
+    assert unsupported_state.execution_metadata.category == "unsupported"
+    assert unsupported_state.execution_metadata.executed is False
+    assert unsupported_state.requires_clarification is False
+    assert unsupported_state.requires_confirmation is False
+    assert unsupported_state.clarification_question is None
+    assert unsupported_state.confirmation_prompt is None
+    assert unsupported_operation_id != clarification_operation_id
+    assert clarification_operation_id not in unsupported_state.diagnostics_text
+    assert unsupported_state.selected_history_id == unsupported_operation_id
+
+    _targetless_confirm_output, targetless_confirm_state = submit("\u0434\u0430")
+    targetless_operation_id = (
+        targetless_confirm_state.execution_metadata.operation_id
+    )
+
+    assert targetless_operation_id != unsupported_operation_id
+    assert targetless_confirm_state.execution_metadata.category == "clarification"
+    assert (
+        targetless_confirm_state.execution_metadata.operation_status
+        == "awaiting_clarification"
+    )
+    assert targetless_confirm_state.execution_metadata.executed is False
+    assert targetless_confirm_state.requires_clarification is True
+    assert targetless_confirm_state.requires_confirmation is False
+    assert targetless_confirm_state.confirmation_prompt is None
+    assert "unsupported" not in targetless_confirm_state.diagnostics_text
+    assert targetless_confirm_state.selected_history_id == targetless_operation_id
+    assert processor.calls == [
+        "\u0441\u0442\u0430\u0442\u0443\u0441 app service"
+    ]
+
+
+def test_desktop_shell_clears_execution_projection_for_conversation_turn():
+    processor = FakeAppServiceCommandProcessor()
+    service = JarvisAppService(command_processor=processor)
+    view_model = DesktopShellViewModel(service)
+
+    view_model.execute_command("\u0441\u0442\u0430\u0442\u0443\u0441 app service")
+    execution_state = view_model.state
+    execution_operation_id = execution_state.execution_metadata.operation_id
+
+    response = view_model.execute_command("\u043f\u0440\u0438\u0432\u0435\u0442")
+    conversation_state = view_model.state
+
+    assert conversation_state.output_text == response
+    assert conversation_state.current_turn_result.execution is None
+    assert conversation_state.execution_metadata is None
+    assert conversation_state.requires_clarification is False
+    assert conversation_state.requires_confirmation is False
+    assert conversation_state.clarification_question is None
+    assert conversation_state.clarification_options == ()
+    assert conversation_state.confirmation_prompt is None
+    assert conversation_state.cognitive_session_id is not None
+    assert "- route: conversation" in conversation_state.diagnostics_text
+    assert "app_service.status" not in conversation_state.diagnostics_text
+    assert execution_operation_id not in conversation_state.diagnostics_text
+
+    view_model.execute_command(
+        "\u0441\u0434\u0435\u043b\u0430\u0439 \u044d\u0442\u043e"
+    )
+    clarification_state = view_model.state
+
+    assert (
+        clarification_state.cognitive_session_id
+        == conversation_state.cognitive_session_id
+    )
+    assert clarification_state.execution_metadata.category == "clarification"
+    assert clarification_state.requires_clarification is True
+    assert "app_service.status" not in clarification_state.diagnostics_text
+    assert execution_operation_id not in clarification_state.diagnostics_text
+    assert processor.calls == [
+        "\u0441\u0442\u0430\u0442\u0443\u0441 app service"
+    ]
 
 
 def test_desktop_shell_non_gui_clarification_control_smoke_matches_app_service():
@@ -2148,9 +2368,16 @@ def test_desktop_shell_non_gui_clarification_control_smoke_matches_app_service()
         "\u0443\u0434\u0430\u043b\u0438 \u044d\u0442\u043e",
     )
 
-    desktop_outputs = tuple(view_model.execute_command(command) for command in commands)
+    desktop_records = []
+    for command in commands:
+        output = view_model.execute_command(command)
+        desktop_records.append((output, view_model.state.diagnostics_text))
+    desktop_outputs = tuple(output for output, _diagnostics in desktop_records)
+    desktop_diagnostics = tuple(
+        diagnostics for _output, diagnostics in desktop_records
+    )
 
-    assert [_desktop_field(text, "category") for text in desktop_outputs] == [
+    assert [_desktop_field(text, "category") for text in desktop_diagnostics] == [
         "clarification",
         "clarification",
         "clarification",
@@ -2159,7 +2386,7 @@ def test_desktop_shell_non_gui_clarification_control_smoke_matches_app_service()
         "clarification",
         "unsupported",
     ]
-    assert [_desktop_field(text, "operation status") for text in desktop_outputs] == [
+    assert [_desktop_field(text, "operation status") for text in desktop_diagnostics] == [
         "awaiting_clarification",
         "awaiting_clarification",
         "cancelled",
@@ -2168,11 +2395,11 @@ def test_desktop_shell_non_gui_clarification_control_smoke_matches_app_service()
         "cancelled",
         "succeeded",
     ]
-    assert _operation_id_from_desktop_text(desktop_outputs[0]) == _operation_id_from_desktop_text(desktop_outputs[1])
-    assert _operation_id_from_desktop_text(desktop_outputs[1]) == _operation_id_from_desktop_text(desktop_outputs[2])
-    assert _operation_id_from_desktop_text(desktop_outputs[3]) != _operation_id_from_desktop_text(desktop_outputs[0])
-    assert _operation_id_from_desktop_text(desktop_outputs[4]) != _operation_id_from_desktop_text(desktop_outputs[3])
-    for text in desktop_outputs:
+    assert _operation_id_from_desktop_text(desktop_diagnostics[0]) == _operation_id_from_desktop_text(desktop_diagnostics[1])
+    assert _operation_id_from_desktop_text(desktop_diagnostics[1]) == _operation_id_from_desktop_text(desktop_diagnostics[2])
+    assert _operation_id_from_desktop_text(desktop_diagnostics[3]) != _operation_id_from_desktop_text(desktop_diagnostics[0])
+    assert _operation_id_from_desktop_text(desktop_diagnostics[4]) != _operation_id_from_desktop_text(desktop_diagnostics[3])
+    for text in desktop_diagnostics:
         assert "- executed: yes" not in text
         assert "- response executed as command: no" in text
         assert "voice.confirmation" not in text.casefold()
@@ -2187,10 +2414,10 @@ def test_desktop_shell_non_gui_clarification_control_smoke_matches_app_service()
     )
 
     assert [result.category for result in app_results] == [
-        _desktop_field(text, "category") for text in desktop_outputs
+        _desktop_field(text, "category") for text in desktop_diagnostics
     ]
     assert [result.operation_status for result in app_results] == [
-        _desktop_field(text, "operation status") for text in desktop_outputs
+        _desktop_field(text, "operation status") for text in desktop_diagnostics
     ]
     assert all(result.executed is False for result in app_results)
     assert all(result.response_executed_as_command is False for result in app_results)
@@ -2202,16 +2429,17 @@ def test_desktop_shell_renders_local_tts_diagnostics_without_confirmation():
     view_model, backend, _processor = make_local_tts_desktop_view_model(available=True)
 
     text = view_model.execute_command(LOCAL_TTS_STATUS_COMMAND)
+    diagnostics = view_model.state.diagnostics_text
 
-    assert "- ok: yes" in text
-    assert "- command id: voice.output.local.status" in text
-    assert "- category: voice" in text
-    assert "- risk: read_only" in text
-    assert "- requires confirmation: no" in text
-    assert "- operation status: succeeded" in text
-    assert "- awaiting confirmation: yes" not in text
-    assert "- network may be used: no" in text
-    assert "confirmation_required" not in text
+    assert text
+    assert "- ok: yes" in diagnostics
+    assert "- command id: voice.output.local.status" in diagnostics
+    assert "- category: voice" in diagnostics
+    assert "- risk: read_only" in diagnostics
+    assert "- requires confirmation: no" in diagnostics
+    assert "- operation status: succeeded" in diagnostics
+    assert "- network may be used: no" in diagnostics
+    assert "confirmation_required" not in diagnostics
     assert backend.diagnostics_calls == 1
     assert backend.synthesis_calls == []
 
@@ -2220,16 +2448,17 @@ def test_desktop_shell_renders_local_tts_enable_failure_as_failed_not_pending():
     view_model, backend, processor = make_local_tts_desktop_view_model(available=False)
 
     text = view_model.execute_command(LOCAL_TTS_ENABLE_COMMAND)
+    diagnostics = view_model.state.diagnostics_text
 
-    assert "- ok: no" in text
-    assert "- command id: voice.output.windows_local.enable" in text
-    assert "- category: voice" in text
-    assert "- risk: local_runtime" in text
-    assert "- requires confirmation: no" in text
-    assert "- operation status: failed" in text
-    assert "- error: voice.output.windows_local.unavailable" in text
-    assert "- awaiting confirmation: yes" not in text
-    assert "confirmation_required" not in text
+    assert text
+    assert "- ok: no" in diagnostics
+    assert "- command id: voice.output.windows_local.enable" in diagnostics
+    assert "- category: voice" in diagnostics
+    assert "- risk: local_runtime" in diagnostics
+    assert "- requires confirmation: no" in diagnostics
+    assert "- operation status: failed" in diagnostics
+    assert "- error: voice.output.windows_local.unavailable" in diagnostics
+    assert "confirmation_required" not in diagnostics
     assert processor.voice_output_manager.mode == "OFF"
     assert backend.diagnostics_calls == 1
     assert backend.synthesis_calls == []
@@ -2240,19 +2469,20 @@ def test_desktop_shell_renders_local_tts_test_success_without_raw_audio_text_met
     view_model.execute_command(LOCAL_TTS_ENABLE_COMMAND)
 
     text = view_model.execute_command(LOCAL_TTS_TEST_COMMAND)
+    diagnostics = view_model.state.diagnostics_text
 
-    assert "- ok: yes" in text
-    assert "- command id: voice.output.spoken" in text
-    assert "- category: voice" in text
-    assert "- risk: local_runtime" in text
-    assert "- requires confirmation: no" in text
-    assert "- operation status: succeeded" in text
-    assert "- awaiting confirmation: yes" not in text
+    assert text
+    assert "- ok: yes" in diagnostics
+    assert "- command id: voice.output.spoken" in diagnostics
+    assert "- category: voice" in diagnostics
+    assert "- risk: local_runtime" in diagnostics
+    assert "- requires confirmation: no" in diagnostics
+    assert "- operation status: succeeded" in diagnostics
     assert len(backend.synthesis_calls) == 1
     spoken_text, _mode = backend.synthesis_calls[0]
     metadata_lines = [
         line
-        for line in text.splitlines()
+        for line in diagnostics.splitlines()
         if line.startswith(("- command id:", "- category:", "- risk:", "- operation"))
     ]
     assert spoken_text not in "\n".join(metadata_lines)
@@ -2277,13 +2507,20 @@ def test_desktop_shell_renders_positive_awaiting_confirmation_result_without_exe
     view_model = DesktopShellViewModel(service)
 
     text = view_model.execute_command("forget all memory")
+    diagnostics = view_model.state.diagnostics_text
 
-    assert "- command id: memory.forget_all" in text
-    assert "- risk: confirmation_required" in text
-    assert "- requires confirmation: yes" in text
-    assert "- operation id: op-awaiting" in text
-    assert "- operation status: awaiting_confirmation" in text
-    assert "- executed through AppService: yes" in text
+    assert text == "confirmation required"
+    assert "- command id: memory.forget_all" in diagnostics
+    assert "- risk: confirmation_required" in diagnostics
+    assert "- requires confirmation: yes" in diagnostics
+    assert "- operation id: op-awaiting" in diagnostics
+    assert "- operation status: awaiting_confirmation" in diagnostics
+    assert view_model.state.execution_metadata.operation_id == "op-awaiting"
+    assert view_model.state.requires_confirmation is True
+    assert view_model.state.requires_clarification is False
+    assert view_model.state.confirmation_prompt == text
+    assert view_model.state.clarification_question is None
+    assert view_model.state.clarification_options == ()
     assert service.execute_calls == [("forget all memory", AppCommandSource.DESKTOP_UI)]
 
 
@@ -2307,10 +2544,9 @@ def test_execute_command_calls_app_service_execute_only():
     text = view_model.execute_command("статус ai")
 
     assert service.execute_calls == [("статус ai", AppCommandSource.DESKTOP_UI)]
-    assert "Desktop shell execution:" in text
-    assert "- requires confirmation: no" in text
-    assert "- executed through AppService: yes" in text
-    assert "processed: статус ai" in text
+    assert text == "processed: статус ai"
+    assert "Desktop shell execution:" not in text
+    assert "- requires confirmation: no" in view_model.state.diagnostics_text
 
 
 def test_execute_command_displays_clarification_options():
@@ -2323,7 +2559,7 @@ def test_execute_command_displays_clarification_options():
             self.execute_calls.append((text, source))
             return FakeExecutionResult(
                 ok=True,
-                output_text="Требуется уточнение:\nКакой статус проверить?",
+                output_text="Требуется уточнение:\nКакой статус проверить?\n- системы\n- AI",
                 registry_match_id=None,
                 category="clarification",
                 risk_level="read_only",
@@ -2341,6 +2577,20 @@ def test_execute_command_displays_clarification_options():
     assert "Какой статус проверить?" in text
     assert "- системы" in text
     assert "- AI" in text
+    assert view_model.state.requires_clarification is True
+    assert view_model.state.requires_confirmation is False
+    assert (
+        view_model.state.clarification_question
+        == view_model.state.execution_metadata.clarification_question
+    )
+    assert len(view_model.state.clarification_options) == 2
+    assert tuple(
+        option.label_ru for option in view_model.state.clarification_options
+    ) == tuple(
+        option.label_ru
+        for option in view_model.state.execution_metadata.clarification_options
+    )
+    assert view_model.state.confirmation_prompt is None
 
 
 def test_execute_command_wraps_output_safely():
@@ -2351,27 +2601,35 @@ def test_execute_command_wraps_output_safely():
 
     assert "sk-test-1234567890secret" not in text
     assert "[REDACTED]" in text
-    assert "- no secrets" in text
+    assert "Desktop shell execution:" not in text
 
 
 def test_process_one_shot_voice_request_uses_app_service_only():
     service = FakeAppService()
-    view_model = DesktopShellViewModel(service)
+    view_model = DesktopShellViewModel(
+        service,
+        cognitive_session_id="cog-session-desktop-test",
+    )
 
     text = view_model.process_one_shot_voice_request()
 
     assert service.voice_calls == [AppCommandSource.DESKTOP_UI]
     assert service.execute_calls == []
-    assert "Голосовой запрос Desktop Shell:" in text
-    assert "- распознавание: да" in text
-    assert "- распознано:" in text
-    assert "processed voice command" in text
-    assert "- сырое аудио отправлено наружу: нет" in text
+    assert text == "processed voice command"
+    assert "Голосовой запрос Desktop Shell:" in view_model.state.diagnostics_text
+    assert "- распознавание: да" in view_model.state.diagnostics_text
+    assert "- распознано:" in view_model.state.diagnostics_text
+    assert "- сырое аудио отправлено наружу: нет" in view_model.state.diagnostics_text
+    assert "- route: conversation" in view_model.state.diagnostics_text
+    assert (
+        "- cognitive session id: cog-session-desktop-test"
+        in view_model.state.diagnostics_text
+    )
 
 
 def test_process_one_shot_voice_request_wraps_failure_safely():
     class FailingVoiceService(FakeAppService):
-        def process_one_shot_voice_request(self, source):
+        def process_one_shot_voice_request(self, source, *, session_id=None):
             self.voice_calls.append(source)
             return FakeVoiceResult(
                 ok=False,
@@ -2390,7 +2648,7 @@ def test_process_one_shot_voice_request_wraps_failure_safely():
 
     text = view_model.process_one_shot_voice_request()
 
-    assert "vosk_runtime_unavailable" in text
+    assert "vosk_runtime_unavailable" in view_model.state.diagnostics_text
     assert "sk-test-1234567890secret" not in text
     assert "[REDACTED]" in text
     assert view_model.state.last_error == text
@@ -2413,8 +2671,8 @@ def test_process_one_shot_voice_request_renders_sanitized_microphone_failure():
 
     text = view_model.process_one_shot_voice_request()
 
-    assert "- result type: voice_recognition_blocked" in text
-    assert "- требуется подтверждение: нет" in text
+    assert "- result type: voice_recognition_blocked" in view_model.state.diagnostics_text
+    assert "- требуется подтверждение: нет" in view_model.state.diagnostics_text
     assert "Не удалось получить доступ к микрофону." in text
     assert "PaErrorCode" not in text
     assert "MME error" not in text
@@ -2432,8 +2690,8 @@ def test_process_one_shot_voice_request_formats_cyrillic_recognition():
 
     text = view_model.process_one_shot_voice_request()
 
-    assert "- распознано: статус app service" in text
-    assert "Статус готов." in text
+    assert "- распознано: статус app service" in view_model.state.diagnostics_text
+    assert text == "Статус готов."
     assert "Recognized text" not in text
 
 
@@ -2452,7 +2710,7 @@ def test_process_one_shot_voice_request_displays_safe_normalization():
 
     assert "Распознано: статус система" in view_model.state.preview_text
     assert "Нормализовано: статус системы" in view_model.state.preview_text
-    assert "Нормализовано: статус системы" in text
+    assert text == "JARVIS status: ready"
 
 
 def test_execute_dialog_greeting_with_real_service_is_safe():
@@ -2460,12 +2718,14 @@ def test_execute_dialog_greeting_with_real_service_is_safe():
 
     text = view_model.execute_command("диалог: привет")
 
-    assert "Desktop shell execution:" in text
+    assert "Desktop shell execution:" not in text
     assert "Привет, Исмаил" in text
-    assert "providers called: no" in text
-    assert "network used: no" in text
-    assert "command executed: no" in text
-    assert "microphone/TTS started: no" in text
+    assert "providers called:" not in text
+    assert "network used:" not in text
+    assert "command executed:" not in text
+    assert "microphone/TTS started:" not in text
+    assert "- route: conversation" in view_model.state.diagnostics_text
+    assert view_model.state.cognitive_session_id is not None
 
 
 def test_clear_output_works_without_execution():

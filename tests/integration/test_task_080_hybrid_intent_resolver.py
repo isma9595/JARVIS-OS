@@ -68,11 +68,23 @@ class DeterministicRecognition:
 class SpyAppService(JarvisAppService):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.execute_contract_calls = []
+        self.desktop_turn_calls = []
 
-    def execute_contract(self, text, source=AppCommandSource.DESKTOP_UI):
-        self.execute_contract_calls.append((text, source))
-        return super().execute_contract(text, source)
+    def handle_desktop_turn(
+        self,
+        text,
+        source=AppCommandSource.DESKTOP_UI,
+        *,
+        session_id=None,
+        idempotency_key=None,
+    ):
+        self.desktop_turn_calls.append((text, source, session_id))
+        return super().handle_desktop_turn(
+            text,
+            source,
+            session_id=session_id,
+            idempotency_key=idempotency_key,
+        )
 
 
 SAFE_VAGUE_REFERENCES = (
@@ -425,7 +437,9 @@ def test_voice_path_uses_appservice_and_task_079_normalization_remains_compatibl
 
     result = service.process_one_shot_voice_request(AppCommandSource.TEST)
 
-    assert service.execute_contract_calls == [("статус системы", AppCommandSource.TEST)]
+    assert service.desktop_turn_calls == [
+        ("статус системы", AppCommandSource.TEST, None)
+    ]
     assert processor.calls == ["статус системы"]
     assert result.normalization_applied is True
     assert result.text_result.command_id == "system.status"

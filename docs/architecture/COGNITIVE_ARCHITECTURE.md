@@ -1,8 +1,8 @@
 # JARVIS Cognitive Architecture
 
-Status: architecture report for TASK-112. This document defines the target
-cognitive and conversational architecture only. It does not describe production
-code as implemented unless the section explicitly says "current".
+Status: target architecture report from TASK-112 with a current-state addendum
+through TASK-120. Target sections remain design guidance; sections explicitly
+labelled current describe the implemented repository state.
 
 ## Executive Decision
 
@@ -106,21 +106,59 @@ TASK-111 history:
   planning checkpoint without its own task file. TASK-112 must not invent
   implementation work for TASK-111.
 
+## Implemented State After TASK-115 Through TASK-120
+
+The first conversational vertical slice is now implemented:
+
+- TASK-115 added `ConversationSessionRepository` and
+  `LocalConversationSessionRepository`; `ConversationSessionService` remains
+  the sole session lifecycle owner and loads bounded safe persisted summaries.
+- TASK-116 through TASK-119 added bounded context projection, one response
+  composition pass per turn, deterministic intent interpretation, conservative
+  reference resolution, and stateless clarification coordination.
+- TASK-119B hardened AppService command/control routing so cancellation,
+  confirmation, clarification, unsupported input, and operation identity are
+  explicit and fail safely.
+- TASK-120 added `JarvisAppService.handle_desktop_turn()` as the single typed
+  and Desktop one-shot voice application facade. Only input classified as
+  conversation invokes the full `CognitiveInteractionService.handle_turn()`;
+  known commands and control turns continue through AppService execution.
+- `DesktopShellState` owns only presentation state and the current cognitive
+  session id. Natural response text and structured diagnostics are projected
+  separately; Desktop does not parse a formatted execution report to recover
+  session or operation metadata.
+- Conversation turns do not create execution operations, call
+  `CommandProcessor`, enter policy/workflow execution, or route the composed
+  assistant response back as command input.
+
+Memory policy, cognitive memory reads/writes, goals, planning, knowledge, and
+proactive behavior remain future work. TASK-120 does not introduce or imply
+`MemoryPolicy`.
+
 ## Current Request Path
 
 Typed Desktop input currently follows this path:
 
 ```text
 DesktopShellViewModel / Tk UI
-    -> JarvisAppService.preview_command() or execute_command()
-        -> HybridIntentResolver for top-level deterministic intent metadata
-        -> AppService command clarification / pending confirmation checks
-        -> planner, workflow, memory, language, voice, provider-runtime,
-           direct state-change, or legacy CommandProcessor route
-        -> ExecutionCoordinator and PolicyDecisionBoundary where applicable
-        -> WorkflowRunner or subsystem handler where applicable
-        -> AppService DTO projection
-        -> Desktop rendering
+    -> JarvisAppService.handle_desktop_turn(text, source, session_id)
+        -> pending cancellation / confirmation / clarification controls first
+        -> side-effect-free command preview and deterministic routing metadata
+        -> conversation:
+             CognitiveInteractionService.handle_turn()
+             -> ConversationSessionService
+             -> bounded ConversationContextProjector
+             -> IntentInterpreter
+             -> ReferenceResolver
+             -> ClarificationCoordinator
+             -> ResponseComposer exactly once
+             -> AppDesktopTurnResult(response, diagnostics, session id)
+        -> command or control:
+             existing AppService execute_command()
+             -> PolicyDecisionBoundary / ExecutionCoordinator where applicable
+             -> WorkflowRunner, subsystem handler, or legacy CommandProcessor
+             -> AppDesktopTurnResult(response, diagnostics, execution metadata)
+        -> Desktop primary response and separate diagnostics projection
 ```
 
 CLI input through `run.py` remains legacy:
@@ -140,7 +178,7 @@ One-shot voice follows:
 Desktop / AppService one-shot request
     -> local capture and Vosk recognition boundary
     -> safe Russian normalization when applicable
-    -> same AppService text route as typed input
+    -> handle_desktop_turn() with the same Desktop cognitive session id
 ```
 
 Workflow and activity inspection follows:
@@ -159,26 +197,23 @@ Desktop
 | --- | --- | --- |
 | Command interpretation | Split between `HybridIntentResolver`, `CommandResolutionService`, planner parser, AppService memory/language parsers, and legacy `CommandProcessor` | No single cognitive owner exists. The resolver modules are deterministic and non-executing; `CommandProcessor` still mixes recognition and execution for legacy paths. |
 | AI provider interaction | `ai/` provider contracts, gates, router, fallback/session/runtime modules, called from `CommandProcessor` and surfaced by AppService status | Providers return text only. Provider responses are not execution authority. |
-| Conversation state | `SessionConversationContext` plus AppService command clarification/confirmation fields | Context is bounded and session-only. Legacy command clarification is AppService instance state. Cognitive clarification is represented as ordinary assistant turns. |
+| Cognitive conversation state | `ConversationSessionService` with optional `ConversationSessionRepository` | Owns session lifecycle and ordered turns. Bounded safe summaries may be repository-backed; Desktop stores only the current session id. |
+| Cognitive turn orchestration | `CognitiveInteractionService` and stateless context/intent/reference/clarification/composition services | Full orchestration runs only for conversation input and owns no execution state. |
+| Command control state | AppService clarification/confirmation fields plus execution operation records | TASK-119B cancellation, confirmation, clarification, unsupported, and operation-id rules remain on the safe command route. |
 | Execution lifecycle | `ExecutionCoordinator` and `ExecutionJournal` | Own operation IDs, idempotency, cancellation tokens, lifecycle status, bounded in-memory journal. |
 | Workflow lifecycle | `WorkflowRunner` and `workflows/contracts.py` | Own run/step state, resume/cancel eligibility, cooperative cancellation, run history projection. Current state is in-memory. |
 | Activity projection | `ApplicationActivityTracker` below AppService | Read-only projection from execution operations, not an execution owner. |
-| Persistence | `LocalMemoryManager`, user profile manager, Vosk settings, secure key storage; execution journal and planner/workflow state are mostly in-memory | No durable conversation session store exists. |
-| Desktop presentation | `app/desktop_shell.py` | Uses AppService DTOs and must not import workflow/journal/provider/filesystem/memory internals. |
+| Persistence | `LocalConversationSessionRepository`, `LocalMemoryManager`, user profile manager, Vosk settings, secure key storage; execution journal and planner/workflow state are mostly in-memory | Conversation persistence stores bounded safe session records; it is not MemoryPolicy or a second session owner. |
+| Desktop presentation | `app/desktop_shell.py` | Uses AppService DTOs, preserves one cognitive session id, and projects natural response separately from diagnostics; it does not import cognitive/workflow/journal/provider/filesystem/memory internals. |
 | Confirmation and safety policy | `PolicyDecisionBoundary`, AppService pending confirmation state, workflow runner policy checks, memory forget-all confirmation, voice allowlist/confirmation | Clarification is explicitly separate from dangerous-action confirmation. |
 
 ## Current Gaps And Mixed Responsibilities
 
 Missing cognitive responsibilities:
 
-- durable conversation sessions and turn identity;
-- authoritative short-term conversational state beyond a bounded summary deque;
 - goal representation independent of the current deterministic planner;
-- cross-turn reference resolution such as "open it again";
 - general entity model for files, apps, memories, workflow runs, plans, and
   previous answers;
-- clarification coordination across intent, references, missing slots, and
-  plan approval;
 - provider-mediated intent interpretation with schema validation and fallback;
 - plan proposal separate from execution workflow definitions;
 - plan approval records and stale-plan invalidation;
@@ -207,6 +242,8 @@ Temporary or legacy paths:
 
 - CLI direct `CommandProcessor.process()` path remains a legacy execution
   facade.
+- Old `VoiceInputManager` paths outside Desktop one-shot remain legacy and are
+  not migrated by TASK-120.
 - `CommandProcessor` imports `app.intent_resolver.ClarificationState`, creating
   an app-to-core dependency concern for future layering.
 - AppService direct memory and language command parsing is transitional.
@@ -1331,9 +1368,11 @@ execution authority.
 
 ### DesktopShellState
 
-Desktop remains presentation-only. It should call AppService conversation DTOs,
-show clarification responses/plans/suggestions, and submit user decisions. It
-must not import cognitive internals.
+Desktop remains presentation-only. As of TASK-120 it calls
+`handle_desktop_turn()`, stores the current cognitive session id, renders
+natural response text, and keeps structured diagnostics in a separate state
+projection. It must not import cognitive internals. Future Desktop work may add
+plans and suggestions only through AppService DTOs.
 
 ### AI Providers
 
@@ -1435,18 +1474,19 @@ Milestones:
 
 - Conversational Core: TASK-113 through TASK-116, with TASK-114 reserved for
   the completed roadmap-alignment record.
-- Intent and Clarification: TASK-117 through TASK-119.
-- Personal Memory and MemoryPolicy: TASK-120 through TASK-123.
-- Goal and Planning: TASK-124 through TASK-127.
-- Knowledge: TASK-128 through TASK-130.
-- Automation and Recovery: TASK-131 through TASK-134.
-- Proactive Assistant: TASK-135 through TASK-137.
-- Desktop 2.0 Integration: TASK-138.
+- Intent and Clarification: TASK-117 through TASK-119B.
+- Desktop cognitive conversation vertical slice: TASK-120.
+- Personal Memory and MemoryPolicy: TASK-121 through TASK-124.
+- Goal and Planning: TASK-125 through TASK-128.
+- Knowledge: TASK-129 through TASK-131.
+- Automation and Recovery: TASK-132 through TASK-135.
+- Proactive Assistant: TASK-136 through TASK-138.
+- Desktop 2.0 Integration: TASK-139.
 
 ## Open Architectural Questions
 
-- Should durable conversation sessions store raw user text locally, or only
-  redacted summaries and references? The safer default is summaries only.
+- TASK-115 resolved the first persistence boundary in favor of bounded safe
+  persisted summaries rather than raw sensitive text by default.
 - Should cognitive planning initially remain deterministic, provider-assisted,
   or hybrid? The safer first milestone is deterministic with provider support
   added behind explicit gates later.

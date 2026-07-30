@@ -1,4 +1,5 @@
 import pytest
+from types import SimpleNamespace
 
 from app import AppCommandSource, JarvisAppService
 from cognition import (
@@ -43,7 +44,9 @@ def test_app_service_conversation_session_api_works_without_execution():
     assert snapshot.turn_count == 2
     assert result.session.session_id == session.session_id
     assert result.response.response_type is AssistantResponseType.MESSAGE
-    assert "command executed: no" in result.response.text
+    assert result.response.text
+    assert "command executed: no" not in result.response.text
+    assert "providers called:" not in result.response.text
     assert processor.calls == []
     assert [turn.sequence for turn in turns] == [1, 2]
 
@@ -331,3 +334,195 @@ def test_context_composition_does_not_call_provider_execution_workflow_or_memory
     result = service.handle_conversation_turn("hello", AppCommandSource.TEST)
 
     assert result.response.response_type is AssistantResponseType.MESSAGE
+
+
+def _install_task120_deterministic_ids(monkeypatch):
+    values = iter(
+        (
+            "task120session",
+            "task120user1",
+            "task120assistant1",
+            "task120user2",
+            "task120assistant2",
+            "task120user3",
+            "task120assistant3",
+        )
+    )
+    monkeypatch.setattr(
+        "cognition.sessions.uuid4",
+        lambda: SimpleNamespace(hex=next(values)),
+    )
+
+
+def test_desktop_greeting_uses_clean_cognitive_turn_without_execution(monkeypatch):
+    _install_task120_deterministic_ids(monkeypatch)
+    processor = FakeCommandProcessor()
+    service = JarvisAppService(command_processor=processor)
+
+    result = service.handle_desktop_turn("привет", AppCommandSource.DESKTOP_UI)
+
+    assert result.ok is True
+    assert result.cognitive_session_id == "cog-session-task120session"
+    assert result.execution is None
+    assert result.operation_id is None
+    assert result.diagnostics.route == "conversation"
+    assert result.diagnostics.context_turn_count_used == 1
+    assert "Desktop shell execution" not in result.response_text
+    assert "providers called:" not in result.response_text
+    assert "command executed:" not in result.response_text
+    assert processor.calls == []
+    assert service.execution_coordinator.journal.recent() == ()
+
+
+def test_desktop_conversation_reuses_session_and_projects_prior_context_once_per_turn(
+    monkeypatch,
+):
+    _install_task120_deterministic_ids(monkeypatch)
+    composition_inputs = []
+
+    class TrackingComposer:
+        def compose(self, composition_input):
+            composition_inputs.append(composition_input)
+            return ResponseCompositionResult(
+                response_type=AssistantResponseType.MESSAGE,
+                text=f"turn {len(composition_inputs)}",
+                context_turn_count_used=composition_input.context.included_turn_count,
+                composition_source="task120_test",
+            )
+
+    processor = FakeCommandProcessor()
+    service = JarvisAppService(
+        command_processor=processor,
+        cognitive_response_composer=TrackingComposer(),
+    )
+
+    first = service.handle_desktop_turn("привет", AppCommandSource.DESKTOP_UI)
+    second = service.handle_desktop_turn(
+        "продолжай",
+        AppCommandSource.DESKTOP_UI,
+        session_id=first.cognitive_session_id,
+    )
+
+    assert first.cognitive_session_id == second.cognitive_session_id
+    assert first.cognitive_session_id == "cog-session-task120session"
+    assert [item.context.included_turn_count for item in composition_inputs] == [1, 3]
+    assert second.diagnostics.context_turn_count_used == 3
+    assert tuple(
+        turn.safe_text for turn in composition_inputs[1].context.turns[:2]
+    ) == ("привет", "turn 1")
+    assert first.execution is None
+    assert second.execution is None
+    assert processor.calls == []
+
+
+def test_desktop_one_shot_voice_reuses_typed_cognitive_session(monkeypatch):
+    _install_task120_deterministic_ids(monkeypatch)
+
+    class Recognition:
+        def run_once(self, **_kwargs):
+            return SimpleNamespace(
+                recognized_text="привет",
+                completed=True,
+                blocked=False,
+                allowed=True,
+                reasons=(),
+            )
+
+    processor = FakeCommandProcessor()
+    service = JarvisAppService(
+        command_processor=processor,
+        one_shot_voice_recognition=Recognition(),
+    )
+    typed = service.handle_desktop_turn("привет", AppCommandSource.DESKTOP_UI)
+
+    voice = service.process_one_shot_voice_request(
+        AppCommandSource.DESKTOP_UI,
+        session_id=typed.cognitive_session_id,
+    )
+
+    assert voice.desktop_turn_result is not None
+    assert voice.desktop_turn_result.execution is None
+    assert voice.cognitive_session_id == typed.cognitive_session_id
+    assert voice.desktop_turn_result.cognitive_session_id == typed.cognitive_session_id
+    assert voice.desktop_turn_result.diagnostics.context_turn_count_used == 3
+    assert processor.calls == []
+    assert service.execution_coordinator.journal.recent() == ()
+
+
+def test_desktop_reopens_repository_backed_session_with_bounded_context(
+    tmp_path,
+    monkeypatch,
+):
+    _install_task120_deterministic_ids(monkeypatch)
+    first_processor = FakeCommandProcessor()
+    first_service = JarvisAppService(
+        command_processor=first_processor,
+        cognitive_session_repository=LocalConversationSessionRepository(tmp_path),
+    )
+    first = first_service.handle_desktop_turn("привет", AppCommandSource.DESKTOP_UI)
+
+    composition_inputs = []
+
+    class TrackingComposer:
+        def compose(self, composition_input):
+            composition_inputs.append(composition_input)
+            return ResponseCompositionResult(
+                response_type=AssistantResponseType.MESSAGE,
+                text="reopened",
+                context_turn_count_used=composition_input.context.included_turn_count,
+                composition_source="task120_reopen_test",
+            )
+
+    restarted_processor = FakeCommandProcessor()
+    restarted = JarvisAppService(
+        command_processor=restarted_processor,
+        cognitive_session_repository=LocalConversationSessionRepository(tmp_path),
+        cognitive_response_composer=TrackingComposer(),
+    )
+    second = restarted.handle_desktop_turn(
+        "what did I ask?",
+        AppCommandSource.DESKTOP_UI,
+        session_id=first.cognitive_session_id,
+    )
+
+    assert second.cognitive_session_id == "cog-session-task120session"
+    assert second.diagnostics.context_turn_count_used == 3
+    assert composition_inputs[0].context.turns[0].safe_text == "привет"
+    assert restarted_processor.calls == []
+
+
+def test_desktop_known_command_keeps_execution_operation():
+    processor = FakeCommandProcessor()
+    service = JarvisAppService(command_processor=processor)
+
+    result = service.handle_desktop_turn(
+        "app contracts status",
+        AppCommandSource.DESKTOP_UI,
+    )
+
+    assert result.execution is not None
+    assert result.execution.executed is True
+    assert result.execution.operation_id is not None
+    assert result.execution.operation_status == "succeeded"
+    assert result.diagnostics.route == "execution"
+    assert processor.calls == ["app contracts status"]
+
+
+def test_desktop_task119b_controls_stay_on_safe_execution_route():
+    processor = FakeCommandProcessor()
+    service = JarvisAppService(command_processor=processor)
+
+    first = service.handle_desktop_turn("Сделай это", AppCommandSource.DESKTOP_UI)
+    confirm = service.handle_desktop_turn("Подтверждаю", AppCommandSource.DESKTOP_UI)
+    cancel = service.handle_desktop_turn("отмена", AppCommandSource.DESKTOP_UI)
+    risky = service.handle_desktop_turn("удали это", AppCommandSource.DESKTOP_UI)
+
+    assert first.execution.requires_clarification is True
+    assert confirm.execution.requires_clarification is True
+    assert first.operation_id == confirm.operation_id == cancel.operation_id
+    assert confirm.operation_status == "awaiting_clarification"
+    assert cancel.operation_status == "cancelled"
+    assert risky.execution.category == "unsupported"
+    assert risky.execution.executed is False
+    assert risky.execution.response_executed_as_command is False
+    assert processor.calls == []

@@ -25,6 +25,8 @@ from app.app_contracts import (
     AppClarificationOption,
     AppContractManifest,
     AppContractStatus,
+    AppDesktopTurnDiagnostics,
+    AppDesktopTurnResult,
     AppExecutionContract,
     AppLanguagePreferenceContract,
     AppPreviewContract,
@@ -44,6 +46,7 @@ from app.intent_resolver import (
     option_matches_text,
 )
 from app.conversational_loop import (
+    ConversationIntent,
     ConversationalRequest,
     ConversationalResult,
     SafeConversationalLoop,
@@ -64,7 +67,9 @@ from cognition import (
     ConversationSessionStatus,
     ConversationTurn,
     ConversationTurnInput,
+    IntentCategory,
     IntentInterpretationInput,
+    ReferenceKind,
     ReferenceResolutionInput,
     RuleBasedIntentInterpreter,
     RuleBasedClarificationCoordinator,
@@ -762,6 +767,10 @@ class JarvisAppService:
         idempotency_key: str | None = None,
     ) -> AppExecutionContract:
         result = self.execute_command(text, source, idempotency_key=idempotency_key)
+        return self._execution_contract_from_result(result)
+
+    @staticmethod
+    def _execution_contract_from_result(result: AppCommandResult) -> AppExecutionContract:
         return AppExecutionContract(
             ok=result.ok,
             input_text=safe_contract_text(result.input_text),
@@ -815,9 +824,174 @@ class JarvisAppService:
             plan_step_count=result.plan_step_count,
         )
 
+    def handle_desktop_turn(
+        self,
+        text: str,
+        source: AppCommandSource = AppCommandSource.DESKTOP_UI,
+        *,
+        session_id: str | None = None,
+        idempotency_key: str | None = None,
+    ) -> AppDesktopTurnResult:
+        """Route one Desktop turn without making Desktop an intent owner."""
+
+        if not isinstance(source, AppCommandSource):
+            source = AppCommandSource.UNKNOWN
+        input_text = str(text or "").strip()
+        if self._desktop_turn_is_conversational(input_text, source):
+            interaction = self.handle_conversation_turn(
+                input_text,
+                source,
+                session_id=session_id,
+                locale=self.language_manager.runtime_locale(),
+            )
+            diagnostics = AppDesktopTurnDiagnostics(
+                route="conversation",
+                source=source.value,
+                cognitive_intent=(
+                    interaction.intent.category.value
+                    if interaction.intent is not None
+                    else None
+                ),
+                cognitive_response_type=interaction.response.response_type.value,
+                context_turn_count_used=interaction.context.included_turn_count,
+                composition_source=interaction.composition.composition_source,
+                command_category=None,
+                command_risk_level=None,
+                requires_clarification=bool(
+                    interaction.clarification
+                    and interaction.clarification.status
+                    in {ClarificationStatus.NEEDED, ClarificationStatus.UNAVAILABLE}
+                ),
+                requires_confirmation=False,
+                network_may_be_used=False,
+                response_executed_as_command=False,
+            )
+            return AppDesktopTurnResult(
+                ok=interaction.response.response_type.value != "error",
+                input_text=safe_contract_text(input_text),
+                response_text=safe_contract_text(interaction.response.text),
+                source=source.value,
+                cognitive_session_id=interaction.session.session_id,
+                diagnostics=diagnostics,
+                execution=None,
+                error=(
+                    safe_contract_text(interaction.response.text)
+                    if interaction.response.response_type.value == "error"
+                    else None
+                ),
+            )
+
+        command_result = self.execute_command(
+            input_text,
+            source,
+            idempotency_key=idempotency_key,
+        )
+        execution = self._execution_contract_from_result(command_result)
+        diagnostics = AppDesktopTurnDiagnostics(
+            route="execution",
+            source=source.value,
+            cognitive_intent=None,
+            cognitive_response_type=None,
+            context_turn_count_used=0,
+            composition_source=None,
+            command_category=command_result.category,
+            command_risk_level=command_result.risk_level,
+            requires_clarification=command_result.requires_clarification,
+            requires_confirmation=command_result.requires_confirmation,
+            network_may_be_used=command_result.network_may_be_used,
+            response_executed_as_command=False,
+        )
+        return AppDesktopTurnResult(
+            ok=command_result.ok,
+            input_text=safe_contract_text(input_text),
+            response_text=safe_contract_text(command_result.output_text),
+            source=source.value,
+            cognitive_session_id=session_id,
+            diagnostics=diagnostics,
+            execution=execution,
+            error=safe_contract_text(command_result.error) if command_result.error else None,
+        )
+
+    def _desktop_turn_is_conversational(
+        self,
+        input_text: str,
+        source: AppCommandSource,
+    ) -> bool:
+        if self._has_pending_desktop_control():
+            return False
+        preview = self.preview_command(input_text)
+        if preview.registry_match_id == "conversation.preview":
+            return True
+        if preview.known_command:
+            return False
+        if self._match_parameterized_registry_command(input_text) is not None:
+            return False
+        resolution = self.intent_resolver.resolve(
+            original_text=input_text,
+            processing_text=input_text,
+            source=source.value,
+        )
+        if resolution.intent_kind is IntentKind.ORDINARY_CONVERSATION:
+            return True
+        if (
+            resolution.intent_kind is not IntentKind.LOCAL_COMMAND
+            or "legacy_commandprocessor_fallback" not in resolution.reason_codes
+        ):
+            return False
+        compatibility_intent = self.conversational_loop.classify(input_text)
+        if compatibility_intent in {
+            ConversationIntent.SMALL_TALK,
+            ConversationIntent.AI_QUESTION,
+            ConversationIntent.DRAFTING_TASK,
+            ConversationIntent.RESEARCH_TASK,
+            ConversationIntent.COMPLEX_AGENT_TASK,
+        }:
+            return True
+        current_turn, context, interpreted = self._cognitive_routing_probe(
+            input_text,
+            source,
+        )
+        if interpreted.category in {
+            IntentCategory.QUESTION,
+            IntentCategory.INFORMATION_REQUEST,
+        }:
+            return True
+        references = self.cognitive_reference_resolver.resolve(
+            ReferenceResolutionInput(
+                current_user_turn=current_turn,
+                context=context,
+                interpreted_intent=interpreted,
+            )
+        )
+        conversational_reference_kinds = {
+            ReferenceKind.PREVIOUS_MESSAGE,
+            ReferenceKind.PREVIOUS_RESPONSE,
+            ReferenceKind.PREVIOUS_REQUEST,
+            ReferenceKind.PREVIOUS_RESULT,
+        }
+        return any(
+            reference.detected_reference.kind in conversational_reference_kinds
+            for reference in references.references
+        )
+
+    def _has_pending_desktop_control(self) -> bool:
+        return any(
+            (
+                self._pending_clarification is not None,
+                self._pending_confirmation is not None,
+                self._pending_document_review is not None,
+                bool(
+                    self._pending_memory_forget_all
+                    and self._pending_memory_forget_all.active
+                ),
+            )
+        )
+
     def process_one_shot_voice_request(
         self,
         source: AppCommandSource = AppCommandSource.VOICE,
+        *,
+        session_id: str | None = None,
     ) -> AppVoiceRequestResult:
         if not isinstance(source, AppCommandSource):
             source = AppCommandSource.UNKNOWN
@@ -896,27 +1070,50 @@ class JarvisAppService:
                 normalization.safe_to_use_as_command_candidate
                 and normalization.normalized_text != recognized_text
             )
-            text_result = self.execute_contract(command_candidate, source)
+            desktop_turn = self.handle_desktop_turn(
+                command_candidate,
+                source,
+                session_id=session_id,
+            )
+            text_result = (
+                desktop_turn.execution
+                if desktop_turn.execution is not None
+                else AppExecutionContract(
+                    ok=desktop_turn.ok,
+                    input_text=desktop_turn.input_text,
+                    output_text=desktop_turn.response_text,
+                    source=desktop_turn.source,
+                    command_id=None,
+                    category="conversation",
+                    risk_level="safe_metadata_only",
+                    executed=False,
+                    requires_confirmation=False,
+                    network_may_be_used=False,
+                    response_executed_as_command=False,
+                    secrets_included=False,
+                    error=desktop_turn.error,
+                )
+            )
             return AppVoiceRequestResult(
-                ok=bool(text_result.ok),
+                ok=bool(desktop_turn.ok),
                 voice_capture_succeeded=True,
                 recognition_succeeded=True,
                 recognized_text=safe_contract_text(recognized_text),
                 normalized_text=safe_contract_text(normalization.normalized_text),
                 normalization_applied=normalization_applied,
                 normalization_rules=normalization.applied_rules,
-                text_processing_succeeded=bool(text_result.ok),
+                text_processing_succeeded=bool(desktop_turn.ok),
                 result_type=(
                     "confirmation_required"
                     if text_result.requires_confirmation
-                    else ("text_processed" if text_result.ok else "text_processing_failed")
+                    else ("text_processed" if desktop_turn.ok else "text_processing_failed")
                 ),
                 category=text_result.category,
                 requires_confirmation=text_result.requires_confirmation,
-                error_code=None if text_result.ok else "text_processing_failed",
+                error_code=None if desktop_turn.ok else "text_processing_failed",
                 user_message=(
                     "Голосовой запрос обработан через обычный текстовый путь."
-                    if text_result.ok
+                    if desktop_turn.ok
                     else "Распознавание голоса прошло, но обработка текста безопасно завершилась ошибкой."
                 ),
                 text_result=text_result,
@@ -929,6 +1126,8 @@ class JarvisAppService:
                 idempotency_key=text_result.idempotency_key,
                 duplicate_suppressed=text_result.duplicate_suppressed,
                 cancellable=text_result.cancellable,
+                desktop_turn_result=desktop_turn,
+                cognitive_session_id=desktop_turn.cognitive_session_id,
             )
         except Exception as exc:
             return self._voice_error_result(
@@ -1054,7 +1253,7 @@ class JarvisAppService:
                 allow_risky_actions=False,
             )
         )
-        return self.conversational_loop.result_text_ru(result)
+        return result.answer_text_ru
 
     def provider_runtime_status(self):
         return self._provider_runtime().all_credential_statuses()
@@ -1844,6 +2043,31 @@ class JarvisAppService:
         input_text: str,
         source: AppCommandSource,
     ):
+        current_turn, context, interpreted_intent = self._cognitive_routing_probe(
+            input_text,
+            source,
+        )
+        references = self.cognitive_reference_resolver.resolve(
+            ReferenceResolutionInput(
+                current_user_turn=current_turn,
+                context=context,
+                interpreted_intent=interpreted_intent,
+            )
+        )
+        return self.cognitive_clarification_coordinator.coordinate(
+            ClarificationCoordinationInput(
+                current_user_turn=current_turn,
+                context=context,
+                interpreted_intent=interpreted_intent,
+                reference_resolution=references,
+            )
+        )
+
+    def _cognitive_routing_probe(
+        self,
+        input_text: str,
+        source: AppCommandSource,
+    ):
         session_id = "app-command-routing"
         now = "1970-01-01T00:00:00+00:00"
         current_turn = ConversationTurn(
@@ -1882,21 +2106,7 @@ class JarvisAppService:
                 source=source.value,
             )
         )
-        references = self.cognitive_reference_resolver.resolve(
-            ReferenceResolutionInput(
-                current_user_turn=current_turn,
-                context=context,
-                interpreted_intent=interpreted_intent,
-            )
-        )
-        return self.cognitive_clarification_coordinator.coordinate(
-            ClarificationCoordinationInput(
-                current_user_turn=current_turn,
-                context=context,
-                interpreted_intent=interpreted_intent,
-                reference_resolution=references,
-            )
-        )
+        return current_turn, context, interpreted_intent
 
     def _execute_resolved_command(
         self,
@@ -3380,6 +3590,29 @@ class JarvisAppService:
                     continue
                 prefix = normalized_alias.split("<text>", 1)[0].strip()
                 if prefix and normalized_text.startswith(prefix):
+                    return command
+        return None
+
+    def _match_parameterized_registry_command(
+        self,
+        text: str,
+    ) -> CommandMetadata | None:
+        """Recognize registered command shapes without executing or previewing them."""
+
+        normalized_text = self.command_registry.normalize_alias(text)
+        for command in self.command_registry.commands:
+            for alias in command.aliases:
+                normalized_alias = self.command_registry.normalize_alias(alias)
+                placeholder = re.search(r"<[^>]+>", normalized_alias)
+                if placeholder is None:
+                    continue
+                prefix = normalized_alias[: placeholder.start()].strip()
+                suffix = normalized_alias[placeholder.end() :].strip()
+                if (
+                    prefix
+                    and normalized_text.startswith(prefix)
+                    and (not suffix or normalized_text.endswith(suffix))
+                ):
                     return command
         return None
 

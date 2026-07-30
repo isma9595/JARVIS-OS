@@ -188,9 +188,11 @@ def test_preview_desktop_voice_and_task_080_081_082_083_compatibility(tmp_path):
     assert preview.executed is False
     assert service.recent_execution_operations() == ()
 
-    shell_text = DesktopShellViewModel(service).execute_command(command_for(source))
+    shell = DesktopShellViewModel(service)
+    shell_text = shell.execute_command(command_for(source))
     assert "workflow id: local_text_document_review" in shell_text
-    assert "progress percent:" in shell_text
+    assert "progress percent:" not in shell_text
+    assert "progress percent:" in shell.state.diagnostics_text
     assert processor.calls == []
     service.execute_contract(CANCEL, AppCommandSource.TEST)
 

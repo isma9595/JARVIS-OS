@@ -1,12 +1,13 @@
 # JARVIS OS Architecture
 
-Status: current implementation after TASK-101, aligned by TASK-102.
+Status: current implementation through TASK-120.
 
 JARVIS OS is currently a Windows-first assistant application. It includes a CLI,
 a Tkinter Desktop Shell prototype, an AppService boundary for application
-clients, deterministic command handling, local memory, local voice and TTS
-boundaries, provider adapters behind explicit gates, a planner, and a safe local
-TXT document-review workflow.
+clients, repository-backed cognitive conversation sessions, deterministic
+command handling, local memory, local voice and TTS boundaries, provider
+adapters behind explicit gates, a planner, and a safe local TXT
+document-review workflow.
 
 This document describes the architecture that exists now. It does not describe
 future installer, mobile, admin/support, wake-word, always-on listening, or
@@ -25,6 +26,8 @@ Primary dependency direction:
 
 ```text
 Desktop Shell -> JarvisAppService -> application DTOs and boundaries
+JarvisAppService -> Cognition session / context / intent / reference /
+clarification / response composition
 JarvisAppService -> Planner / Workflow Runner / Policy / Journal / Memory /
 Voice / Provider Runtime / CommandProcessor where needed
 CommandProcessor -> CommandResolutionService / CommandRegistry / subsystem
@@ -32,11 +35,12 @@ handlers / ActionRouter fallback
 ```
 
 The UI is not an execution authority. Desktop Shell code uses
-`JarvisAppService` for status, command listing, preview, explicit execution,
-clarification display, recent execution history, workflow history inspection,
-application activity status, and one-shot voice requests. It does not call
-`CommandProcessor`, `ActionRouter`, provider adapters, memory storage, or
-filesystem adapters directly.
+`JarvisAppService` for unified typed/one-shot voice turns, status, command
+listing, preview, explicit execution, clarification display, recent execution
+history, workflow history inspection, and application activity status. It does
+not classify conversation versus command input itself and does not call
+`CommandProcessor`, cognition services, `ActionRouter`, provider adapters,
+memory storage, or filesystem adapters directly.
 
 ## AppService
 
@@ -44,6 +48,13 @@ filesystem adapters directly.
 for UI clients. It owns public result projection into DTOs from
 `app/app_contracts.py`, safe text rendering, preview behavior, execution
 coordination, and composition of the current application subsystems.
+
+TASK-120 adds `handle_desktop_turn()` as the single Desktop-turn facade. It
+preserves pending cancellation, confirmation, and clarification controls before
+routing. Ordinary conversation invokes one full cognitive turn; registered
+commands, command-shaped requests, and control turns continue through the
+existing safe AppService execution path. A composed assistant response is
+presentation output only and is never submitted back to execution.
 
 Major responsibilities already extracted from AppService include planner
 orchestration in `app/services/planner_command_service.py`, reusable workflow
@@ -63,13 +74,47 @@ decomposition.
 
 `app/app_contracts.py` contains versioned UI-safe contract dataclasses such as
 `AppCommandPreview`, `AppCommandResult`, `AppExecutionContract`,
-`AppVoiceRequestResult`, `AppContractStatus`, `AppStatusCard`,
+`AppVoiceRequestResult`, `AppDesktopTurnResult`,
+`AppDesktopTurnDiagnostics`, `AppContractStatus`, `AppStatusCard`,
 `AppCommandCard`, and `AppContractManifest`.
 
 Contract objects use deterministic `to_dict()` projection and safe text helpers.
 They are the public application-facing shape for Desktop Shell and future UI
 clients. Internal Python objects, provider objects, credentials, microphone
 streams, and filesystem handles are not public contracts.
+
+`AppDesktopTurnResult` keeps the natural response, cognitive session id,
+structured diagnostics, and optional execution contract in separate fields.
+Desktop renders the natural response as its primary output and retains
+diagnostics in a separate state projection; it does not parse operation,
+category, risk, network, or cognitive fields from formatted response text.
+
+## Cognitive Conversation
+
+The implemented cognition layer lives in `cognition/`. Its current scope is:
+
+- `ConversationSessionService` owns session lifecycle and ordered turns.
+- `ConversationSessionRepository` is the TASK-115 persistence boundary for
+  bounded safe session records; the session service remains authoritative.
+- `ConversationContextProjector` creates bounded detached turn context.
+- deterministic intent, reference, and clarification services project
+  provider-neutral cognitive contracts.
+- `CognitiveInteractionService` orchestrates one turn and invokes
+  `ResponseComposer` exactly once.
+
+Sequential Desktop typed turns reuse one cognitive session id. Desktop one-shot
+voice passes recognized text through the same facade and same session.
+Reopening an explicitly known repository-backed session restores its available
+bounded context. Conversation turns do not create execution operations, invoke
+`CommandProcessor`, call policy/workflow execution, or create a parallel
+history or memory store.
+
+`CompatibilityResponseComposer` receives the clean conversational answer
+content. Technical `SafeConversationalLoop` fields are retained only as
+diagnostics and are not embedded into the natural assistant answer.
+
+This is not MemoryPolicy. Cognitive memory read/write policy, goals, plans,
+knowledge, and proactive behavior remain future tasks.
 
 ## Preview Versus Execution
 
@@ -253,8 +298,10 @@ Further decomposition is future work.
 ## Memory
 
 `memory/memory_manager.py` provides local JSON-backed memory through
-`LocalMemoryManager`. `memory/conversation_context.py` provides bounded
-session-only conversation context.
+`LocalMemoryManager`. The legacy `memory/conversation_context.py` remains
+available to older paths, while Desktop cognitive turns use
+`ConversationSessionService` and `ConversationContextProjector`. TASK-120 does
+not merge either mechanism into personal memory or add MemoryPolicy.
 
 AppService supports direct memory remember, recall, list, forget, and
 confirmation-protected forget-all flows. Preview recognition for supported
@@ -272,7 +319,12 @@ Voice input is explicit and one-shot by default for the Desktop Shell path.
 `voice/one_shot_vosk_recognition_bridge.py`, and
 `voice/one_shot_vosk_real_recognition.py` define local capture and Vosk
 recognition boundaries. Raw microphone audio stays inside the local capture and
-recognition path; recognized text enters AppService like typed input.
+recognition path; recognized text enters `handle_desktop_turn()` like typed
+input and uses the current Desktop cognitive session id.
+
+The older CLI and `VoiceInputManager` routes outside Desktop one-shot remain
+legacy paths. TASK-120 records their later migration as separate work and does
+not redesign them.
 
 The project does not implement always-on microphone listening or a wake-word
 service as current behavior.
@@ -313,6 +365,8 @@ Current separation:
 
 - UI: `app/desktop_shell.py`.
 - Application boundary: `app/app_service.py` and `app/app_contracts.py`.
+- Cognitive conversation: `cognition/` session, persistence, bounded context,
+  intent, reference, clarification, interaction, and response composition.
 - Application services: `app/services/`, planner command service, workflow
   runner, vertical integration, intent resolver, startup profiler.
 - Domain logic: planner, memory manager, command registry/resolution, policy,
@@ -328,6 +382,8 @@ CommandProcessor remain transitional aggregation points.
 Future work should stay focused and evidence-based:
 
 - targeted decomposition of `JarvisAppService` and `CommandProcessor`;
+- separately approved migration of the legacy CLI and non-Desktop
+  `VoiceInputManager` bypass paths;
 - normal documentation maintenance for new architecture changes;
 - optional coverage tooling and policy;
 - repository line-ending normalization in a separate maintenance task;

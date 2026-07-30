@@ -260,9 +260,10 @@ def test_desktop_shell_displays_workflow_metadata_without_bypass(tmp_path):
     text = shell.execute_command(command_for(source))
 
     assert "workflow id: local_text_document_review" in text
-    assert "operation status: awaiting_confirmation" in text
-    assert "issue count:" in text
-    assert "proposed output path:" in text
+    assert "operation status:" not in text
+    assert "operation status: awaiting_confirmation" in shell.state.diagnostics_text
+    assert "issue count:" in shell.state.diagnostics_text
+    assert "proposed output path:" in shell.state.diagnostics_text
     assert processor.calls == []
 
 

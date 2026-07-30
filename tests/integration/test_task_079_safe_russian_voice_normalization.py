@@ -28,11 +28,23 @@ class DeterministicRecognition:
 class SpyAppService(JarvisAppService):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.execute_contract_calls = []
+        self.desktop_turn_calls = []
 
-    def execute_contract(self, text, source=AppCommandSource.DESKTOP_UI):
-        self.execute_contract_calls.append((text, source))
-        return super().execute_contract(text, source)
+    def handle_desktop_turn(
+        self,
+        text,
+        source=AppCommandSource.DESKTOP_UI,
+        *,
+        session_id=None,
+        idempotency_key=None,
+    ):
+        self.desktop_turn_calls.append((text, source, session_id))
+        return super().handle_desktop_turn(
+            text,
+            source,
+            session_id=session_id,
+            idempotency_key=idempotency_key,
+        )
 
 
 class FailingProviderRouter:
@@ -66,7 +78,9 @@ def test_task_079_normalized_status_system_reaches_existing_local_appservice_pat
 
     assert recognizer.calls == 1
     assert recognizer.closed is True
-    assert service.execute_contract_calls == [("статус системы", AppCommandSource.TEST)]
+    assert service.desktop_turn_calls == [
+        ("статус системы", AppCommandSource.TEST, None)
+    ]
     assert result.ok is True
     assert result.recognized_text == "статус система"
     assert result.normalized_text == "статус системы"
@@ -90,7 +104,9 @@ def test_task_079_risky_misspelling_is_not_repaired_or_dangerously_executed():
 
     result = service.process_one_shot_voice_request(AppCommandSource.TEST)
 
-    assert service.execute_contract_calls == [("удали фал", AppCommandSource.TEST)]
+    assert service.desktop_turn_calls == [
+        ("удали фал", AppCommandSource.TEST, None)
+    ]
     assert result.recognized_text == "удали фал"
     assert result.normalized_text == "удали фал"
     assert result.normalization_applied is False

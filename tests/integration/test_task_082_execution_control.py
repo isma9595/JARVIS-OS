@@ -194,7 +194,8 @@ def test_desktop_shell_and_voice_receive_operation_metadata():
 
     text = shell.execute_command("app contracts status")
 
-    assert "operation id:" in text
+    assert "operation id:" not in text
+    assert "operation id:" in shell.state.diagnostics_text
     assert processor.calls == ["app contracts status"]
 
     voice_processor = TrackingProcessor()
