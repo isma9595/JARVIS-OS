@@ -1,13 +1,15 @@
 # JARVIS OS Architecture
 
-Status: current implementation through TASK-120.
+Status: verified runtime implementation through TASK-121, with central
+documentation aligned by TASK-122.
 
 JARVIS OS is currently a Windows-first assistant application. It includes a CLI,
 a Tkinter Desktop Shell prototype, an AppService boundary for application
-clients, repository-backed cognitive conversation sessions, deterministic
-command handling, local memory, local voice and TTS boundaries, provider
-adapters behind explicit gates, a planner, and a safe local TXT
-document-review workflow.
+clients, cognitive conversation sessions with a persistence boundary,
+deterministic command handling, local memory, local voice and TTS boundaries,
+provider adapters behind explicit gates, a planner, and a safe local TXT
+document-review workflow. Explicit repository-backed cognitive composition is
+supported, but the default Desktop composition remains in-memory.
 
 This document describes the architecture that exists now. It does not describe
 future installer, mobile, admin/support, wake-word, always-on listening, or
@@ -96,6 +98,7 @@ The implemented cognition layer lives in `cognition/`. Its current scope is:
 - `ConversationSessionService` owns session lifecycle and ordered turns.
 - `ConversationSessionRepository` is the TASK-115 persistence boundary for
   bounded safe session records; the session service remains authoritative.
+- `LocalConversationSessionRepository` is the local persistence adapter.
 - `ConversationContextProjector` creates bounded detached turn context.
 - deterministic intent, reference, and clarification services project
   provider-neutral cognitive contracts.
@@ -105,16 +108,58 @@ The implemented cognition layer lives in `cognition/`. Its current scope is:
 Sequential Desktop typed turns reuse one cognitive session id. Desktop one-shot
 voice passes recognized text through the same facade and same session.
 Reopening an explicitly known repository-backed session restores its available
-bounded context. Conversation turns do not create execution operations, invoke
-`CommandProcessor`, call policy/workflow execution, or create a parallel
-history or memory store.
+bounded context when a repository is explicitly passed. The standard
+`launch_desktop_shell()` path constructs `JarvisAppService()` without a
+repository, and its standard `ConversationSessionService` is composed with
+`repository=None`; default Desktop conversation persistence across launches is
+therefore not implemented. Conversation turns do not create execution
+operations, invoke `CommandProcessor`, call policy/workflow execution, or
+create a parallel history or memory store.
 
-`CompatibilityResponseComposer` receives the clean conversational answer
-content. Technical `SafeConversationalLoop` fields are retained only as
-diagnostics and are not embedded into the natural assistant answer.
+`CompatibilityResponseComposer` is the current default and receives the clean
+conversational answer content. It is a safe compatibility boundary around the
+existing response path, not a complete primary-provider-backed AI
+conversation. Technical `SafeConversationalLoop` fields are retained only as
+diagnostics and are not embedded into the natural assistant answer. Assistant
+response text is presentation output and is never submitted to execution.
 
-This is not MemoryPolicy. Cognitive memory read/write policy, goals, plans,
-knowledge, and proactive behavior remain future tasks.
+TASK-121 adds `MemoryPolicy` as a deterministic stateless policy contract. It
+owns eligibility and retention decisions only; it owns no memory records,
+pending approvals, repository, or persistence. It is exported but is not
+connected to AppService, Desktop, `LocalMemoryManager`, or the existing memory
+command routes.
+
+## Implementation Status Boundaries
+
+Implemented and default:
+
+- the AppService DTO boundary and unified Desktop facade for typed and one-shot
+  voice turns;
+- in-memory cognitive session lifecycle, bounded context, deterministic intent,
+  reference resolution, clarification, and compatibility response composition;
+- execution safety, confirmation, cancellation, idempotency, privacy/network
+  gates, DPAPI key storage, filesystem adapter boundaries, and the existing
+  provider adapters and test base.
+
+Implemented but opt-in or injected:
+
+- repository-backed conversation reopening through an explicitly supplied
+  `ConversationSessionRepository`, including the local repository adapter.
+
+Implemented contract but not runtime-integrated:
+
+- TASK-121 `MemoryPolicy`; it is stateless, owns no storage, and is not used by
+  current memory routes.
+
+Planned:
+
+- default Desktop conversation persistence;
+- a unified Desktop worker and shutdown lifecycle for long AI, document, and
+  TTS operations;
+- unified user-data paths and persistence health;
+- dependency manifests, pytest configuration, and CI;
+- primary-provider-backed AI conversation, followed by the product stages in
+  `docs/ROADMAP.md`.
 
 ## Preview Versus Execution
 
@@ -301,7 +346,9 @@ Further decomposition is future work.
 `LocalMemoryManager`. The legacy `memory/conversation_context.py` remains
 available to older paths, while Desktop cognitive turns use
 `ConversationSessionService` and `ConversationContextProjector`. TASK-120 does
-not merge either mechanism into personal memory or add MemoryPolicy.
+not merge either mechanism into personal memory. TASK-121 adds only the
+stateless `MemoryPolicy` decision boundary; it owns no records or persistence
+and is not integrated into runtime memory routes.
 
 AppService supports direct memory remember, recall, list, forget, and
 confirmation-protected forget-all flows. Preview recognition for supported
@@ -381,6 +428,10 @@ CommandProcessor remain transitional aggregation points.
 
 Future work should stay focused and evidence-based:
 
+- follow the normative task sequence in `docs/ROADMAP.md`;
+- preserve provider adapters and their tests while deferring complex
+  consensus/multi-provider orchestration until a useful primary AI
+  conversation exists;
 - targeted decomposition of `JarvisAppService` and `CommandProcessor`;
 - separately approved migration of the legacy CLI and non-Desktop
   `VoiceInputManager` bypass paths;
@@ -394,3 +445,7 @@ Future work should stay focused and evidence-based:
   restart-persistent recovery, and analytics remain separate future work;
 - installer, mobile, admin/support, and broader portability only after
   separately approved architecture work.
+
+A new full audit is not required for this documentation alignment. A release
+audit is required before public release, unattended automation, automatic
+message sending, or other dangerous external actions.

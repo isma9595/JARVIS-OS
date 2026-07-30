@@ -16,7 +16,10 @@ future work: targeted decomposition, documentation maintenance, optional test
 coverage tooling, repository line-ending maintenance, and Desktop Shell UX
 polish.
 
-The implementation remains transitional. `JarvisAppService` is the current
+The verified code baseline is TASK-121 at
+`3336e4cac2595ba09313c7bde51692f0bd2c667f`; TASK-122 aligns the central
+documentation with that code without changing runtime behavior. The
+implementation remains transitional. `JarvisAppService` is the current
 application-facing boundary, and major responsibilities have been extracted,
 but `app/app_service.py` and `core/command_processor.py` are still large
 orchestration modules.
@@ -27,6 +30,21 @@ orchestration modules.
 - Tkinter Desktop Shell prototype through `run_desktop.py`.
 - App-facing service boundary in `app/app_service.py`.
 - Versioned DTO contracts in `app/app_contracts.py`.
+- Cognitive conversation contracts and orchestration in `cognition/`, including
+  owned session lifecycle, bounded ordered context, deterministic intent,
+  conservative reference resolution, and stateless clarification.
+- `ConversationSessionRepository` and
+  `LocalConversationSessionRepository` persistence boundaries for
+  bounded/redacted session records. Repository-backed reopening works when a
+  repository is explicitly supplied; the standard Desktop composition does
+  not supply one and therefore remains in-memory across launches.
+- One AppService-owned Desktop cognitive turn facade shared by typed input and
+  one-shot voice, with natural response text separated from technical
+  diagnostics and optional execution metadata.
+- Deterministic stateless `MemoryPolicy` foundation for eligibility, approval,
+  retention, deduplication, supersession, sensitivity, and deletion decisions.
+  The policy owns no storage and is not yet connected to AppService, Desktop,
+  or existing memory commands.
 - Command registry metadata in `core/command_registry.py`.
 - Deterministic command resolution in `core/command_resolution_service.py`.
 - Legacy command execution facade in `core/command_processor.py`.
@@ -71,19 +89,27 @@ and supported by source and tests. Provider settings UI, installer mode, mobile
 clients, admin/support surfaces, broad portability, wake-word listening, and
 continuous autonomous automation remain future work.
 
+`CompatibilityResponseComposer` is the current default cognitive response
+composer. Ordinary Desktop cognitive conversation therefore uses the existing
+compatibility response path; it is not yet a complete AI conversation backed
+by the primary provider. Generated assistant response text is presentation
+output and is never automatically submitted for command execution.
+
 ## Architecture
 
 Current dependency direction:
 
 ```text
 Desktop Shell -> JarvisAppService -> DTOs / services / policy / planner /
-workflow / memory / voice / provider-runtime boundaries -> CommandProcessor
-legacy execution where needed
+workflow / cognition / memory / voice / provider-runtime boundaries ->
+CommandProcessor legacy execution where needed
 ```
 
 Key architecture documents:
 
 - `docs/ARCHITECTURE.md`
+- `docs/ROADMAP.md`
+- `docs/architecture/COGNITIVE_ARCHITECTURE.md`
 - `docs/JARVIS_APP_SERVICE.md`
 - `docs/APPSERVICE_CONTRACTS.md`
 - `docs/AUDIT_STATUS.md`
@@ -119,7 +145,8 @@ python -m pytest --version
 ```
 
 There is no tracked `requirements.txt`, `pyproject.toml`, or lock file in the
-current repository baseline. Do not add or upgrade dependencies without an
+current repository baseline. A repository pytest configuration and CI workflow
+are also not yet tracked. Do not add or upgrade dependencies without an
 approved task.
 
 ## Basic Configuration
@@ -243,6 +270,19 @@ git diff --check
 ## Current Limitations
 
 - `JarvisAppService` and `CommandProcessor` remain comparatively large.
+- Default Desktop conversation persistence is not wired:
+  `launch_desktop_shell()` creates `JarvisAppService()` without a conversation
+  repository, and the standard `ConversationSessionService` uses
+  `repository=None`.
+- Ordinary Desktop cognitive responses remain compatibility-based rather than
+  primary-provider-backed AI conversation.
+- `MemoryPolicy` is implemented and exported but is not used by AppService,
+  Desktop, or existing memory command routes.
+- Long-running AI, document, and TTS operations do not yet share one Desktop
+  worker lifecycle and shutdown model.
+- User data has no single authoritative directory; some paths still depend on
+  the current working directory.
+- Dependency manifests, repository pytest configuration, and CI are absent.
 - Formal coverage tooling/policy is not tracked.
 - Some line-ending normalization is deferred to repository maintenance.
 - Desktop Shell action clarity and broader copy/export controls remain future

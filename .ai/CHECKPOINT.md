@@ -1,10 +1,19 @@
 # JARVIS-OS Checkpoint
 
-- Current stable stage: TASK-076 - Safe Conversational AI Loop
-- Last stable commit: 4be498d
-- Last stable commit message: Add safe conversational loop
-- Next stage: TASK-077 - Secure Provider Runtime Integration
-- Status: in progress
+- Verified code baseline: TASK-121 - MemoryPolicy Foundation
+- Baseline commit:
+  `3336e4cac2595ba09313c7bde51692f0bd2c667f`
+- Baseline tree:
+  `9b63aeb2200f0d429cac8abed8a45d1e163dd020`
+- Documentation alignment: TASK-122 - Project Truth Baseline
+- Next runtime task: TASK-123 - Default Conversation Persistence
+- Last confirmed full pytest:
+  `2458 passed, 2 skipped in 8.76s`
+- Runtime boundary: `MemoryPolicy` is implemented but is not integrated into
+  AppService, Desktop, or existing memory command routes.
+- Persistence boundary: repository-backed cognitive sessions are available
+  through explicit injection, but default Desktop session persistence is not
+  wired.
 
 ## Approved Workflow
 

@@ -1466,22 +1466,29 @@ composition root that binds those adapters to current implementation.
 
 ## Roadmap 2.0 Summary
 
-Implementation begins after TASK-112 and should be small, reviewable, and
-sequenced so architecture, persistence, UI, and provider behavior are not mixed
-in one task. The detailed task list is maintained in `docs/ROADMAP.md`.
+Implementation after TASK-112 remains small and reviewable. Completed
+TASK-113 through TASK-121 stages are historical records and are not renumbered
+or rewritten by later planning.
 
-Milestones:
+The former future TASK-122 through TASK-139 numbering was projected design work
+and was not implemented. TASK-122 supersedes only that unimplemented sequence.
+The current normative task sequence is maintained in `docs/ROADMAP.md`.
 
-- Conversational Core: TASK-113 through TASK-116, with TASK-114 reserved for
-  the completed roadmap-alignment record.
-- Intent and Clarification: TASK-117 through TASK-119B.
-- Desktop cognitive conversation vertical slice: TASK-120.
-- Personal Memory and MemoryPolicy: TASK-121 through TASK-124.
-- Goal and Planning: TASK-125 through TASK-128.
-- Knowledge: TASK-129 through TASK-131.
-- Automation and Recovery: TASK-132 through TASK-135.
-- Proactive Assistant: TASK-136 through TASK-138.
-- Desktop 2.0 Integration: TASK-139.
+Current sequencing implications:
+
+- Desktop product work begins with TASK-123 through TASK-131: default
+  conversation persistence, worker/shutdown lifecycle, unified user-data paths,
+  reproducible environment/CI, real AI conversation, chat-first UX, and
+  document/drafting/report workflows.
+- `MemoryService` read integration is TASK-132.
+- Existing memory command migration is TASK-133.
+- Memory candidates and explicit approval are TASK-134.
+- Goal and planning services remain deferred design work until proven user
+  scenarios establish their requirements.
+- Automation requires TASK-137 durable operation/workflow summaries and
+  TASK-138 restart recovery before unattended behavior can be considered.
+- Provider adapters and their tests remain; complex multi-provider
+  orchestration is not a near-term priority.
 
 ## Open Architectural Questions
 
