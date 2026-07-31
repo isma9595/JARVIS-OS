@@ -183,6 +183,9 @@ def test_desktop_shell_uses_appservice_only_for_language():
         def list_commands(self, category=None):
             return "commands"
 
+        def resumable_conversation_session_id(self):
+            return None
+
         def handle_desktop_turn(
             self,
             text,

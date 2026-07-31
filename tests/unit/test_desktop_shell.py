@@ -389,6 +389,12 @@ class FakeAppService:
         self.activity_calls = 0
         self.activity_snapshots = [activity_snapshot()]
         self.activity_error = None
+        self.resumable_session_id = None
+        self.resumable_session_calls = 0
+
+    def resumable_conversation_session_id(self):
+        self.resumable_session_calls += 1
+        return self.resumable_session_id
 
     def status_text_ru(self):
         return "\n".join(
@@ -2604,6 +2610,29 @@ def test_execute_command_wraps_output_safely():
     assert "Desktop shell execution:" not in text
 
 
+def test_view_model_uses_app_service_resumable_session_when_id_is_not_explicit():
+    service = FakeAppService()
+    service.resumable_session_id = "cog-session-resumed"
+
+    view_model = DesktopShellViewModel(service)
+
+    assert view_model.state.cognitive_session_id == "cog-session-resumed"
+    assert service.resumable_session_calls == 1
+
+
+def test_view_model_explicit_session_id_has_priority_without_resume_lookup():
+    service = FakeAppService()
+    service.resumable_session_id = "cog-session-resumed"
+
+    view_model = DesktopShellViewModel(
+        service,
+        cognitive_session_id="cog-session-explicit",
+    )
+
+    assert view_model.state.cognitive_session_id == "cog-session-explicit"
+    assert service.resumable_session_calls == 0
+
+
 def test_process_one_shot_voice_request_uses_app_service_only():
     service = FakeAppService()
     view_model = DesktopShellViewModel(
@@ -2746,6 +2775,30 @@ def test_launch_function_handles_unavailable_tkinter_gracefully(monkeypatch):
     monkeypatch.setattr(desktop_shell, "JarvisDesktopShell", unavailable_shell)
 
     assert desktop_shell.launch_desktop_shell() is False
+
+
+def test_launch_function_uses_default_desktop_app_service_factory(monkeypatch):
+    created_service = FakeAppService()
+    calls = []
+
+    def create_service():
+        calls.append("factory")
+        return created_service
+
+    def unavailable_shell(view_model):
+        assert view_model.app_service is created_service
+        raise ImportError("tkinter unavailable")
+
+    monkeypatch.setattr(
+        desktop_shell,
+        "create_default_desktop_app_service",
+        create_service,
+        raising=False,
+    )
+    monkeypatch.setattr(desktop_shell, "JarvisDesktopShell", unavailable_shell)
+
+    assert desktop_shell.launch_desktop_shell() is False
+    assert calls == ["factory"]
 
 
 def test_no_secrets_in_view_model_outputs():

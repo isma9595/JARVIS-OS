@@ -1,15 +1,16 @@
 # JARVIS OS Architecture
 
-Status: verified runtime implementation through TASK-121, with central
-documentation aligned by TASK-122.
+Status: runtime implementation through TASK-123 on the published TASK-122
+baseline.
 
 JARVIS OS is currently a Windows-first assistant application. It includes a CLI,
 a Tkinter Desktop Shell prototype, an AppService boundary for application
 clients, cognitive conversation sessions with a persistence boundary,
 deterministic command handling, local memory, local voice and TTS boundaries,
 provider adapters behind explicit gates, a planner, and a safe local TXT
-document-review workflow. Explicit repository-backed cognitive composition is
-supported, but the default Desktop composition remains in-memory.
+document-review workflow. Standard Desktop cognitive composition is
+repository-backed, while direct `JarvisAppService()` construction remains
+in-memory unless a repository is explicitly supplied.
 
 This document describes the architecture that exists now. It does not describe
 future installer, mobile, admin/support, wake-word, always-on listening, or
@@ -107,14 +108,14 @@ The implemented cognition layer lives in `cognition/`. Its current scope is:
 
 Sequential Desktop typed turns reuse one cognitive session id. Desktop one-shot
 voice passes recognized text through the same facade and same session.
-Reopening an explicitly known repository-backed session restores its available
-bounded context when a repository is explicitly passed. The standard
-`launch_desktop_shell()` path constructs `JarvisAppService()` without a
-repository, and its standard `ConversationSessionService` is composed with
-`repository=None`; default Desktop conversation persistence across launches is
-therefore not implemented. Conversation turns do not create execution
-operations, invoke `CommandProcessor`, call policy/workflow execution, or
-create a parallel history or memory store.
+TASK-123 makes `launch_desktop_shell()` use a dedicated AppService factory that
+connects `LocalConversationSessionRepository`. On startup AppService selects
+the latest ACTIVE session by `updated_at`, then `created_at`, then `session_id`;
+CLOSED sessions are ignored. Individual malformed or unsupported records do
+not block recovery of valid records. Persisted turns contain only bounded,
+redacted summaries, not raw user text or secrets. Conversation turns do not
+create execution operations, invoke `CommandProcessor`, call policy/workflow
+execution, or create a parallel history or memory store.
 
 `CompatibilityResponseComposer` is the current default and receives the clean
 conversational answer content. It is a safe compatibility boundary around the
@@ -135,16 +136,17 @@ Implemented and default:
 
 - the AppService DTO boundary and unified Desktop facade for typed and one-shot
   voice turns;
-- in-memory cognitive session lifecycle, bounded context, deterministic intent,
-  reference resolution, clarification, and compatibility response composition;
+- default Desktop repository-backed session continuation, plus in-memory direct
+  AppService construction, bounded context, deterministic intent, reference
+  resolution, clarification, and compatibility response composition;
 - execution safety, confirmation, cancellation, idempotency, privacy/network
   gates, DPAPI key storage, filesystem adapter boundaries, and the existing
   provider adapters and test base.
 
-Implemented but opt-in or injected:
+Implemented composition boundary:
 
-- repository-backed conversation reopening through an explicitly supplied
-  `ConversationSessionRepository`, including the local repository adapter.
+- standard Desktop construction uses the local repository; direct AppService
+  construction remains in-memory unless a repository is explicitly supplied.
 
 Implemented contract but not runtime-integrated:
 
@@ -153,7 +155,6 @@ Implemented contract but not runtime-integrated:
 
 Planned:
 
-- default Desktop conversation persistence;
 - a unified Desktop worker and shutdown lifecycle for long AI, document, and
   TTS operations;
 - unified user-data paths and persistence health;

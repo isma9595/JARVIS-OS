@@ -10,6 +10,7 @@ from cognition import (
     ConversationSessionService,
     ConversationSessionStatus,
     LocalConversationSessionRepository,
+    PersistedConversationSessionRecord,
 )
 
 
@@ -29,6 +30,22 @@ class FailingRepository:
 
     def close(self):
         return None
+
+
+def _persisted_session(
+    session_id,
+    *,
+    status=ConversationSessionStatus.ACTIVE,
+    created_at="2026-07-31T10:00:00+00:00",
+    updated_at="2026-07-31T10:00:00+00:00",
+):
+    return PersistedConversationSessionRecord.from_session(
+        session_id=session_id,
+        status=status,
+        created_at=created_at,
+        updated_at=updated_at,
+        turns=(),
+    )
 
 
 def test_in_memory_behavior_remains_supported_without_repository():
@@ -95,6 +112,84 @@ def test_closed_session_remains_closed_after_restart(tmp_path):
     assert restarted.get_snapshot(session.session_id).status is ConversationSessionStatus.CLOSED
     with pytest.raises(ConversationSessionClosedError):
         restarted.append_user_turn(session.session_id, "hello", "test")
+
+
+def test_latest_active_session_snapshot_selects_most_recent_active(tmp_path):
+    repository = LocalConversationSessionRepository(tmp_path)
+    repository.save_record(
+        _persisted_session(
+            "cog-session-older",
+            updated_at="2026-07-31T10:00:00+00:00",
+        )
+    )
+    repository.save_record(
+        _persisted_session(
+            "cog-session-newer",
+            updated_at="2026-07-31T11:00:00+00:00",
+        )
+    )
+    service = ConversationSessionService(repository=repository)
+
+    snapshot = service.latest_active_session_snapshot()
+
+    assert snapshot is not None
+    assert snapshot.session_id == "cog-session-newer"
+
+
+def test_latest_active_session_snapshot_ignores_closed_and_returns_none_without_active(
+    tmp_path,
+):
+    repository = LocalConversationSessionRepository(tmp_path)
+    repository.save_record(
+        _persisted_session(
+            "cog-session-closed",
+            status=ConversationSessionStatus.CLOSED,
+            updated_at="2026-07-31T12:00:00+00:00",
+        )
+    )
+    service = ConversationSessionService(repository=repository)
+
+    assert service.latest_active_session_snapshot() is None
+
+
+def test_latest_active_session_snapshot_uses_deterministic_tie_breakers(tmp_path):
+    repository = LocalConversationSessionRepository(tmp_path)
+    for session_id, created_at in (
+        ("cog-session-a", "2026-07-31T09:00:00+00:00"),
+        ("cog-session-b", "2026-07-31T10:00:00+00:00"),
+        ("cog-session-c", "2026-07-31T10:00:00+00:00"),
+    ):
+        repository.save_record(
+            _persisted_session(
+                session_id,
+                created_at=created_at,
+                updated_at="2026-07-31T12:00:00+00:00",
+            )
+        )
+    service = ConversationSessionService(repository=repository)
+
+    snapshot = service.latest_active_session_snapshot()
+
+    assert snapshot is not None
+    assert snapshot.session_id == "cog-session-c"
+
+
+def test_latest_active_session_snapshot_is_read_only_for_state_and_storage(tmp_path):
+    repository = LocalConversationSessionRepository(tmp_path)
+    repository.save_record(_persisted_session("cog-session-active"))
+    service = ConversationSessionService(repository=repository)
+    before_snapshot = service.get_snapshot("cog-session-active")
+    before_storage = {
+        path.name: path.read_bytes()
+        for path in tmp_path.glob("*.json")
+    }
+
+    first = service.latest_active_session_snapshot()
+    second = service.latest_active_session_snapshot()
+
+    assert first == second == before_snapshot
+    assert service.get_snapshot("cog-session-active") == before_snapshot
+    assert {path.name: path.read_bytes() for path in tmp_path.glob("*.json")} == before_storage
 
 
 def test_corrupt_record_does_not_contaminate_valid_recovered_session(tmp_path):

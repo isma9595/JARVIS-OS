@@ -16,9 +16,9 @@ future work: targeted decomposition, documentation maintenance, optional test
 coverage tooling, repository line-ending maintenance, and Desktop Shell UX
 polish.
 
-The verified code baseline is TASK-121 at
-`3336e4cac2595ba09313c7bde51692f0bd2c667f`; TASK-122 aligns the central
-documentation with that code without changing runtime behavior. The
+The published baseline is TASK-122 at
+`aef9d416c9c79c86419f942d50f393808d9afc83`; TASK-123 connects default
+Desktop conversation persistence using the existing TASK-115 repository. The
 implementation remains transitional. `JarvisAppService` is the current
 application-facing boundary, and major responsibilities have been extracted,
 but `app/app_service.py` and `core/command_processor.py` are still large
@@ -35,9 +35,12 @@ orchestration modules.
   conservative reference resolution, and stateless clarification.
 - `ConversationSessionRepository` and
   `LocalConversationSessionRepository` persistence boundaries for
-  bounded/redacted session records. Repository-backed reopening works when a
-  repository is explicitly supplied; the standard Desktop composition does
-  not supply one and therefore remains in-memory across launches.
+  bounded/redacted session records. Standard Desktop composition is
+  repository-backed and automatically resumes the latest ACTIVE session;
+  direct `JarvisAppService()` construction remains in-memory.
+- Individual malformed or unsupported persisted records are rejected without
+  blocking recovery of valid sessions. Persisted turns contain bounded/redacted
+  summaries rather than raw user text or secrets.
 - One AppService-owned Desktop cognitive turn facade shared by typed input and
   one-shot voice, with natural response text separated from technical
   diagnostics and optional execution metadata.
@@ -270,10 +273,9 @@ git diff --check
 ## Current Limitations
 
 - `JarvisAppService` and `CommandProcessor` remain comparatively large.
-- Default Desktop conversation persistence is not wired:
-  `launch_desktop_shell()` creates `JarvisAppService()` without a conversation
-  repository, and the standard `ConversationSessionService` uses
-  `repository=None`.
+- Default Desktop persistence provides automatic latest-ACTIVE resume only;
+  chat history browsing, manual session selection, retention, and migration of
+  the former unversioned path are not implemented.
 - Ordinary Desktop cognitive responses remain compatibility-based rather than
   primary-provider-backed AI conversation.
 - `MemoryPolicy` is implemented and exported but is not used by AppService,

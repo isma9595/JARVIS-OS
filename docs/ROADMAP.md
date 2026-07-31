@@ -268,7 +268,7 @@ user scenarios establish their requirements.
 - Explicit non-goals: runtime code, tests, dependencies, behavior, TASK-123
   implementation, commit, or push.
 
-### TASK-123 - Default Conversation Persistence
+### TASK-123 - Default Conversation Persistence - Completed
 
 - Purpose: wire the existing conversation repository into standard
   `launch_desktop_shell()` composition so bounded safe Desktop sessions can be
@@ -279,6 +279,9 @@ user scenarios establish their requirements.
 - Completion criteria: default Desktop composition uses the approved local
   repository, restart/reopening behavior is tested, corruption fails safely,
   and `ConversationSessionService` remains authoritative.
+- Validation: corrective full acceptance passed with
+  `2476 passed, 2 skipped in 9.23s`; no TASK-123 commit is assigned in this
+  uncommitted phase.
 - Explicit non-goals: new memory storage, provider conversation, Desktop
   redesign, or execution behavior changes.
 

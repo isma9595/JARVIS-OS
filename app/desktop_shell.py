@@ -8,7 +8,11 @@ from dataclasses import dataclass
 import re
 from threading import Thread
 
-from app.app_service import AppCommandSource, JarvisAppService
+from app.app_service import (
+    AppCommandSource,
+    JarvisAppService,
+    create_default_desktop_app_service,
+)
 
 
 @dataclass(frozen=True)
@@ -85,7 +89,11 @@ class DesktopShellViewModel:
         cognitive_session_id: str | None = None,
     ):
         self.app_service = app_service
-        self._initial_cognitive_session_id = cognitive_session_id
+        self._initial_cognitive_session_id = (
+            cognitive_session_id
+            if cognitive_session_id is not None
+            else self.app_service.resumable_conversation_session_id()
+        )
         self.state = self.build_initial_state()
 
     def build_initial_state(self) -> DesktopShellState:
@@ -2467,7 +2475,7 @@ def launch_desktop_shell() -> bool:
     """Launch the tkinter desktop shell, returning False if GUI is unavailable."""
 
     try:
-        app_service = JarvisAppService()
+        app_service = create_default_desktop_app_service()
         view_model = DesktopShellViewModel(app_service)
         shell = JarvisDesktopShell(view_model)
         shell.run()

@@ -1,12 +1,17 @@
+import json
+
 import pytest
 from types import SimpleNamespace
 
 from app import AppCommandSource, JarvisAppService
+import app.app_service as app_service_module
+from app.desktop_shell import DesktopShellViewModel
 from cognition import (
     AssistantResponseType,
     ClarificationRequest,
     ClarificationReason,
     ClarificationStatus,
+    ConversationPersistenceLoadError,
     ConversationSessionClosedError,
     ConversationSessionStatus,
     IntentCategory,
@@ -130,6 +135,147 @@ def test_app_service_can_recover_sessions_through_injected_repository(tmp_path):
 
     assert snapshot.session_id == session.session_id
     assert snapshot.turn_count == 2
+
+
+def test_plain_app_service_remains_in_memory_and_has_no_resumable_session():
+    service = JarvisAppService(command_processor=FakeCommandProcessor())
+
+    assert service.cognitive_session_service._repository is None
+    assert service.resumable_conversation_session_id() is None
+
+
+def test_default_desktop_factory_connects_local_repository_without_creating_directory(
+    tmp_path,
+    monkeypatch,
+):
+    storage_dir = tmp_path / "sessions"
+    monkeypatch.setenv("JARVIS_COGNITIVE_SESSION_DIR", str(storage_dir))
+
+    service = app_service_module.create_default_desktop_app_service()
+
+    assert isinstance(
+        service.cognitive_session_service._repository,
+        LocalConversationSessionRepository,
+    )
+    assert service.cognitive_session_service._repository.storage_dir == storage_dir
+    assert service.resumable_conversation_session_id() is None
+    assert not storage_dir.exists()
+
+
+def test_default_desktop_factory_does_not_hide_invalid_storage_configuration(
+    tmp_path,
+    monkeypatch,
+):
+    storage_file = tmp_path / "not-a-directory"
+    storage_file.write_text("occupied", encoding="utf-8")
+    monkeypatch.setenv("JARVIS_COGNITIVE_SESSION_DIR", str(storage_file))
+
+    with pytest.raises(ConversationPersistenceLoadError):
+        app_service_module.create_default_desktop_app_service()
+
+
+def test_default_desktop_restart_resumes_bounded_context_without_execution_or_provider(
+    tmp_path,
+    monkeypatch,
+):
+    storage_dir = tmp_path / "sessions"
+    monkeypatch.setenv("JARVIS_COGNITIVE_SESSION_DIR", str(storage_dir))
+
+    def forbidden_provider(_self):
+        raise AssertionError("default Desktop conversation must not initialize providers")
+
+    monkeypatch.setattr(
+        JarvisAppService,
+        "_default_provider_runtime_factory",
+        forbidden_provider,
+    )
+    first_processor = FakeCommandProcessor()
+    first_service = app_service_module.create_default_desktop_app_service()
+    first_service.command_processor = first_processor
+    first_view_model = DesktopShellViewModel(first_service)
+
+    first_view_model.execute_command("What is JARVIS?")
+    session_id = first_view_model.state.cognitive_session_id
+
+    second_processor = FakeCommandProcessor()
+    second_service = app_service_module.create_default_desktop_app_service()
+    second_service.command_processor = second_processor
+    second_view_model = DesktopShellViewModel(second_service)
+    second_view_model.execute_command("what did I say?")
+    result = second_view_model.state.current_turn_result
+
+    assert session_id is not None
+    assert second_view_model.state.cognitive_session_id == session_id
+    assert result.cognitive_session_id == session_id
+    assert result.diagnostics.context_turn_count_used == 3
+    assert result.diagnostics.response_executed_as_command is False
+    assert first_processor.calls == second_processor.calls == []
+    assert first_service.execution_coordinator.journal.recent() == ()
+    assert second_service.execution_coordinator.journal.recent() == ()
+    assert first_service._provider_runtime_component.snapshot().initialized is False
+    assert second_service._provider_runtime_component.snapshot().initialized is False
+
+
+def test_default_desktop_partial_recovery_resumes_valid_active_session(
+    tmp_path,
+    monkeypatch,
+):
+    storage_dir = tmp_path / "sessions"
+    monkeypatch.setenv("JARVIS_COGNITIVE_SESSION_DIR", str(storage_dir))
+    first = app_service_module.create_default_desktop_app_service()
+    active = first.handle_conversation_turn("safe hello", AppCommandSource.TEST)
+    (storage_dir / "corrupt.json").write_text("{", encoding="utf-8")
+    unsupported = json.loads(next(storage_dir.glob("cog-session-*.json")).read_text("utf-8"))
+    unsupported["schema_version"] = 999
+    unsupported["session_id"] = "cog-session-unsupported"
+    (storage_dir / "cog-session-unsupported.json").write_text(
+        json.dumps(unsupported),
+        encoding="utf-8",
+    )
+
+    restarted = app_service_module.create_default_desktop_app_service()
+    view_model = DesktopShellViewModel(restarted)
+    load_result = restarted.cognitive_session_service.persistence_load_result
+
+    assert view_model.state.cognitive_session_id == active.session.session_id
+    assert load_result.corrupt_record_ids == ("corrupt",)
+    assert load_result.unsupported_schema_record_ids == ("cog-session-unsupported",)
+
+
+def test_default_desktop_only_rejected_or_closed_records_start_new_redacted_session(
+    tmp_path,
+    monkeypatch,
+):
+    storage_dir = tmp_path / "sessions"
+    monkeypatch.setenv("JARVIS_COGNITIVE_SESSION_DIR", str(storage_dir))
+    first = app_service_module.create_default_desktop_app_service()
+    closed = first.start_conversation_session()
+    first.close_conversation_session(closed.session_id)
+    (storage_dir / "corrupt.json").write_text("{", encoding="utf-8")
+    unsupported = json.loads((storage_dir / f"{closed.session_id}.json").read_text("utf-8"))
+    unsupported["schema_version"] = 999
+    unsupported["session_id"] = "cog-session-unsupported"
+    (storage_dir / "cog-session-unsupported.json").write_text(
+        json.dumps(unsupported),
+        encoding="utf-8",
+    )
+
+    restarted = app_service_module.create_default_desktop_app_service()
+    view_model = DesktopShellViewModel(restarted)
+
+    assert view_model.state.cognitive_session_id is None
+
+    view_model.execute_command(
+        "What should I do with api key=sk-test-1234567890secret?"
+    )
+    new_session_id = view_model.state.cognitive_session_id
+    persisted = (storage_dir / f"{new_session_id}.json").read_text("utf-8")
+
+    assert new_session_id not in {None, closed.session_id}
+    assert "sk-test-1234567890secret" not in persisted
+    assert "use api key" not in persisted
+    assert "[redacted sensitive content]" in persisted
+    assert view_model.state.current_turn_result.diagnostics.response_executed_as_command is False
 
 
 def test_app_service_conversation_turn_flows_through_context_and_composer():

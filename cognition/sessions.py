@@ -106,6 +106,24 @@ class ConversationSessionService:
         with self._lock:
             return self._snapshot_locked(session_id)
 
+    def latest_active_session_snapshot(self) -> ConversationSessionSnapshot | None:
+        with self._lock:
+            active_records = (
+                record
+                for record in self._sessions.values()
+                if record.status is ConversationSessionStatus.ACTIVE
+            )
+            latest = max(
+                active_records,
+                key=lambda record: (
+                    record.updated_at,
+                    record.created_at,
+                    record.session_id,
+                ),
+                default=None,
+            )
+            return self._snapshot_for_record(latest) if latest is not None else None
+
     def append_user_turn(self, session_id: str, text: str, source: str) -> ConversationTurn:
         return self._append_turn(session_id, ConversationRole.USER, text, source)
 

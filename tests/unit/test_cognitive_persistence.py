@@ -1,5 +1,6 @@
 import json
 from dataclasses import FrozenInstanceError
+from pathlib import Path
 
 import pytest
 
@@ -114,7 +115,9 @@ def test_local_repository_missing_storage_starts_clean_and_creates_parent(tmp_pa
     storage_dir = tmp_path / "nested" / "sessions"
     repository = LocalConversationSessionRepository(storage_dir)
 
+    assert not storage_dir.exists()
     assert repository.load_records().loaded_count == 0
+    assert not storage_dir.exists()
 
     repository.save_record(_record(_turn(text="hello unicode Привет")))
 
@@ -122,6 +125,54 @@ def test_local_repository_missing_storage_starts_clean_and_creates_parent(tmp_pa
     assert len(stored_files) == 1
     assert stored_files[0].read_text(encoding="utf-8")
     assert not list(storage_dir.glob("*.tmp"))
+
+
+def test_default_storage_uses_versioned_local_app_data_layout(tmp_path, monkeypatch):
+    local_app_data = tmp_path / "LocalAppData"
+    monkeypatch.delenv("JARVIS_COGNITIVE_SESSION_DIR", raising=False)
+    monkeypatch.setenv("LOCALAPPDATA", str(local_app_data))
+
+    repository = LocalConversationSessionRepository()
+
+    assert repository.storage_dir == (
+        local_app_data / "JARVIS-OS" / "data" / "v1" / "cognition" / "sessions"
+    )
+    assert not repository.storage_dir.exists()
+
+
+def test_storage_override_is_exact_final_path(tmp_path, monkeypatch):
+    override = tmp_path / "exact-session-store"
+    monkeypatch.setenv("JARVIS_COGNITIVE_SESSION_DIR", str(override))
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "ignored"))
+
+    repository = LocalConversationSessionRepository()
+
+    assert repository.storage_dir == override
+    assert repository.storage_dir.name != "v1"
+    assert not repository.storage_dir.exists()
+
+
+def test_fallback_storage_path_is_independent_of_current_working_directory(
+    tmp_path,
+    monkeypatch,
+):
+    home = tmp_path / "profile"
+    first_cwd = tmp_path / "first"
+    second_cwd = tmp_path / "second"
+    first_cwd.mkdir()
+    second_cwd.mkdir()
+    monkeypatch.delenv("JARVIS_COGNITIVE_SESSION_DIR", raising=False)
+    monkeypatch.delenv("LOCALAPPDATA", raising=False)
+    monkeypatch.setattr(Path, "home", classmethod(lambda cls: home))
+
+    monkeypatch.chdir(first_cwd)
+    first = LocalConversationSessionRepository().storage_dir
+    monkeypatch.chdir(second_cwd)
+    second = LocalConversationSessionRepository().storage_dir
+
+    expected = home / ".jarvis-os" / "data" / "v1" / "cognition" / "sessions"
+    assert first == second == expected
+    assert not expected.exists()
 
 
 def test_local_repository_save_load_round_trip_and_per_session_isolation(tmp_path):

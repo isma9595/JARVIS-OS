@@ -71,6 +71,7 @@ from cognition import (
     IntentInterpretationInput,
     ReferenceKind,
     ReferenceResolutionInput,
+    LocalConversationSessionRepository,
     RuleBasedIntentInterpreter,
     RuleBasedClarificationCoordinator,
     RuleBasedReferenceResolver,
@@ -1220,6 +1221,10 @@ class JarvisAppService:
 
     def conversation_session_snapshot(self, session_id: str) -> ConversationSessionSnapshot:
         return self.cognitive_session_service.get_snapshot(session_id)
+
+    def resumable_conversation_session_id(self) -> str | None:
+        snapshot = self.cognitive_session_service.latest_active_session_snapshot()
+        return snapshot.session_id if snapshot is not None else None
 
     def handle_conversation_turn(
         self,
@@ -4985,3 +4990,11 @@ class JarvisAppService:
         if isinstance(source, dict):
             return source.get(key, default)
         return getattr(source, key, default)
+
+
+def create_default_desktop_app_service() -> JarvisAppService:
+    """Create the standard Desktop composition with local session persistence."""
+
+    return JarvisAppService(
+        cognitive_session_repository=LocalConversationSessionRepository(),
+    )

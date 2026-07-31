@@ -23,6 +23,7 @@ from cognition.contracts import (
 
 
 CONVERSATION_SESSION_SCHEMA_VERSION = 1
+CONVERSATION_SESSION_STORAGE_LAYOUT_VERSION = 1
 MAX_PERSISTED_TURN_SUMMARY_LENGTH = 160
 
 _SOURCE_PATTERN = re.compile(r"[^a-z0-9_.-]+")
@@ -326,10 +327,16 @@ def _default_storage_dir() -> Path:
     configured = os.environ.get("JARVIS_COGNITIVE_SESSION_DIR")
     if configured:
         return Path(configured)
+    versioned_data_path = (
+        Path("data")
+        / f"v{CONVERSATION_SESSION_STORAGE_LAYOUT_VERSION}"
+        / "cognition"
+        / "sessions"
+    )
     local_app_data = os.environ.get("LOCALAPPDATA")
     if local_app_data:
-        return Path(local_app_data) / "JARVIS-OS" / "cognition" / "sessions"
-    return Path.home() / ".jarvis-os" / "cognition" / "sessions"
+        return Path(local_app_data) / "JARVIS-OS" / versioned_data_path
+    return Path.home() / ".jarvis-os" / versioned_data_path
 
 
 def _record_filename(session_id: str) -> str:

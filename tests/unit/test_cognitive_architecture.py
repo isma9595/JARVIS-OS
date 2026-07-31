@@ -6,6 +6,7 @@ from cognition import RuleBasedClarificationCoordinator
 
 
 COGNITION_ROOT = Path("cognition")
+DESKTOP_SHELL_PATH = Path("app/desktop_shell.py")
 
 
 def _imports_for(path: Path) -> set[str]:
@@ -155,6 +156,23 @@ def test_interaction_service_owns_no_repository_or_session_cache():
 
     assert "repository" not in source
     assert "_sessions" not in source
+
+
+def test_desktop_shell_has_no_cognition_or_repository_imports():
+    imports = _imports_for(DESKTOP_SHELL_PATH)
+
+    assert not any(module == "cognition" or module.startswith("cognition.") for module in imports)
+    assert "LocalConversationSessionRepository" not in DESKTOP_SHELL_PATH.read_text(
+        encoding="utf-8"
+    )
+
+
+def test_desktop_shell_owns_no_parallel_cognitive_session_cache_or_history():
+    source = DESKTOP_SHELL_PATH.read_text(encoding="utf-8")
+
+    assert "_cognitive_sessions" not in source
+    assert "_conversation_history" not in source
+    assert "_session_repository" not in source
 
 
 def test_context_projector_and_response_composer_own_no_durable_state_or_token_counter():

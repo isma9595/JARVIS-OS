@@ -1,7 +1,7 @@
 # JARVIS Cognitive Architecture
 
 Status: target architecture report from TASK-112 with a current-state addendum
-through TASK-120. Target sections remain design guidance; sections explicitly
+through TASK-123. Target sections remain design guidance; sections explicitly
 labelled current describe the implemented repository state.
 
 ## Executive Decision
@@ -106,7 +106,7 @@ TASK-111 history:
   planning checkpoint without its own task file. TASK-112 must not invent
   implementation work for TASK-111.
 
-## Implemented State After TASK-115 Through TASK-120
+## Implemented State After TASK-115 Through TASK-123
 
 The first conversational vertical slice is now implemented:
 
@@ -123,6 +123,12 @@ The first conversational vertical slice is now implemented:
   and Desktop one-shot voice application facade. Only input classified as
   conversation invokes the full `CognitiveInteractionService.handle_turn()`;
   known commands and control turns continue through AppService execution.
+- TASK-121 added the stateless `MemoryPolicy` contract; it remains
+  runtime-unintegrated and owns no storage.
+- TASK-123 connects `LocalConversationSessionRepository` only in standard
+  Desktop composition. AppService selects the latest ACTIVE session through
+  `ConversationSessionService`; direct AppService construction remains
+  in-memory, and session ownership does not change.
 - `DesktopShellState` owns only presentation state and the current cognitive
   session id. Natural response text and structured diagnostics are projected
   separately; Desktop does not parse a formatted execution report to recover
@@ -131,9 +137,9 @@ The first conversational vertical slice is now implemented:
   `CommandProcessor`, enter policy/workflow execution, or route the composed
   assistant response back as command input.
 
-Memory policy, cognitive memory reads/writes, goals, planning, knowledge, and
-proactive behavior remain future work. TASK-120 does not introduce or imply
-`MemoryPolicy`.
+Cognitive memory reads/writes, goals, planning, knowledge, and proactive
+behavior remain future work. The implemented `MemoryPolicy` contract is still
+not integrated into runtime memory routes.
 
 ## Current Request Path
 
@@ -203,7 +209,7 @@ Desktop
 | Execution lifecycle | `ExecutionCoordinator` and `ExecutionJournal` | Own operation IDs, idempotency, cancellation tokens, lifecycle status, bounded in-memory journal. |
 | Workflow lifecycle | `WorkflowRunner` and `workflows/contracts.py` | Own run/step state, resume/cancel eligibility, cooperative cancellation, run history projection. Current state is in-memory. |
 | Activity projection | `ApplicationActivityTracker` below AppService | Read-only projection from execution operations, not an execution owner. |
-| Persistence | `LocalConversationSessionRepository`, `LocalMemoryManager`, user profile manager, Vosk settings, secure key storage; execution journal and planner/workflow state are mostly in-memory | Conversation persistence stores bounded safe session records; it is not MemoryPolicy or a second session owner. |
+| Persistence | `LocalConversationSessionRepository`, `LocalMemoryManager`, user profile manager, Vosk settings, secure key storage; execution journal and planner/workflow state are mostly in-memory | TASK-123 connects bounded safe conversation records to default Desktop composition; persistence is not MemoryPolicy or a second session owner. |
 | Desktop presentation | `app/desktop_shell.py` | Uses AppService DTOs, preserves one cognitive session id, and projects natural response separately from diagnostics; it does not import cognitive/workflow/journal/provider/filesystem/memory internals. |
 | Confirmation and safety policy | `PolicyDecisionBoundary`, AppService pending confirmation state, workflow runner policy checks, memory forget-all confirmation, voice allowlist/confirmation | Clarification is explicitly separate from dangerous-action confirmation. |
 
@@ -1368,10 +1374,11 @@ execution authority.
 
 ### DesktopShellState
 
-Desktop remains presentation-only. As of TASK-120 it calls
+Desktop remains presentation-only. As of TASK-123 it calls
 `handle_desktop_turn()`, stores the current cognitive session id, renders
 natural response text, and keeps structured diagnostics in a separate state
-projection. It must not import cognitive internals. Future Desktop work may add
+projection. Initial resume selection is requested only through AppService. It
+must not import cognitive internals. Future Desktop work may add
 plans and suggestions only through AppService DTOs.
 
 ### AI Providers
@@ -1476,10 +1483,11 @@ The current normative task sequence is maintained in `docs/ROADMAP.md`.
 
 Current sequencing implications:
 
-- Desktop product work begins with TASK-123 through TASK-131: default
-  conversation persistence, worker/shutdown lifecycle, unified user-data paths,
-  reproducible environment/CI, real AI conversation, chat-first UX, and
-  document/drafting/report workflows.
+- TASK-123 establishes default conversation persistence. TASK-124 remains the
+  next product-runtime stage: the Desktop worker/shutdown lifecycle, followed
+  by unified user-data paths, reproducible environment/CI, real AI
+  conversation, chat-first UX, and document/drafting/report workflows through
+  TASK-131.
 - `MemoryService` read integration is TASK-132.
 - Existing memory command migration is TASK-133.
 - Memory candidates and explicit approval are TASK-134.
