@@ -1,7 +1,7 @@
 # JARVIS Cognitive Architecture
 
 Status: target architecture report from TASK-112 with a current-state addendum
-through TASK-123. Target sections remain design guidance; sections explicitly
+through TASK-124. Target sections remain design guidance; sections explicitly
 labelled current describe the implemented repository state.
 
 ## Executive Decision
@@ -106,7 +106,7 @@ TASK-111 history:
   planning checkpoint without its own task file. TASK-112 must not invent
   implementation work for TASK-111.
 
-## Implemented State After TASK-115 Through TASK-123
+## Implemented State After TASK-115 Through TASK-124
 
 The first conversational vertical slice is now implemented:
 
@@ -129,6 +129,12 @@ The first conversational vertical slice is now implemented:
   Desktop composition. AppService selects the latest ACTIVE session through
   `ConversationSessionService`; direct AppService construction remains
   in-memory, and session ownership does not change.
+- TASK-124 adds one Desktop scheduling/shutdown worker for typed, voice, and
+  workflow-resume GUI entry points. It receives no repository or cognitive
+  internals; session, cognition, execution, and workflow ownership do not move.
+  Shutdown termination is independent of Tk completion consumption, while any
+  retained completion remains exactly-once retrievable and the post-mainloop
+  fallback discards it without presentation apply.
 - `DesktopShellState` owns only presentation state and the current cognitive
   session id. Natural response text and structured diagnostics are projected
   separately; Desktop does not parse a formatted execution report to recover
@@ -1483,9 +1489,9 @@ The current normative task sequence is maintained in `docs/ROADMAP.md`.
 
 Current sequencing implications:
 
-- TASK-123 establishes default conversation persistence. TASK-124 remains the
-  next product-runtime stage: the Desktop worker/shutdown lifecycle, followed
-  by unified user-data paths, reproducible environment/CI, real AI
+- TASK-123 establishes default conversation persistence and TASK-124 adds the
+  Desktop worker/shutdown boundary. TASK-125 remains the next product-runtime
+  stage: unified user-data paths, followed by reproducible environment/CI, real AI
   conversation, chat-first UX, and document/drafting/report workflows through
   TASK-131.
 - `MemoryService` read integration is TASK-132.

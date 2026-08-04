@@ -280,12 +280,11 @@ user scenarios establish their requirements.
   repository, restart/reopening behavior is tested, corruption fails safely,
   and `ConversationSessionService` remains authoritative.
 - Validation: corrective full acceptance passed with
-  `2476 passed, 2 skipped in 9.23s`; no TASK-123 commit is assigned in this
-  uncommitted phase.
+  `2476 passed, 2 skipped in 9.23s`; published as commit `88e7a4d`.
 - Explicit non-goals: new memory storage, provider conversation, Desktop
   redesign, or execution behavior changes.
 
-### TASK-124 - Desktop Interaction Worker and Shutdown
+### TASK-124 - Desktop Interaction Worker and Shutdown - Completed
 
 - Purpose: give long AI, document, and TTS operations one bounded Desktop
   worker lifecycle with clear cancellation and shutdown behavior.
@@ -297,6 +296,14 @@ user scenarios establish their requirements.
   executed twice.
 - Explicit non-goals: unattended background automation or forced process/thread
   termination.
+- Historical pre-audit validation: full acceptance passed with
+  `2500 passed, 2 skipped in 10.41s`.
+- First audit remediation validation: the single post-remediation full acceptance
+  passed with `2504 passed, 2 skipped in 20.64s`.
+- Second audit remediation rejects cancellation after completion publication,
+  distinguishes retained active metadata from cancellation availability, and
+  makes non-daemon worker-test cleanup failure-safe. Its single full acceptance
+  passed with `2506 passed, 2 skipped in 24.68s`.
 
 ### TASK-125 - Unified User Data and Persistence Health
 

@@ -4,14 +4,20 @@ The shell is a UI boundary only. It talks to JarvisAppService for status,
 registry browsing, preview, and explicit execution.
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import re
-from threading import Thread
 
 from app.app_service import (
     AppCommandSource,
     JarvisAppService,
     create_default_desktop_app_service,
+)
+from app.desktop_interaction_worker import (
+    DesktopInteractionCompletion,
+    DesktopInteractionCompletionStatus,
+    DesktopInteractionKind,
+    DesktopInteractionLifecycle,
+    DesktopInteractionWorker,
 )
 
 
@@ -66,9 +72,23 @@ class DesktopShellState:
     workflow_cancellation_text: str
     workflow_cancellation_available: bool
     workflow_cancellation_in_progress: bool
+    interaction_busy: bool
+    active_interaction_id: str | None
+    active_interaction_kind: str | None
+    interaction_cancellation_requested: bool
+    interaction_completion_pending: bool
+    shutdown_in_progress: bool
+    interaction_status_text: str
     last_error: str | None
     ui_ready: bool
     safe_mode: bool
+
+
+@dataclass(frozen=True)
+class _DesktopInteractionPayload:
+    kind: DesktopInteractionKind
+    input_value: str | None = field(default=None, repr=False)
+    result: object = field(default=None, repr=False)
 
 
 class DesktopShellViewModel:
@@ -165,6 +185,13 @@ class DesktopShellViewModel:
             workflow_cancellation_text=workflow["workflow_cancellation_text"],
             workflow_cancellation_available=workflow["workflow_cancellation_available"],
             workflow_cancellation_in_progress=False,
+            interaction_busy=False,
+            active_interaction_id=None,
+            active_interaction_kind=None,
+            interaction_cancellation_requested=False,
+            interaction_completion_pending=False,
+            shutdown_in_progress=False,
+            interaction_status_text="Desktop interaction is idle.",
             last_error=None,
             ui_ready=True,
             safe_mode=True,
@@ -210,12 +237,23 @@ class DesktopShellViewModel:
             return error
 
     def execute_command(self, text: str) -> str:
+        captured_text = str(text or "")
+        session_id = self.state.cognitive_session_id
         try:
-            result = self.app_service.handle_desktop_turn(
-                text,
-                AppCommandSource.DESKTOP_UI,
-                session_id=self.state.cognitive_session_id,
-            )
+            result = self.perform_execute_command(captured_text, session_id)
+            return self.apply_execute_command(captured_text, result=result)
+        except Exception as exc:
+            return self.apply_execute_command(captured_text, exception=exc)
+
+    def perform_execute_command(self, text: str, session_id: str | None):
+        return self.app_service.handle_desktop_turn(
+            text,
+            AppCommandSource.DESKTOP_UI,
+            session_id=session_id,
+        )
+
+    def apply_execute_command(self, text: str, *, result=None, exception=None) -> str:
+        if exception is None:
             output_text = self._safe_text(result.response_text)
             diagnostics_text = self._format_desktop_turn_diagnostics(result)
             turn_projection = self._desktop_turn_state_projection(
@@ -228,24 +266,33 @@ class DesktopShellViewModel:
                 **turn_projection,
             )
             return output_text
-        except Exception as exc:
-            error = self._safe_error(exc)
-            self.state = self._replace(
-                **self._empty_turn_state_projection(
-                    output_text=error,
-                    diagnostics_text="Desktop turn failed safely.",
-                    cognitive_session_id=self.state.cognitive_session_id,
-                    last_error=error,
-                )
+        error = self._safe_error(exception)
+        self.state = self._replace(
+            **self._empty_turn_state_projection(
+                output_text=error,
+                diagnostics_text="Desktop turn failed safely.",
+                cognitive_session_id=self.state.cognitive_session_id,
+                last_error=error,
             )
-            return error
+        )
+        return error
 
     def process_one_shot_voice_request(self) -> str:
+        session_id = self.state.cognitive_session_id
         try:
-            result = self.app_service.process_one_shot_voice_request(
-                AppCommandSource.DESKTOP_UI,
-                session_id=self.state.cognitive_session_id,
-            )
+            result = self.perform_one_shot_voice_request(session_id)
+            return self.apply_one_shot_voice_request(result=result)
+        except Exception as exc:
+            return self.apply_one_shot_voice_request(exception=exc)
+
+    def perform_one_shot_voice_request(self, session_id: str | None):
+        return self.app_service.process_one_shot_voice_request(
+            AppCommandSource.DESKTOP_UI,
+            session_id=session_id,
+        )
+
+    def apply_one_shot_voice_request(self, *, result=None, exception=None) -> str:
+        if exception is None:
             desktop_turn = getattr(result, "desktop_turn_result", None)
             text_result = getattr(result, "text_result", None)
             output_text = self._safe_text(
@@ -287,17 +334,16 @@ class DesktopShellViewModel:
                 **turn_projection,
             )
             return output_text
-        except Exception as exc:
-            error = self._safe_error(exc)
-            self.state = self._replace(
-                **self._empty_turn_state_projection(
-                    output_text=error,
-                    diagnostics_text="Desktop voice turn failed safely.",
-                    cognitive_session_id=self.state.cognitive_session_id,
-                    last_error=error,
-                )
+        error = self._safe_error(exception)
+        self.state = self._replace(
+            **self._empty_turn_state_projection(
+                output_text=error,
+                diagnostics_text="Desktop voice turn failed safely.",
+                cognitive_session_id=self.state.cognitive_session_id,
+                last_error=error,
             )
-            return error
+        )
+        return error
 
     def clear_output(self) -> str:
         output_text = "Output cleared. No command has been executed by clear."
@@ -489,10 +535,20 @@ class DesktopShellViewModel:
         )
 
     def resume_selected_workflow_run(self, *, confirmed: bool) -> str:
+        run_id = self.prepare_workflow_resume(confirmed=confirmed)
+        if run_id is None:
+            return self.state.workflow_resume_text
+        try:
+            result = self.perform_workflow_resume(run_id)
+            return self.apply_workflow_resume(run_id, result=result)
+        except Exception as exc:
+            return self.apply_workflow_resume(run_id, exception=exc)
+
+    def prepare_workflow_resume(self, *, confirmed: bool) -> str | None:
         if self.state.workflow_resume_in_progress:
             text = "Workflow resume is already in progress."
             self.state = self._replace(workflow_resume_text=text, last_error=text)
-            return text
+            return None
         run = self.state.selected_workflow_run
         run_id = (
             getattr(run, "run_id", None) or getattr(run, "operation_id", None)
@@ -506,18 +562,23 @@ class DesktopShellViewModel:
                 workflow_resume_available=False,
                 last_error=None,
             )
-            return text
+            return None
         if not self.state.workflow_resume_available:
             text = self.state.workflow_resume_text or "Resume unavailable for this workflow run."
             self.state = self._replace(workflow_resume_text=text, last_error=None)
-            return text
+            return None
         if not confirmed:
             text = "Workflow resume cancelled."
             self.state = self._replace(workflow_resume_text=text, last_error=None)
-            return text
+            return None
         self.state = self._replace(workflow_resume_in_progress=True)
-        try:
-            result = self.app_service.resume_workflow_run(str(run_id))
+        return str(run_id)
+
+    def perform_workflow_resume(self, run_id: str):
+        return self.app_service.resume_workflow_run(run_id)
+
+    def apply_workflow_resume(self, run_id: str, *, result=None, exception=None) -> str:
+        if exception is None:
             text = self._format_workflow_resume_result(result)
             preferred_id = getattr(result, "resumed_run_id", None) or str(run_id)
             workflow = self._load_workflow_state(preferred_selected_id=preferred_id)
@@ -540,16 +601,15 @@ class DesktopShellViewModel:
                 last_error=None if getattr(result, "ok", False) else text,
             )
             return text
-        except Exception:
-            text = "Workflow resume failed safely."
-            self.state = self._replace(
-                workflow_resume_text=text,
-                workflow_resume_available=False,
-                workflow_resume_in_progress=False,
-                output_text=text,
-                last_error=text,
-            )
-            return text
+        text = "Workflow resume failed safely."
+        self.state = self._replace(
+            workflow_resume_text=text,
+            workflow_resume_available=False,
+            workflow_resume_in_progress=False,
+            output_text=text,
+            last_error=text,
+        )
+        return text
 
     def workflow_cancellation_confirmation_text(self) -> str:
         run = self.state.selected_workflow_run
@@ -1669,16 +1729,25 @@ class JarvisDesktopShell:
         "border": "#2b3440",
     }
 
-    def __init__(self, view_model: DesktopShellViewModel, tk_module=None):
+    def __init__(
+        self,
+        view_model: DesktopShellViewModel,
+        tk_module=None,
+        interaction_worker: DesktopInteractionWorker | None = None,
+    ):
         self.view_model = view_model
         self.tk = tk_module or self._import_tkinter()
+        self.interaction_worker = interaction_worker or DesktopInteractionWorker()
+        self._interaction_after_id = None
+        self._close_requested = False
+        self._destroyed = False
         self.root = self.tk.Tk()
         self.root.title("JARVIS OS")
         self.root.geometry("1000x700")
         self.root.minsize(900, 600)
         self.root.configure(bg=self.COLORS["bg"])
-        self._voice_worker_active = False
         self._build()
+        self.root.protocol("WM_DELETE_WINDOW", self._on_close)
         self._render_state()
 
     @staticmethod
@@ -1688,7 +1757,13 @@ class JarvisDesktopShell:
         return tk
 
     def run(self) -> None:
-        self.root.mainloop()
+        try:
+            self.root.mainloop()
+        finally:
+            self.interaction_worker.request_cancel()
+            self.interaction_worker.request_shutdown()
+            self.interaction_worker.join()
+            self.interaction_worker.take_completion()
 
     def _build(self) -> None:
         tk = self.tk
@@ -1819,7 +1894,7 @@ class JarvisDesktopShell:
             padx=12,
             pady=8,
         ).grid(row=1, column=1, padx=(10, 4), pady=(8, 0))
-        tk.Button(
+        self.execute_button = tk.Button(
             input_panel,
             text="Execute",
             command=self._on_execute,
@@ -1828,7 +1903,8 @@ class JarvisDesktopShell:
             relief="flat",
             padx=12,
             pady=8,
-        ).grid(row=1, column=2, padx=(4, 0), pady=(8, 0))
+        )
+        self.execute_button.grid(row=1, column=2, padx=(4, 0), pady=(8, 0))
         self.voice_button = tk.Button(
             input_panel,
             text="Микрофон",
@@ -1842,6 +1918,18 @@ class JarvisDesktopShell:
             pady=8,
         )
         self.voice_button.grid(row=1, column=3, padx=(8, 0), pady=(8, 0))
+        self.interaction_cancel_button = tk.Button(
+            input_panel,
+            text="Отмена операции",
+            command=self._on_interaction_cancel,
+            bg=self.COLORS["panel_alt"],
+            fg=self.COLORS["warning"],
+            relief="flat",
+            padx=12,
+            pady=8,
+            state="disabled",
+        )
+        self.interaction_cancel_button.grid(row=1, column=4, padx=(8, 0), pady=(8, 0))
 
         note = tk.Label(
             main,
@@ -2220,7 +2308,12 @@ class JarvisDesktopShell:
 
     def _render_state(self) -> None:
         state = self.view_model.state
-        self._set_text(self.status_box, state.status_text)
+        self._set_text(
+            self.status_box,
+            state.status_text
+            + "\n\nDesktop interaction:\n- "
+            + state.interaction_status_text,
+        )
         self._set_text(self.preview_box, state.preview_text)
         self._set_text(self.output_box, state.output_text)
         self._set_text(self.diagnostics_box, state.diagnostics_text)
@@ -2231,6 +2324,24 @@ class JarvisDesktopShell:
         )
         self._render_history_state(state)
         self._render_workflow_state(state)
+        self._render_interaction_controls(state)
+
+    def _render_interaction_controls(self, state) -> None:
+        busy = bool(state.interaction_busy or state.shutdown_in_progress)
+        self.execute_button.configure(state="disabled" if busy else "normal")
+        self.voice_button.configure(state="disabled" if busy else "normal")
+        resume_enabled = state.workflow_resume_available and not busy
+        self.workflow_resume_button.configure(
+            state="normal" if resume_enabled else "disabled"
+        )
+        self.interaction_cancel_button.configure(
+            state="normal"
+            if state.interaction_busy
+            and not state.interaction_cancellation_requested
+            and not state.interaction_completion_pending
+            and not state.shutdown_in_progress
+            else "disabled"
+        )
 
     def _render_history_state(self, state) -> None:
         if self.history_search_var.get() != state.history_search_query:
@@ -2293,6 +2404,8 @@ class JarvisDesktopShell:
             "normal"
             if getattr(state, "workflow_resume_available", False)
             and not getattr(state, "workflow_resume_in_progress", False)
+            and not getattr(state, "interaction_busy", False)
+            and not getattr(state, "shutdown_in_progress", False)
             else "disabled"
         )
         self.workflow_resume_button.configure(state=resume_state)
@@ -2320,41 +2433,186 @@ class JarvisDesktopShell:
         self._render_state()
 
     def _on_execute(self) -> None:
-        self.view_model.execute_command(self._command_input())
-        self.view_model.refresh_application_activity()
-        self.view_model.refresh_execution_history()
-        self.view_model.refresh_workflow_history()
-        self._render_state()
+        text = self._command_input()
+        session_id = self.view_model.state.cognitive_session_id
+        self._submit_interaction(
+            DesktopInteractionKind.TYPED_TURN,
+            lambda _token: _DesktopInteractionPayload(
+                DesktopInteractionKind.TYPED_TURN,
+                text,
+                self.view_model.perform_execute_command(text, session_id),
+            ),
+        )
 
     def _on_voice_once(self) -> None:
-        if self._voice_worker_active:
-            return
-        self._voice_worker_active = True
-        self.voice_button.configure(state="disabled")
-        self.view_model.state = self.view_model._replace(
-            output_text=(
-                "Одноразовый голосовой запрос активен.\n"
-                "Запись и локальное распознавание запущены после явного нажатия кнопки."
+        session_id = self.view_model.state.cognitive_session_id
+        self._submit_interaction(
+            DesktopInteractionKind.VOICE_REQUEST,
+            lambda _token: _DesktopInteractionPayload(
+                DesktopInteractionKind.VOICE_REQUEST,
+                result=self.view_model.perform_one_shot_voice_request(session_id),
             ),
+        )
+
+    def _submit_interaction(self, kind, operation):
+        submission = self.interaction_worker.submit(kind, operation)
+        if not submission.accepted:
+            if DesktopInteractionKind(kind) is DesktopInteractionKind.WORKFLOW_RESUME:
+                self.view_model.state = self.view_model._replace(
+                    workflow_resume_in_progress=False
+                )
+            self.view_model.state = self.view_model._replace(
+                interaction_status_text="Операция уже выполняется.",
+                last_error="Операция уже выполняется.",
+            )
+            self._render_state()
+            return submission
+        snapshot = self.interaction_worker.snapshot()
+        self.view_model.state = self.view_model._replace(
+            interaction_busy=True,
+            active_interaction_id=submission.interaction_id,
+            active_interaction_kind=submission.kind.value,
+            interaction_cancellation_requested=snapshot.cancellation_requested,
+            interaction_completion_pending=snapshot.completion_pending,
+            interaction_status_text="Операция выполняется.",
             last_error=None,
         )
         self._render_state()
+        self._schedule_interaction_poll()
+        return submission
 
-        def worker():
-            try:
-                self.view_model.process_one_shot_voice_request()
-            finally:
-                self.root.after(0, self._finish_voice_once)
+    def _schedule_interaction_poll(self) -> None:
+        if self._destroyed or self._interaction_after_id is not None:
+            return
+        self._interaction_after_id = self.root.after(25, self._poll_interaction_completion)
 
-        Thread(target=worker, daemon=True).start()
+    def _poll_interaction_completion(self) -> None:
+        self._interaction_after_id = None
+        if self._destroyed:
+            return
+        active_id = self.view_model.state.active_interaction_id
+        completion = self.interaction_worker.take_completion(active_id)
+        if completion is not None:
+            self._apply_interaction_completion(completion)
+        snapshot = self.interaction_worker.snapshot()
+        if self._close_requested and snapshot.lifecycle is DesktopInteractionLifecycle.STOPPED:
+            if snapshot.completion_pending:
+                completion = self.interaction_worker.take_completion(active_id)
+                if completion is not None:
+                    self._apply_interaction_completion(completion)
+                snapshot = self.interaction_worker.snapshot()
+            if not snapshot.completion_pending:
+                self._destroy_once()
+                return
+        if snapshot.completion_pending or snapshot.lifecycle in {
+            DesktopInteractionLifecycle.BUSY,
+            DesktopInteractionLifecycle.SHUTTING_DOWN,
+        }:
+            self._schedule_interaction_poll()
 
-    def _finish_voice_once(self) -> None:
-        self._voice_worker_active = False
-        self.voice_button.configure(state="normal")
-        self.view_model.refresh_application_activity()
-        self.view_model.refresh_execution_history()
-        self.view_model.refresh_workflow_history()
+    def _apply_interaction_completion(
+        self, completion: DesktopInteractionCompletion
+    ) -> bool:
+        if completion.interaction_id != self.view_model.state.active_interaction_id:
+            return False
+        if not self._close_requested:
+            payload = completion.result
+            kind = completion.kind
+            exception = completion.exception
+            if completion.status is DesktopInteractionCompletionStatus.COMPLETED:
+                if kind is DesktopInteractionKind.TYPED_TURN:
+                    self.view_model.apply_execute_command(
+                        payload.input_value, result=payload.result
+                    )
+                elif kind is DesktopInteractionKind.VOICE_REQUEST:
+                    self.view_model.apply_one_shot_voice_request(result=payload.result)
+                else:
+                    self.view_model.apply_workflow_resume(
+                        payload.input_value, result=payload.result
+                    )
+            elif completion.status is DesktopInteractionCompletionStatus.CANCELLED:
+                self.view_model.state = self.view_model._replace(
+                    output_text="Операция отменена кооперативно.",
+                    workflow_resume_in_progress=False,
+                    last_error=None,
+                )
+            elif kind is DesktopInteractionKind.TYPED_TURN:
+                self.view_model.apply_execute_command(
+                    "", exception=RuntimeError("desktop_interaction_failed")
+                )
+            elif kind is DesktopInteractionKind.VOICE_REQUEST:
+                self.view_model.apply_one_shot_voice_request(
+                    exception=RuntimeError("desktop_interaction_failed")
+                )
+            else:
+                self.view_model.apply_workflow_resume("", exception=exception)
+            self.view_model.refresh_application_activity()
+            self.view_model.refresh_execution_history()
+            self.view_model.refresh_workflow_history()
+        status_text = (
+            "Операция успела завершиться; отмена была запрошена слишком поздно."
+            if completion.status is DesktopInteractionCompletionStatus.COMPLETED
+            and completion.cancellation_requested
+            else "Операция отменена кооперативно."
+            if completion.status is DesktopInteractionCompletionStatus.CANCELLED
+            else "Операция завершена."
+        )
+        if self._close_requested:
+            status_text = "Ожидается безопасное завершение перед закрытием."
+        self.view_model.state = self.view_model._replace(
+            interaction_busy=False,
+            active_interaction_id=None,
+            active_interaction_kind=None,
+            interaction_cancellation_requested=False,
+            interaction_completion_pending=False,
+            workflow_resume_in_progress=False,
+            interaction_status_text=status_text,
+        )
         self._render_state()
+        return True
+
+    def _on_interaction_cancel(self) -> None:
+        interaction_id = self.view_model.state.active_interaction_id
+        result = self.interaction_worker.request_cancel(interaction_id)
+        snapshot = self.interaction_worker.snapshot()
+        updates = {
+            "interaction_cancellation_requested": snapshot.cancellation_requested,
+            "interaction_completion_pending": snapshot.completion_pending,
+        }
+        if result.accepted:
+            updates["interaction_status_text"] = "Отмена запрошена."
+        self.view_model.state = self.view_model._replace(**updates)
+        self._render_state()
+
+    def _on_close(self) -> None:
+        if self._destroyed or self._close_requested:
+            return
+        self._close_requested = True
+        self.interaction_worker.request_cancel(
+            self.view_model.state.active_interaction_id
+        )
+        self.interaction_worker.request_shutdown()
+        snapshot = self.interaction_worker.snapshot()
+        self.view_model.state = self.view_model._replace(
+            interaction_cancellation_requested=snapshot.cancellation_requested,
+            interaction_completion_pending=snapshot.completion_pending,
+            shutdown_in_progress=True,
+            interaction_status_text="Ожидается безопасное завершение перед закрытием.",
+        )
+        self._render_state()
+        if (
+            snapshot.lifecycle is DesktopInteractionLifecycle.STOPPED
+            and not snapshot.completion_pending
+        ):
+            self._destroy_once()
+        else:
+            self._schedule_interaction_poll()
+
+    def _destroy_once(self) -> None:
+        if self._destroyed:
+            return
+        self._destroyed = True
+        self.root.destroy()
 
     def _on_status(self) -> None:
         self.view_model.refresh_status()
@@ -2440,9 +2698,18 @@ class JarvisDesktopShell:
             self.view_model.resume_selected_workflow_run(confirmed=False)
             self._render_state()
             return
-        self.view_model.resume_selected_workflow_run(confirmed=True)
-        self.view_model.refresh_application_activity()
-        self._render_state()
+        run_id = self.view_model.prepare_workflow_resume(confirmed=True)
+        if run_id is None:
+            self._render_state()
+            return
+        self._submit_interaction(
+            DesktopInteractionKind.WORKFLOW_RESUME,
+            lambda _token: _DesktopInteractionPayload(
+                DesktopInteractionKind.WORKFLOW_RESUME,
+                run_id,
+                self.view_model.perform_workflow_resume(run_id),
+            ),
+        )
 
     def _on_workflow_cancel(self) -> None:
         confirmation_text = self.view_model.workflow_cancellation_confirmation_text()

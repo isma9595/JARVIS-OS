@@ -138,8 +138,29 @@ python run_desktop.py
   Non-cancellable active workflow steps are rejected by the AppService/domain
   projection, not by Desktop-specific step interpretation.
 - Risky/network commands require explicit command text and Execute.
-- Voice requests require an explicit button press, run in a worker thread, and
-  return through the AppService result boundary.
+- Typed turns, explicit one-shot voice requests, and workflow resume use one
+  lazy serialized non-daemon `DesktopInteractionWorker`; there is no separate
+  voice thread and no backlog.
+- Accepted work projects a busy state, disables Execute/microphone/resume, and
+  enables one general cooperative-cancel control. Domain workflow cancellation
+  remains a separate AppService-mediated action.
+- Completion is published to one thread-safe slot and polled through
+  main-thread `root.after` callbacks. The worker never calls Tk or mutates
+  `DesktopShellState`.
+- Early or explicitly acknowledged cooperative cancellation may be CANCELLED.
+  If an already-started opaque AppService call returns normally after a late
+  request, its completion remains COMPLETED and is presented once unless the
+  window is closing.
+- Close rejects new work, requests cooperative cancellation, waits without a
+  long Tk-thread join, consumes any late completion without updating the user
+  result, stops the worker safely, then destroys once. No forced thread/process
+  termination is used, and ACTIVE conversation sessions remain resumable.
+- Worker shutdown reaches STOPPED independently of Tk completion consumption;
+  a pending completion remains available exactly once. If mainloop has already
+  exited, the fallback joins the non-daemon worker and consumes that completion
+  without state, refresh, render, or widget apply. Busy close immediately
+  projects the worker snapshot so the general cancel button is disabled after
+  cancellation has already been requested.
 - The shell does not construct Vosk, microphone, provider, credential, or
   command-processing internals.
 - TASK-078 shell messages are Russian-first by default and preserve recognized

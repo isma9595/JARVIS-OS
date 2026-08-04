@@ -7,6 +7,7 @@ from cognition import RuleBasedClarificationCoordinator
 
 COGNITION_ROOT = Path("cognition")
 DESKTOP_SHELL_PATH = Path("app/desktop_shell.py")
+DESKTOP_WORKER_PATH = Path("app/desktop_interaction_worker.py")
 
 
 def _imports_for(path: Path) -> set[str]:
@@ -18,6 +19,45 @@ def _imports_for(path: Path) -> set[str]:
         elif isinstance(node, ast.ImportFrom) and node.module:
             imports.add(node.module)
     return imports
+
+
+def test_desktop_interaction_worker_has_no_runtime_owner_or_tk_imports():
+    imports = _imports_for(DESKTOP_WORKER_PATH)
+    forbidden_prefixes = (
+        "tkinter",
+        "app.app_service",
+        "cognition",
+        "ai",
+        "core",
+        "workflows",
+        "voice",
+        "memory",
+    )
+
+    assert not {
+        module
+        for module in imports
+        if module in forbidden_prefixes
+        or any(module.startswith(prefix + ".") for prefix in forbidden_prefixes)
+    }
+
+
+def test_desktop_shell_delegates_thread_lifecycle_to_worker_only():
+    imports = _imports_for(DESKTOP_SHELL_PATH)
+    source = DESKTOP_SHELL_PATH.read_text(encoding="utf-8")
+
+    assert "threading" not in imports
+    assert "Thread" not in imports
+    assert "daemon=True" not in source
+    assert "app.desktop_interaction_worker" in imports
+
+
+def test_worker_does_not_own_session_cache_history_or_repository():
+    source = DESKTOP_WORKER_PATH.read_text(encoding="utf-8").lower()
+
+    assert "repository" not in source
+    assert "session_cache" not in source
+    assert "conversation_history" not in source
 
 
 def test_cognition_package_contains_only_approved_cognitive_modules():

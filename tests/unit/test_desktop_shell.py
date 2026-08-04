@@ -1,4 +1,7 @@
 from dataclasses import dataclass, field
+from threading import Event, Thread, current_thread
+
+import pytest
 
 from app.app_contracts import (
     AppExecutionHistoryEntry,
@@ -8,9 +11,14 @@ from app.app_contracts import (
     ApplicationActivitySnapshotDto,
     ApplicationActivityState,
 )
-from app.app_service import AppCommandSource, JarvisAppService
+from app.app_service import (
+    AppCommandSource,
+    JarvisAppService,
+    create_default_desktop_app_service,
+)
 from app import desktop_shell
 from app.desktop_shell import DesktopShellViewModel, JarvisDesktopShell
+from app.desktop_interaction_worker import DesktopInteractionWorker
 from core.command_processor import CommandProcessor
 from memory import LocalMemoryManager
 from voice.one_shot_vosk_real_recognition import OneShotVoskRealRecognitionResult
@@ -2825,3 +2833,492 @@ def test_status_and_capabilities_mention_secure_key_storage_safely():
     assert "future secure key input UI planned" in capabilities
     assert secret not in status
     assert secret not in capabilities
+
+
+class InteractionTestRoot(FakeRoot):
+    def __init__(self):
+        super().__init__()
+        self.main_thread_id = current_thread().ident
+        self.after_callbacks = []
+        self.after_calls = []
+        self.protocol_calls = []
+        self.destroy_calls = 0
+        self.destroyed = False
+
+    def after(self, delay, callback):
+        assert current_thread().ident == self.main_thread_id
+        assert not self.destroyed
+        callback_id = f"after-{len(self.after_calls) + 1}"
+        self.after_calls.append((callback_id, delay, current_thread().ident))
+        self.after_callbacks.append((callback_id, callback))
+        return callback_id
+
+    def after_cancel(self, callback_id):
+        assert current_thread().ident == self.main_thread_id
+        self.after_callbacks = [item for item in self.after_callbacks if item[0] != callback_id]
+
+    def protocol(self, name, callback):
+        self.protocol_calls.append((name, callback))
+
+    def destroy(self):
+        assert current_thread().ident == self.main_thread_id
+        self.destroy_calls += 1
+        self.destroyed = True
+
+    def run_next(self):
+        _callback_id, callback = self.after_callbacks.pop(0)
+        callback()
+
+
+class FakeButton:
+    def __init__(self):
+        self.state = "normal"
+        self.configure_threads = []
+
+    def configure(self, **kwargs):
+        self.configure_threads.append(current_thread().ident)
+        if "state" in kwargs:
+            self.state = kwargs["state"]
+
+
+_INTERACTION_TEST_WORKERS = []
+
+
+@pytest.fixture(autouse=True)
+def _stop_interaction_test_workers():
+    yield
+    while _INTERACTION_TEST_WORKERS:
+        worker = _INTERACTION_TEST_WORKERS.pop()
+        worker.request_cancel()
+        worker.request_shutdown()
+        if not worker.join(0.05) and worker.wait_for_completion(2.0):
+            worker.take_completion()
+        assert worker.join(2.0)
+
+
+def interaction_shell(service=None):
+    service = service or FakeAppService()
+    shell = JarvisDesktopShell.__new__(JarvisDesktopShell)
+    shell.view_model = DesktopShellViewModel(service)
+    shell.root = InteractionTestRoot()
+    shell.tk = FakeTk
+    shell.interaction_worker = DesktopInteractionWorker()
+    _INTERACTION_TEST_WORKERS.append(shell.interaction_worker)
+    shell._main_thread_id = current_thread().ident
+    shell._interaction_after_id = None
+    shell._close_requested = False
+    shell._destroyed = False
+    shell.execute_button = FakeButton()
+    shell.voice_button = FakeButton()
+    shell.workflow_resume_button = FakeButton()
+    shell.interaction_cancel_button = FakeButton()
+    shell._render_threads = []
+    def render_state():
+        shell._render_threads.append(current_thread().ident)
+        shell._render_interaction_controls(shell.view_model.state)
+    shell._render_state = render_state
+    shell._command_input = lambda: "typed secret"
+    shell._confirm_workflow_resume = lambda _text: True
+    return shell, service
+
+
+def _drive_shell_until_idle(shell, limit=50):
+    for _index in range(limit):
+        if shell.root.after_callbacks:
+            shell.root.run_next()
+        if not shell.view_model.state.interaction_busy:
+            return
+        shell.interaction_worker.wait_for_completion(0.05)
+    raise AssertionError("interaction did not become idle")
+
+
+def test_typed_gui_handler_returns_while_appservice_is_blocked_and_runs_off_main_thread():
+    entered = Event()
+    release = Event()
+    call_threads = []
+
+    class BlockingService(FakeAppService):
+        def handle_desktop_turn(self, text, source, *, session_id=None):
+            call_threads.append(current_thread().ident)
+            entered.set()
+            release.wait(2.0)
+            return super().handle_desktop_turn(text, source, session_id=session_id)
+
+    shell, _service = interaction_shell(BlockingService())
+    main_thread_id = current_thread().ident
+
+    shell._on_execute()
+
+    assert entered.wait(2.0)
+    assert shell.view_model.state.interaction_busy is True
+    assert call_threads[0] != main_thread_id
+    assert shell.execute_button.state == "disabled"
+    assert shell.voice_button.state == "disabled"
+    assert shell.workflow_resume_button.state == "disabled"
+    assert shell.interaction_cancel_button.state == "normal"
+    release.set()
+    _drive_shell_until_idle(shell)
+    assert shell._render_threads and set(shell._render_threads) == {main_thread_id}
+    shell._on_close()
+    _drive_shell_until_idle(shell)
+
+
+def test_unrelated_main_thread_callback_runs_while_operation_is_blocked():
+    entered = Event()
+    release = Event()
+    unrelated = []
+
+    class BlockingService(FakeAppService):
+        def handle_desktop_turn(self, text, source, *, session_id=None):
+            entered.set()
+            release.wait(2.0)
+            return super().handle_desktop_turn(text, source, session_id=session_id)
+
+    shell, _service = interaction_shell(BlockingService())
+    shell._on_execute()
+    assert entered.wait(2.0)
+    shell.root.after(0, lambda: unrelated.append(current_thread().ident))
+
+    shell.root.run_next()
+    shell.root.run_next()
+
+    assert unrelated == [shell.root.main_thread_id]
+    assert shell.view_model.state.interaction_busy is True
+    release.set()
+    _drive_shell_until_idle(shell)
+    shell._on_close()
+
+
+def test_voice_and_workflow_resume_share_injected_worker_and_busy_rejects_duplicate():
+    shell, service = interaction_shell()
+    worker = shell.interaction_worker
+
+    shell._on_voice_once()
+    duplicate = shell._submit_interaction("typed_turn", lambda _token: "duplicate")
+    _drive_shell_until_idle(shell)
+    assert duplicate.accepted is False
+    assert service.voice_calls == [AppCommandSource.DESKTOP_UI]
+    assert shell.interaction_worker is worker
+
+    shell.view_model.state = shell.view_model._replace(
+        selected_workflow_run=workflow_run(run_id="wf-one", resume_eligible=True),
+        selected_workflow_run_id="wf-one",
+        workflow_resume_available=True,
+    )
+    shell._on_workflow_resume()
+    _drive_shell_until_idle(shell)
+    assert service.workflow_resume_calls == ["wf-one"]
+    assert shell.interaction_worker is worker
+    shell._on_close()
+    _drive_shell_until_idle(shell)
+
+
+def test_interaction_cancel_projects_request_and_late_result_is_applied_once():
+    entered = Event()
+    release = Event()
+
+    class BlockingService(FakeAppService):
+        def handle_desktop_turn(self, text, source, *, session_id=None):
+            entered.set()
+            release.wait(2.0)
+            return super().handle_desktop_turn(text, source, session_id=session_id)
+
+    shell, service = interaction_shell(BlockingService())
+    shell._on_execute()
+    assert entered.wait(2.0)
+    shell._on_interaction_cancel()
+
+    assert shell.view_model.state.interaction_cancellation_requested is True
+    release.set()
+    _drive_shell_until_idle(shell)
+    assert len(service.execute_calls) == 1
+    assert shell.view_model.state.interaction_busy is False
+    assert "успела завершиться" in shell.view_model.state.interaction_status_text
+    shell._poll_interaction_completion()
+    assert len(service.execute_calls) == 1
+    shell._on_close()
+    _drive_shell_until_idle(shell)
+
+
+def test_cancel_after_published_completion_is_rejected_without_false_ui_projection():
+    entered = Event()
+    release = Event()
+
+    class BlockingService(FakeAppService):
+        def handle_desktop_turn(self, text, source, *, session_id=None):
+            entered.set()
+            assert release.wait(2.0)
+            return super().handle_desktop_turn(text, source, session_id=session_id)
+
+    shell, service = interaction_shell(BlockingService())
+    shell._on_execute()
+    try:
+        assert entered.wait(2.0)
+        release.set()
+        assert shell.interaction_worker.wait_for_completion(2.0)
+
+        published = shell.interaction_worker.snapshot()
+        assert published.completion_pending is True
+        assert published.cancellation_requested is False
+        status_before_cancel = shell.view_model.state.interaction_status_text
+        assert shell.interaction_cancel_button.state == "normal"
+
+        shell._on_interaction_cancel()
+
+        assert shell.view_model.state.interaction_cancellation_requested is False
+        assert shell.view_model.state.interaction_status_text == status_before_cancel
+        assert shell.interaction_cancel_button.state == "disabled"
+        assert shell.view_model.state.interaction_busy is True
+        assert len(service.execute_calls) == 1
+
+        shell.root.run_next()
+
+        assert shell.view_model.state.interaction_busy is False
+        assert shell.view_model.state.interaction_cancellation_requested is False
+        assert len(service.execute_calls) == 1
+        output_after_poll = shell.view_model.state.output_text
+
+        shell._poll_interaction_completion()
+
+        assert shell.view_model.state.output_text == output_after_poll
+        assert len(service.execute_calls) == 1
+    finally:
+        release.set()
+
+
+def test_stale_completion_is_not_applied_and_failures_are_sanitized():
+    shell, _service = interaction_shell()
+    initial_output = shell.view_model.state.output_text
+    shell.view_model.state = shell.view_model._replace(
+        interaction_busy=True,
+        active_interaction_id="desktop-interaction-current",
+        active_interaction_kind="typed_turn",
+    )
+
+    assert shell._apply_interaction_completion(
+        type("Completion", (), {"interaction_id": "desktop-interaction-stale"})()
+    ) is False
+    assert shell.view_model.state.output_text == initial_output
+
+    shell.view_model.state = shell.view_model._replace(
+        interaction_busy=False,
+        active_interaction_id=None,
+        active_interaction_kind=None,
+    )
+    submission = shell._submit_interaction(
+        "typed_turn",
+        lambda _token: (_ for _ in ()).throw(RuntimeError("C:\\private\\secret.txt token=abc")),
+    )
+    assert submission.accepted
+    _drive_shell_until_idle(shell)
+    safe = shell.view_model.state.output_text.lower()
+    assert "secret.txt" not in safe
+    assert "token=abc" not in safe
+    assert "traceback" not in safe
+    shell._on_close()
+    _drive_shell_until_idle(shell)
+
+
+def test_busy_close_waits_for_safe_stop_then_destroys_once_without_applying_result():
+    entered = Event()
+    release = Event()
+
+    class BlockingService(FakeAppService):
+        def handle_desktop_turn(self, text, source, *, session_id=None):
+            entered.set()
+            release.wait(2.0)
+            return super().handle_desktop_turn(text, source, session_id=session_id)
+
+    shell, _service = interaction_shell(BlockingService())
+    original_output = shell.view_model.state.output_text
+    shell._on_execute()
+    assert entered.wait(2.0)
+    try:
+        shell._on_close()
+
+        assert shell.root.destroy_calls == 0
+        assert shell.view_model.state.shutdown_in_progress is True
+        assert shell.view_model.state.interaction_cancellation_requested is True
+        assert shell.interaction_cancel_button.state == "disabled"
+        shell._on_close()
+        assert len(_service.execute_calls) == 0
+        assert shell.root.destroy_calls == 0
+    finally:
+        release.set()
+    for _index in range(50):
+        if shell.root.after_callbacks:
+            shell.root.run_next()
+        if shell.root.destroy_calls:
+            break
+        shell.interaction_worker.wait_for_completion(0.05)
+    assert shell.root.destroy_calls == 1
+    assert shell.view_model.state.output_text == original_output
+    shell._on_close()
+    assert shell.root.destroy_calls == 1
+
+
+def test_idle_close_and_run_finally_stop_worker_without_closing_conversation():
+    shell, service = interaction_shell()
+    service.close_conversation_session = lambda *_args, **_kwargs: (_ for _ in ()).throw(
+        AssertionError("Desktop close must not close the conversation")
+    )
+
+    shell._on_close()
+    for _index in range(10):
+        if shell.root.after_callbacks:
+            shell.root.run_next()
+        if shell.root.destroy_calls:
+            break
+    assert shell.root.destroy_calls == 1
+    assert shell.interaction_worker.snapshot().thread_alive is False
+
+
+def test_mainloop_finally_stops_the_non_daemon_worker():
+    shell, _service = interaction_shell()
+    shell.root.mainloop = lambda: None
+
+    shell.run()
+
+    assert shell.interaction_worker.snapshot().lifecycle.value == "stopped"
+    assert shell.interaction_worker.snapshot().thread_alive is False
+
+
+def test_mainloop_finally_stops_with_pending_completion_and_discards_without_tk_apply():
+    shell, service = interaction_shell()
+    shell.root.mainloop = lambda: None
+    shell._on_execute()
+    assert shell.interaction_worker.wait_for_completion(2.0)
+    output_before = shell.view_model.state.output_text
+    render_count = len(shell._render_threads)
+    after_count = len(shell.root.after_calls)
+    runner = Thread(target=shell.run, name="task124-pending-fallback-test", daemon=False)
+
+    runner.start()
+    try:
+        runner.join(2.0)
+        assert runner.is_alive() is False
+        assert shell.interaction_worker.snapshot().thread_alive is False
+        assert shell.interaction_worker.take_completion() is None
+        assert shell.view_model.state.output_text == output_before
+        assert len(shell._render_threads) == render_count
+        assert len(shell.root.after_calls) == after_count
+        assert shell.root.destroy_calls == 0
+        assert len(service.execute_calls) == 1
+    finally:
+        if runner.is_alive():
+            shell.interaction_worker.take_completion()
+            runner.join(2.0)
+        assert runner.is_alive() is False
+
+
+def test_mainloop_finally_waits_for_active_opaque_operation_then_discards_completion():
+    entered = Event()
+    release = Event()
+    shutdown_requested = Event()
+
+    class BlockingService(FakeAppService):
+        def handle_desktop_turn(self, text, source, *, session_id=None):
+            entered.set()
+            release.wait(2.0)
+            return super().handle_desktop_turn(text, source, session_id=session_id)
+
+    shell, service = interaction_shell(BlockingService())
+    shell.root.mainloop = lambda: None
+    original_request_shutdown = shell.interaction_worker.request_shutdown
+
+    def request_shutdown():
+        snapshot = original_request_shutdown()
+        shutdown_requested.set()
+        return snapshot
+
+    shell.interaction_worker.request_shutdown = request_shutdown
+    shell._on_execute()
+    assert entered.wait(2.0)
+    output_before = shell.view_model.state.output_text
+    render_count = len(shell._render_threads)
+    after_count = len(shell.root.after_calls)
+    runner = Thread(target=shell.run, name="task124-active-fallback-test", daemon=False)
+
+    runner.start()
+    try:
+        assert shutdown_requested.wait(2.0)
+        assert runner.is_alive() is True
+        release.set()
+        runner.join(2.0)
+        assert runner.is_alive() is False
+        assert shell.interaction_worker.snapshot().thread_alive is False
+        assert shell.interaction_worker.take_completion() is None
+        assert shell.view_model.state.output_text == output_before
+        assert len(shell._render_threads) == render_count
+        assert len(shell.root.after_calls) == after_count
+        assert shell.root.destroy_calls == 0
+        assert len(service.execute_calls) == 1
+    finally:
+        release.set()
+        if runner.is_alive():
+            assert shell.interaction_worker.wait_for_completion(2.0)
+            shell.interaction_worker.take_completion()
+            runner.join(2.0)
+        assert runner.is_alive() is False
+
+
+def test_shell_build_keeps_preview_and_execute_buttons_distinct():
+    class Widget:
+        created = []
+
+        def __init__(self, *_args, **kwargs):
+            self.text = kwargs.get("text")
+            self.state = kwargs.get("state", "normal")
+            self.value = kwargs.get("value", "")
+            self.created.append(self)
+
+        def __getattr__(self, _name):
+            return lambda *_args, **_kwargs: None
+
+        def get(self, *_args):
+            return self.value
+
+        def set(self, value):
+            self.value = value
+
+        def configure(self, **kwargs):
+            self.state = kwargs.get("state", self.state)
+
+    class Root(Widget):
+        def protocol(self, name, callback):
+            self.protocol_registration = (name, callback)
+
+        def destroy(self):
+            self.destroyed = True
+
+    class TkModule:
+        Tk = Root
+        Frame = Label = Entry = Text = Listbox = Button = OptionMenu = PanedWindow = Menu = Widget
+        StringVar = Widget
+
+    shell = JarvisDesktopShell(DesktopShellViewModel(FakeAppService()), tk_module=TkModule)
+
+    preview_buttons = [widget for widget in Widget.created if widget.text == "Preview"]
+    assert len(preview_buttons) == 1
+    assert shell.execute_button.text == "Execute"
+    assert shell.execute_button is not preview_buttons[0]
+    assert shell.root.protocol_registration[0] == "WM_DELETE_WINDOW"
+    shell._on_close()
+
+
+def test_simulated_desktop_close_keeps_repository_backed_session_resumable(
+    monkeypatch, tmp_path
+):
+    session_dir = tmp_path / "sessions"
+    monkeypatch.setenv("JARVIS_COGNITIVE_SESSION_DIR", str(session_dir))
+    service = create_default_desktop_app_service()
+    shell, _ignored_service = interaction_shell(service)
+
+    shell.view_model.execute_command("диалог: привет")
+    session_id = shell.view_model.state.cognitive_session_id
+    assert session_id is not None
+    shell._on_close()
+    assert shell.root.destroy_calls == 1
+
+    restarted = DesktopShellViewModel(create_default_desktop_app_service())
+    assert restarted.state.cognitive_session_id == session_id

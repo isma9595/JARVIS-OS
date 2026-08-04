@@ -1,6 +1,6 @@
 # JARVIS OS Architecture
 
-Status: runtime implementation through TASK-123 on the published TASK-122
+Status: runtime implementation through TASK-124 on the published TASK-123
 baseline.
 
 JARVIS OS is currently a Windows-first assistant application. It includes a CLI,
@@ -130,6 +130,20 @@ pending approvals, repository, or persistence. It is exported but is not
 connected to AppService, Desktop, `LocalMemoryManager`, or the existing memory
 command routes.
 
+TASK-124 adds a Desktop-only scheduling and shutdown boundary. Typed turns,
+one-shot voice requests, and workflow resume GUI handlers submit to one lazy,
+serialized, non-daemon worker and receive completion through main-thread Tk
+polling. The worker does not own AppService, cognition, execution, workflows,
+providers, persistence, or presentation state. Cancellation is cooperative;
+normal completion of an already-started opaque AppService call is not relabelled
+as cancelled and completed side effects are not rolled back. Close waits for a
+confirmed safe worker stop, performs no Tk calls after destroy, and keeps the
+ACTIVE conversation session resumable. Shutdown can transition the worker to
+STOPPED while retaining a pending completion for exactly-once retrieval, so
+thread termination never depends on future Tk polling. The post-mainloop
+fallback joins first and consumes any retained completion without presentation
+apply. Busy close projects the authoritative cancellation snapshot immediately.
+
 ## Implementation Status Boundaries
 
 Implemented and default:
@@ -155,8 +169,6 @@ Implemented contract but not runtime-integrated:
 
 Planned:
 
-- a unified Desktop worker and shutdown lifecycle for long AI, document, and
-  TTS operations;
 - unified user-data paths and persistence health;
 - dependency manifests, pytest configuration, and CI;
 - primary-provider-backed AI conversation, followed by the product stages in

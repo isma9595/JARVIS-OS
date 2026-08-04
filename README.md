@@ -16,8 +16,9 @@ future work: targeted decomposition, documentation maintenance, optional test
 coverage tooling, repository line-ending maintenance, and Desktop Shell UX
 polish.
 
-The published baseline is TASK-122 at
-`aef9d416c9c79c86419f942d50f393808d9afc83`; TASK-123 connects default
+The published baseline is TASK-123 at
+`88e7a4daa9625d3cea61f790bef610049dc908fe`; TASK-124 adds one bounded Desktop
+interaction worker and safe shutdown boundary while retaining TASK-123 default
 Desktop conversation persistence using the existing TASK-115 repository. The
 implementation remains transitional. `JarvisAppService` is the current
 application-facing boundary, and major responsibilities have been extracted,
@@ -74,6 +75,17 @@ orchestration modules.
   runs through AppService, with centralized eligibility checks, cooperative
   cancellation signalling, duplicate-request protection, and preserved
   completed-step history.
+- One lazy serialized non-daemon Desktop worker for typed, one-shot voice, and
+  workflow-resume GUI entry points. Desktop remains an AppService-only client;
+  the worker owns scheduling and shutdown, not execution, workflow, cognition,
+  or persistence. Cancellation is cooperative and never claims rollback or
+  force-stop of a started opaque AppService call.
+- Main-thread completion polling keeps Tk and `DesktopShellState` updates out of
+  the worker thread. Close waits for safe worker stop, performs no Tk update
+  after destroy, and leaves the ACTIVE conversation resumable. During shutdown
+  worker termination does not depend on Tk consuming completion; pending
+  completion remains retrievable exactly once, and the post-mainloop fallback
+  discards it without applying a user result.
 - Workflow lifecycle hardening that enforces non-cancellable active steps in
   the central workflow cancellation policy and closes the TASK-105 through
   TASK-109 workflow subsystem milestone.
@@ -280,8 +292,8 @@ git diff --check
   primary-provider-backed AI conversation.
 - `MemoryPolicy` is implemented and exported but is not used by AppService,
   Desktop, or existing memory command routes.
-- Long-running AI, document, and TTS operations do not yet share one Desktop
-  worker lifecycle and shutdown model.
+- Desktop GUI entry points now share one bounded interaction worker; deeper
+  domain cancellation remains owned by execution and workflow services.
 - User data has no single authoritative directory; some paths still depend on
   the current working directory.
 - Dependency manifests, repository pytest configuration, and CI are absent.
