@@ -150,10 +150,10 @@ Key architecture documents:
 
 ## Requirements
 
-The repository is currently developed and verified on Windows with PowerShell
-and Python. Recent task records and verification runs use Python 3.14-series
-interpreters. No dependency manifest is currently tracked at the repository
-root, so dependency installation is manual and environment-specific.
+The supported automated test baseline is Windows Server 2025 with CPython
+3.14.6. `requirements-ci.txt` exactly pins pytest and its complete transitive
+dependency set, while `pytest.ini` keeps repository test discovery consistent
+locally and in CI.
 
 Core verification requires:
 
@@ -163,6 +163,8 @@ Core verification requires:
 - Tkinter support for the Desktop Shell
 
 Optional local voice features require user-provided local audio/Vosk setup.
+Their `numpy`, `sounddevice`, and `vosk` packages are intentionally not part of
+the mandatory CI manifest.
 Optional provider calls require explicit user authorization, configured
 credentials, and acceptance of network/cost/privacy implications.
 
@@ -173,13 +175,15 @@ From PowerShell:
 ```powershell
 cd C:\JARVIS-OS
 python --version
-python -m pytest --version
+python -m pip install --requirement requirements-ci.txt
+python -m pytest -q
 ```
 
-There is no tracked `requirements.txt`, `pyproject.toml`, or lock file in the
-current repository baseline. A repository pytest configuration and CI workflow
-are also not yet tracked. Do not add or upgrade dependencies without an
-approved task.
+The same install and test commands are used by `.github/workflows/ci.yml` on
+the fixed `windows-2025` / Python 3.14.6 baseline. CI uses read-only repository
+permissions, immutable action revisions, and no credentials or provider calls.
+Dependency updates remain explicit reviewed changes; JARVIS runtime never
+installs packages automatically.
 
 ## Basic Configuration
 
@@ -314,7 +318,8 @@ git diff --check
   domain cancellation remains owned by execution and workflow services.
 - User data has no single authoritative directory; some paths still depend on
   the current working directory.
-- Dependency manifests, repository pytest configuration, and CI are absent.
+- Automated verification currently supports one Windows Server 2025 / Python
+  3.14.6 baseline; broader platform and interpreter matrices are not claimed.
 - Formal coverage tooling/policy is not tracked.
 - Some line-ending normalization is deferred to repository maintenance.
 - Desktop Shell action clarity and broader copy/export controls remain future

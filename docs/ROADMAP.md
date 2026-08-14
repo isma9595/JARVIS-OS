@@ -322,7 +322,7 @@ user scenarios establish their requirements.
 - Explicit non-goals: cloud sync, broad storage redesign, or deleting legacy
   user data.
 
-### TASK-126 - Reproducible Environment and CI
+### TASK-126 - Reproducible Environment and CI - Completed
 
 - Purpose: add an approved dependency manifest, pytest configuration, and CI
   that reproduce the supported test baseline.
@@ -330,6 +330,10 @@ user scenarios establish their requirements.
 - Dependencies: TASK-125.
 - Completion criteria: a clean supported environment can install declared
   dependencies and run the same required suite locally and in CI.
+- Validation: controlled configuration RED `6 failed in 0.32s`; focused
+  contract GREEN `6 passed in 0.07s`; clean-environment related regression
+  `123 passed in 1.15s`; single clean-environment full acceptance
+  `2683 passed, 4 skipped in 40.35s`.
 - Explicit non-goals: automatic runtime downloads/installs, release packaging,
   or broad platform support claims.
 

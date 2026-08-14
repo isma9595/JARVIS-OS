@@ -1,14 +1,13 @@
 # JARVIS-OS Checkpoint
 
-- Published baseline: TASK-124 - Desktop Interaction Worker and Shutdown
+- Published baseline: TASK-125 - Unified User Data and Persistence Health
 - Baseline commit:
-  `7bc74d9d8f93947419ec443cfdd6bf4ed94db8d5`
+  `12d88cf133c260c3bf49aff9ea3a5323d9f43d9f`
 - Baseline tree:
-  `3bf5cb5e72fb529f9581c6924fa6ae689d9b08df`
-- Completed in the unstaged worktree: TASK-125 - Unified User Data and
-  Persistence Health. The initial full gate and the single post-audit
-  remediation full gate passed.
-- Next runtime task: TASK-126 - Reproducible Environment and CI.
+  `5562cd95820c8b8fe076e33ea5a2f1acc0d2a377`
+- Completed in the unstaged worktree: TASK-126 - Reproducible Environment and
+  CI. Clean-environment and full-suite acceptance passed.
+- Next runtime task: TASK-127 - Real AI Conversation Vertical Slice.
 - Published TASK-123 full pytest:
   `2476 passed, 2 skipped in 9.23s`
 - Validation history: the initial gate was
@@ -67,6 +66,11 @@
   `578 passed, 2 skipped in 6.25s`; related regression
   `507 passed in 2.92s`; compileall exit code `0`; single post-audit full
   acceptance `2677 passed, 4 skipped in 18.42s`.
+- TASK-126 validation: controlled configuration RED `6 failed in 0.32s`;
+  focused contract GREEN `6 passed in 0.07s`; clean manifest installation and
+  `pip check` passed; clean-environment related regression
+  `123 passed in 1.15s`; single clean-environment full acceptance
+  `2683 passed, 4 skipped in 40.35s`.
 
 ## Approved Workflow
 

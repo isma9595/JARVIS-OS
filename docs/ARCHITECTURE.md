@@ -184,10 +184,18 @@ Implemented contract but not runtime-integrated:
 - TASK-121 `MemoryPolicy`; it is stateless, owns no storage, and is not used by
   current memory routes.
 
+Implemented verification boundary:
+
+- TASK-126 pins the Windows Server 2025 / CPython 3.14.6 pytest environment in
+  `requirements-ci.txt`, centralizes discovery in `pytest.ini`, and runs the
+  same `python -m pytest -q` contract in a read-only bounded GitHub Actions job;
+- the CI workflow owns no runtime behavior, secrets, providers, hardware,
+  persistence, application state, or release/deployment authority;
+- optional `numpy`, `sounddevice`, and `vosk` voice dependencies remain manual
+  and are not mandatory test dependencies.
+
 Planned:
 
-- unified user-data paths and persistence health;
-- dependency manifests, pytest configuration, and CI;
 - primary-provider-backed AI conversation, followed by the product stages in
   `docs/ROADMAP.md`.
 
