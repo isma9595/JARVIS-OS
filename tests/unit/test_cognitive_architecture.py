@@ -8,6 +8,8 @@ from cognition import RuleBasedClarificationCoordinator
 COGNITION_ROOT = Path("cognition")
 DESKTOP_SHELL_PATH = Path("app/desktop_shell.py")
 DESKTOP_WORKER_PATH = Path("app/desktop_interaction_worker.py")
+USER_DATA_MIGRATION_PATH = Path("platform_adapters/user_data_migration.py")
+PERSISTENCE_HEALTH_PATH = Path("app/persistence_health.py")
 
 
 def _imports_for(path: Path) -> set[str]:
@@ -58,6 +60,35 @@ def test_worker_does_not_own_session_cache_history_or_repository():
     assert "repository" not in source
     assert "session_cache" not in source
     assert "conversation_history" not in source
+
+
+def test_task_125_keeps_migration_and_health_out_of_desktop_and_worker():
+    desktop_imports = _imports_for(DESKTOP_SHELL_PATH)
+    worker_imports = _imports_for(DESKTOP_WORKER_PATH)
+
+    assert "platform_adapters.user_data_migration" not in desktop_imports
+    assert "platform_adapters.user_data_paths" not in desktop_imports
+    assert "app.persistence_health" not in desktop_imports
+    assert "platform_adapters.user_data_migration" not in worker_imports
+    assert "platform_adapters.user_data_paths" not in worker_imports
+    assert "app.persistence_health" not in worker_imports
+
+
+def test_migration_and_health_do_not_take_store_or_runtime_ownership():
+    migration_imports = _imports_for(USER_DATA_MIGRATION_PATH)
+    health_imports = _imports_for(PERSISTENCE_HEALTH_PATH)
+    forbidden = ("cognition", "core", "memory", "ideas", "users", "voice", "workflows", "ai")
+
+    assert not {
+        module
+        for module in migration_imports | health_imports
+        if module in forbidden or any(module.startswith(prefix + ".") for prefix in forbidden)
+    }
+    migration_source = USER_DATA_MIGRATION_PATH.read_text(encoding="utf-8").lower()
+    health_source = PERSISTENCE_HEALTH_PATH.read_text(encoding="utf-8").lower()
+    assert "commandprocessor" not in migration_source + health_source
+    assert "desktopinteractionworker" not in migration_source + health_source
+    assert "close_conversation_session" not in migration_source + health_source
 
 
 def test_cognition_package_contains_only_approved_cognitive_modules():

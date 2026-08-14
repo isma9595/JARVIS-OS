@@ -6,12 +6,12 @@ from types import SimpleNamespace
 from app import AppCommandSource, JarvisAppService
 import app.app_service as app_service_module
 from app.desktop_shell import DesktopShellViewModel
+from platform_adapters.user_data_migration import UserDataMigrationBlockedError
 from cognition import (
     AssistantResponseType,
     ClarificationRequest,
     ClarificationReason,
     ClarificationStatus,
-    ConversationPersistenceLoadError,
     ConversationSessionClosedError,
     ConversationSessionStatus,
     IntentCategory,
@@ -144,6 +144,18 @@ def test_plain_app_service_remains_in_memory_and_has_no_resumable_session():
     assert service.resumable_conversation_session_id() is None
 
 
+def _default_desktop_service(tmp_path, storage_dir):
+    return app_service_module.create_default_desktop_app_service(
+        environment={
+            "JARVIS_USER_DATA_DIR": str(tmp_path / "user-data-v1"),
+            "JARVIS_COGNITIVE_SESSION_DIR": str(storage_dir),
+            "APPDATA": str(tmp_path / "roaming"),
+        },
+        home=tmp_path / "home",
+        project_root=tmp_path / "project",
+    )
+
+
 def test_default_desktop_factory_connects_local_repository_without_creating_directory(
     tmp_path,
     monkeypatch,
@@ -151,7 +163,7 @@ def test_default_desktop_factory_connects_local_repository_without_creating_dire
     storage_dir = tmp_path / "sessions"
     monkeypatch.setenv("JARVIS_COGNITIVE_SESSION_DIR", str(storage_dir))
 
-    service = app_service_module.create_default_desktop_app_service()
+    service = _default_desktop_service(tmp_path, storage_dir)
 
     assert isinstance(
         service.cognitive_session_service._repository,
@@ -170,8 +182,8 @@ def test_default_desktop_factory_does_not_hide_invalid_storage_configuration(
     storage_file.write_text("occupied", encoding="utf-8")
     monkeypatch.setenv("JARVIS_COGNITIVE_SESSION_DIR", str(storage_file))
 
-    with pytest.raises(ConversationPersistenceLoadError):
-        app_service_module.create_default_desktop_app_service()
+    with pytest.raises(UserDataMigrationBlockedError):
+        _default_desktop_service(tmp_path, storage_file)
 
 
 def test_default_desktop_restart_resumes_bounded_context_without_execution_or_provider(
@@ -190,7 +202,7 @@ def test_default_desktop_restart_resumes_bounded_context_without_execution_or_pr
         forbidden_provider,
     )
     first_processor = FakeCommandProcessor()
-    first_service = app_service_module.create_default_desktop_app_service()
+    first_service = _default_desktop_service(tmp_path, storage_dir)
     first_service.command_processor = first_processor
     first_view_model = DesktopShellViewModel(first_service)
 
@@ -198,7 +210,7 @@ def test_default_desktop_restart_resumes_bounded_context_without_execution_or_pr
     session_id = first_view_model.state.cognitive_session_id
 
     second_processor = FakeCommandProcessor()
-    second_service = app_service_module.create_default_desktop_app_service()
+    second_service = _default_desktop_service(tmp_path, storage_dir)
     second_service.command_processor = second_processor
     second_view_model = DesktopShellViewModel(second_service)
     second_view_model.execute_command("what did I say?")
@@ -216,13 +228,16 @@ def test_default_desktop_restart_resumes_bounded_context_without_execution_or_pr
     assert second_service._provider_runtime_component.snapshot().initialized is False
 
 
-def test_default_desktop_partial_recovery_resumes_valid_active_session(
+def test_repository_partial_recovery_resumes_valid_active_session(
     tmp_path,
     monkeypatch,
 ):
     storage_dir = tmp_path / "sessions"
     monkeypatch.setenv("JARVIS_COGNITIVE_SESSION_DIR", str(storage_dir))
-    first = app_service_module.create_default_desktop_app_service()
+    first = JarvisAppService(
+        command_processor=FakeCommandProcessor(),
+        cognitive_session_repository=LocalConversationSessionRepository(storage_dir),
+    )
     active = first.handle_conversation_turn("safe hello", AppCommandSource.TEST)
     (storage_dir / "corrupt.json").write_text("{", encoding="utf-8")
     unsupported = json.loads(next(storage_dir.glob("cog-session-*.json")).read_text("utf-8"))
@@ -233,7 +248,10 @@ def test_default_desktop_partial_recovery_resumes_valid_active_session(
         encoding="utf-8",
     )
 
-    restarted = app_service_module.create_default_desktop_app_service()
+    restarted = JarvisAppService(
+        command_processor=FakeCommandProcessor(),
+        cognitive_session_repository=LocalConversationSessionRepository(storage_dir),
+    )
     view_model = DesktopShellViewModel(restarted)
     load_result = restarted.cognitive_session_service.persistence_load_result
 
@@ -242,13 +260,16 @@ def test_default_desktop_partial_recovery_resumes_valid_active_session(
     assert load_result.unsupported_schema_record_ids == ("cog-session-unsupported",)
 
 
-def test_default_desktop_only_rejected_or_closed_records_start_new_redacted_session(
+def test_repository_only_rejected_or_closed_records_start_new_redacted_session(
     tmp_path,
     monkeypatch,
 ):
     storage_dir = tmp_path / "sessions"
     monkeypatch.setenv("JARVIS_COGNITIVE_SESSION_DIR", str(storage_dir))
-    first = app_service_module.create_default_desktop_app_service()
+    first = JarvisAppService(
+        command_processor=FakeCommandProcessor(),
+        cognitive_session_repository=LocalConversationSessionRepository(storage_dir),
+    )
     closed = first.start_conversation_session()
     first.close_conversation_session(closed.session_id)
     (storage_dir / "corrupt.json").write_text("{", encoding="utf-8")
@@ -260,7 +281,10 @@ def test_default_desktop_only_rejected_or_closed_records_start_new_redacted_sess
         encoding="utf-8",
     )
 
-    restarted = app_service_module.create_default_desktop_app_service()
+    restarted = JarvisAppService(
+        command_processor=FakeCommandProcessor(),
+        cognitive_session_repository=LocalConversationSessionRepository(storage_dir),
+    )
     view_model = DesktopShellViewModel(restarted)
 
     assert view_model.state.cognitive_session_id is None

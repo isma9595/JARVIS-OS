@@ -2781,6 +2781,11 @@ def test_launch_function_handles_unavailable_tkinter_gracefully(monkeypatch):
         raise ImportError("tkinter unavailable")
 
     monkeypatch.setattr(desktop_shell, "JarvisDesktopShell", unavailable_shell)
+    monkeypatch.setattr(
+        desktop_shell,
+        "create_default_desktop_app_service",
+        lambda: FakeAppService(),
+    )
 
     assert desktop_shell.launch_desktop_shell() is False
 
@@ -3311,7 +3316,16 @@ def test_simulated_desktop_close_keeps_repository_backed_session_resumable(
 ):
     session_dir = tmp_path / "sessions"
     monkeypatch.setenv("JARVIS_COGNITIVE_SESSION_DIR", str(session_dir))
-    service = create_default_desktop_app_service()
+    factory_kwargs = {
+        "environment": {
+            "JARVIS_USER_DATA_DIR": str(tmp_path / "user-data-v1"),
+            "JARVIS_COGNITIVE_SESSION_DIR": str(session_dir),
+            "APPDATA": str(tmp_path / "roaming"),
+        },
+        "home": tmp_path / "home",
+        "project_root": tmp_path / "project",
+    }
+    service = create_default_desktop_app_service(**factory_kwargs)
     shell, _ignored_service = interaction_shell(service)
 
     shell.view_model.execute_command("диалог: привет")
@@ -3320,5 +3334,5 @@ def test_simulated_desktop_close_keeps_repository_backed_session_resumable(
     shell._on_close()
     assert shell.root.destroy_calls == 1
 
-    restarted = DesktopShellViewModel(create_default_desktop_app_service())
+    restarted = DesktopShellViewModel(create_default_desktop_app_service(**factory_kwargs))
     assert restarted.state.cognitive_session_id == session_id

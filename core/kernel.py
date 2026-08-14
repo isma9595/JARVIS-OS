@@ -23,7 +23,17 @@ class JARVISKernel:
         "voice_input_manager",
     }
 
-    def __init__(self, version="0.2", user_profile=None):
+    def __init__(
+        self,
+        version="0.2",
+        user_profile=None,
+        *,
+        idea_manager=None,
+        memory_manager=None,
+        user_profile_manager=None,
+        vosk_settings_manager=None,
+        one_shot_vosk_real_recognition=None,
+    ):
         self.version = version
         self.user_profile = user_profile or {}
         self.dialogue = DialogueManager(self.user_profile)
@@ -31,8 +41,14 @@ class JARVISKernel:
             user_profile=self.user_profile,
             dialogue_manager=self.dialogue,
         )
-        self.idea_manager = IdeaManager()
-        self.memory_manager = LocalMemoryManager()
+        self.idea_manager = idea_manager or IdeaManager()
+        self.memory_manager = memory_manager or LocalMemoryManager()
+        if one_shot_vosk_real_recognition is None and vosk_settings_manager is not None:
+            from voice.one_shot_vosk_real_recognition import OneShotVoskRealRecognition
+
+            one_shot_vosk_real_recognition = OneShotVoskRealRecognition(
+                settings_manager=vosk_settings_manager,
+            )
         self.speech_recognition_backend = NoSpeechRecognitionBackend()
         self.microphone_input_adapter = MicrophoneInputAdapter(
             speech_backend=self.speech_recognition_backend
@@ -42,6 +58,8 @@ class JARVISKernel:
             dialogue_manager=self.dialogue,
             idea_manager=self.idea_manager,
             memory_manager=self.memory_manager,
+            user_profile_manager=user_profile_manager,
+            one_shot_vosk_real_recognition=one_shot_vosk_real_recognition,
             system_status_provider=self.get_system_status,
         )
         self.command_processor.action_router = self.action_router
@@ -50,6 +68,7 @@ class JARVISKernel:
             dialogue_manager=self.dialogue,
             user_profile=self.user_profile,
             microphone_adapter=self.microphone_input_adapter,
+            vosk_settings_manager=vosk_settings_manager,
         )
         self.command_processor.set_voice_input_manager(self.voice_input_manager)
         self.logger = Logger()

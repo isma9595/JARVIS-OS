@@ -1,6 +1,6 @@
 # JARVIS OS Architecture
 
-Status: runtime implementation through TASK-124 on the published TASK-123
+Status: runtime implementation through TASK-125 on the published TASK-124
 baseline.
 
 JARVIS OS is currently a Windows-first assistant application. It includes a CLI,
@@ -51,6 +51,20 @@ memory storage, or filesystem adapters directly.
 for UI clients. It owns public result projection into DTOs from
 `app/app_contracts.py`, safe text rendering, preview behavior, execution
 coordination, and composition of the current application subsystems.
+
+TASK-125 makes supported Desktop and CLI composition resolve one immutable
+`UserDataPaths` value before constructing ordinary persistence owners. The
+canonical layout root is `%LOCALAPPDATA%/JARVIS-OS/data/v1` on Windows or the
+`~/.jarvis-os/data/v1` fallback; `JARVIS_USER_DATA_DIR` is an exact-root
+override. Explicit per-store overrides remain authoritative.
+
+`UserDataMigrationCoordinator` performs only bounded validate-and-copy adoption
+of enumerated legacy candidates, with no-clobber publication, private path-free
+receipts, per-store locks, fail-fast ordering, and no deletion or runtime
+dual-read. `PersistenceHealthService` independently recomputes a read-only
+snapshot and exposes it through AppService DTOs/status cards without paths,
+contents, identifiers, exception details, or secrets. Neither boundary owns a
+store schema or lifecycle; DPAPI storage remains security-owned.
 
 TASK-120 adds `handle_desktop_turn()` as the single Desktop-turn facade. It
 preserves pending cancellation, confirmation, and clarification controls before
@@ -111,9 +125,12 @@ voice passes recognized text through the same facade and same session.
 TASK-123 makes `launch_desktop_shell()` use a dedicated AppService factory that
 connects `LocalConversationSessionRepository`. On startup AppService selects
 the latest ACTIVE session by `updated_at`, then `created_at`, then `session_id`;
-CLOSED sessions are ignored. Individual malformed or unsupported records do
-not block recovery of valid records. Persisted turns contain only bounded,
-redacted summaries, not raw user text or secrets. Conversation turns do not
+CLOSED sessions are ignored. The repository retains per-record partial-load
+diagnostics for direct repository-backed use. TASK-125 supported composition
+adds a strict pre-owner gate, so a corrupt or unsupported authoritative
+conversation store blocks that composition attempt rather than becoming a
+migration source. Persisted turns contain only bounded, redacted summaries, not
+raw user text or secrets. Conversation turns do not
 create execution operations, invoke `CommandProcessor`, call policy/workflow
 execution, or create a parallel history or memory store.
 

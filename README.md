@@ -16,10 +16,11 @@ future work: targeted decomposition, documentation maintenance, optional test
 coverage tooling, repository line-ending maintenance, and Desktop Shell UX
 polish.
 
-The published baseline is TASK-123 at
-`88e7a4daa9625d3cea61f790bef610049dc908fe`; TASK-124 adds one bounded Desktop
-interaction worker and safe shutdown boundary while retaining TASK-123 default
-Desktop conversation persistence using the existing TASK-115 repository. The
+The published baseline is TASK-124 at
+`7bc74d9d8f93947419ec443cfdd6bf4ed94db8d5`. TASK-125 adds a unified local
+user-data layout, bounded legacy adoption, and privacy-safe persistence health
+while retaining the TASK-124 Desktop worker and TASK-123 conversation
+persistence boundaries. The
 implementation remains transitional. `JarvisAppService` is the current
 application-facing boundary, and major responsibilities have been extracted,
 but `app/app_service.py` and `core/command_processor.py` are still large
@@ -39,9 +40,25 @@ orchestration modules.
   bounded/redacted session records. Standard Desktop composition is
   repository-backed and automatically resumes the latest ACTIVE session;
   direct `JarvisAppService()` construction remains in-memory.
-- Individual malformed or unsupported persisted records are rejected without
-  blocking recovery of valid sessions. Persisted turns contain bounded/redacted
-  summaries rather than raw user text or secrets.
+- The conversation repository retains per-record partial-load diagnostics for
+  direct repository-backed use. TASK-125 supported composition adds a stricter
+  pre-owner migration/health gate: a corrupt or unsupported authoritative store
+  blocks that startup attempt rather than being used as migration input.
+  Persisted turns contain bounded/redacted summaries rather than raw user text
+  or secrets.
+- Supported Desktop and CLI composition resolve one immutable canonical local
+  data root: `%LOCALAPPDATA%\JARVIS-OS\data\v1` on Windows, with
+  `~/.jarvis-os/data/v1` fallback and exact-root `JARVIS_USER_DATA_DIR`
+  override. Fixed stores live below `conversation/`, `memory/`, `profiles/`,
+  `ideas/`, and `voice/`; default paths do not depend on startup CWD.
+- Known deterministic legacy stores are validated and copied without overwrite
+  or source deletion before ordinary owners are constructed. Private path-free
+  receipts make later startup canonical-only; ambiguous, conflicting, unsafe,
+  corrupt, or unsupported state fails closed.
+- AppService exposes a stateless read-only persistence-health snapshot and safe
+  status card containing only stable store codes, schema/layout metadata, and
+  bounded counts. Paths, contents, identifiers, exception text, and secrets are
+  excluded. Windows DPAPI storage remains security-owned and is not relocated.
 - One AppService-owned Desktop cognitive turn facade shared by typed input and
   one-shot voice, with natural response text separated from technical
   diagnostics and optional execution metadata.
@@ -166,13 +183,14 @@ approved task.
 
 ## Basic Configuration
 
-Local runtime state is kept in repository-local or user-local files depending
-on the subsystem:
-
-- user profile: `users/profiles/default_user.json`
-- local memory: `memory/local/memory.json`
-- Vosk settings: `config/local/vosk_settings.json`
-- secure key metadata: Windows DPAPI-backed user-local storage when available
+Supported Desktop and CLI launches keep ordinary runtime state below one
+versioned user-local root. On Windows the default is
+`%LOCALAPPDATA%\JARVIS-OS\data\v1`; without `LOCALAPPDATA` it is
+`~/.jarvis-os/data/v1`. `JARVIS_USER_DATA_DIR` is an exact root override.
+Conversation sessions, memory, profile, ideas, and Vosk settings use fixed
+subpaths below that root. Explicit per-store paths retain priority and opt out
+of default migration for that store. Secure-key metadata remains at its
+security-owned Windows DPAPI location.
 
 These files are local state, not public contracts. The default user-facing
 language is Russian (`ru-RU`), with English (`en-US`) supported through the

@@ -1,13 +1,14 @@
 # JARVIS-OS Checkpoint
 
-- Published baseline: TASK-123 - Default Conversation Persistence
+- Published baseline: TASK-124 - Desktop Interaction Worker and Shutdown
 - Baseline commit:
-  `88e7a4daa9625d3cea61f790bef610049dc908fe`
+  `7bc74d9d8f93947419ec443cfdd6bf4ed94db8d5`
 - Baseline tree:
-  `c990fb290f2ad8fab7b2abbf477dd60666082d04`
-- Completed second audit-remediation worktree: TASK-124 - Desktop Interaction
-  Worker and Shutdown
-- Next runtime task: TASK-125 - Unified User Data and Persistence Health
+  `3bf5cb5e72fb529f9581c6924fa6ae689d9b08df`
+- Completed in the unstaged worktree: TASK-125 - Unified User Data and
+  Persistence Health. The initial full gate and the single post-audit
+  remediation full gate passed.
+- Next runtime task: TASK-126 - Reproducible Environment and CI.
 - Published TASK-123 full pytest:
   `2476 passed, 2 skipped in 9.23s`
 - Validation history: the initial gate was
@@ -19,6 +20,11 @@
 - Persistence boundary: TASK-123 connects the existing local
   repository to standard Desktop composition. Direct `JarvisAppService()`
   construction remains in-memory, and TASK-123 acceptance is complete.
+- Unified user-data boundary: TASK-125 resolves one immutable canonical `v1`
+  layout for supported Desktop and CLI composition, runs bounded copy-only
+  migration before ordinary owners, retains legacy sources, and exposes
+  stateless path-free persistence health through AppService. Explicit per-store
+  overrides remain authoritative; DPAPI storage is not relocated.
 - Desktop lifecycle boundary: TASK-124 uses one lazy serialized non-daemon
   worker for typed, voice, and workflow-resume GUI operations. Cancellation is
   cooperative, Tk apply remains main-thread-only, and ACTIVE conversation
@@ -48,6 +54,19 @@
   post-publication cancellation is rejected, and failure-safe worker-test
   teardown releases controlled gates before cooperative shutdown and bounded
   join.
+- TASK-125 validation so far: migration RED `117 errors in 8.79s` from the
+  absent module; health RED `18 failed in 0.44s`; composition RED
+  `4 failed, 1 passed in 0.37s`; focused GREEN
+  `570 passed, 2 skipped in 5.40s`; related regression
+  `507 passed in 2.74s`; compileall exit code `0`; single full acceptance
+  `2669 passed, 4 skipped in 13.41s`. The focused matrix includes the corrected
+  CLI first-launch ordering contract.
+- TASK-125 post-audit remediation: controlled RED
+  `8 failed, 134 passed, 2 skipped in 2.36s`; regression GREEN
+  `142 passed, 2 skipped in 1.84s`; final focused matrix
+  `578 passed, 2 skipped in 6.25s`; related regression
+  `507 passed in 2.92s`; compileall exit code `0`; single post-audit full
+  acceptance `2677 passed, 4 skipped in 18.42s`.
 
 ## Approved Workflow
 

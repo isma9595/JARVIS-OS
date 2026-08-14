@@ -163,6 +163,13 @@ python run_desktop.py
   cancellation has already been requested.
 - The shell does not construct Vosk, microphone, provider, credential, or
   command-processing internals.
+- Before the shell is constructed, the standard Desktop AppService factory
+  resolves the TASK-125 canonical user-data layout and completes the bounded
+  fail-fast migration gate. Desktop still reads no persistence store directly;
+  path-free health is available only through AppService contracts/status cards.
+- Desktop interaction scheduling and shutdown are unchanged by TASK-125. The
+  worker receives no paths, migration coordinator, health service, repository,
+  or persistence ownership, and ACTIVE conversation sessions remain resumable.
 - TASK-078 shell messages are Russian-first by default and preserve recognized
   Cyrillic text.
 - TASK-079 shell messages keep the original recognition visible and, when a

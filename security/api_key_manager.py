@@ -36,7 +36,6 @@ class ApiKeyManager:
                 f"- backend: {status.backend_name}",
                 f"- encrypted at rest: {'yes' if status.encrypted_at_rest else 'no'}",
                 f"- persistent: {'yes' if status.persistent else 'no'}",
-                f"- storage path: {status.storage_path or 'none'}",
                 f"- safe to store: {'yes' if status.safe_to_store else 'no'}",
                 "- providers supported: openai, gemini, groq, gigachat",
                 "- provider real requests can use SecureProviderRuntime credential resolution when explicitly invoked",

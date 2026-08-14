@@ -1,7 +1,7 @@
 # JARVIS Cognitive Architecture
 
 Status: target architecture report from TASK-112 with a current-state addendum
-through TASK-124. Target sections remain design guidance; sections explicitly
+through TASK-125. Target sections remain design guidance; sections explicitly
 labelled current describe the implemented repository state.
 
 ## Executive Decision
@@ -106,7 +106,7 @@ TASK-111 history:
   planning checkpoint without its own task file. TASK-112 must not invent
   implementation work for TASK-111.
 
-## Implemented State After TASK-115 Through TASK-124
+## Implemented State After TASK-115 Through TASK-125
 
 The first conversational vertical slice is now implemented:
 
@@ -135,6 +135,11 @@ The first conversational vertical slice is now implemented:
   Shutdown termination is independent of Tk completion consumption, while any
   retained completion remains exactly-once retrievable and the post-mainloop
   fallback discards it without presentation apply.
+- TASK-125 adds the supported-composition path/migration/health boundary. It
+  passes only canonical or explicit override paths into existing owners;
+  `ConversationSessionService` still owns session lifecycle, cognition receives
+  no migration or health responsibility, and `DesktopInteractionWorker`
+  receives no paths, repositories, or persistence internals.
 - `DesktopShellState` owns only presentation state and the current cognitive
   session id. Natural response text and structured diagnostics are projected
   separately; Desktop does not parse a formatted execution report to recover
@@ -1489,9 +1494,10 @@ The current normative task sequence is maintained in `docs/ROADMAP.md`.
 
 Current sequencing implications:
 
-- TASK-123 establishes default conversation persistence and TASK-124 adds the
-  Desktop worker/shutdown boundary. TASK-125 remains the next product-runtime
-  stage: unified user-data paths, followed by reproducible environment/CI, real AI
+- TASK-123 establishes default conversation persistence, TASK-124 adds the
+  Desktop worker/shutdown boundary, and TASK-125 adds unified user-data paths,
+  bounded migration, and read-only health. TASK-126 remains the next product-runtime
+  stage: reproducible environment/CI, followed by real AI
   conversation, chat-first UX, and document/drafting/report workflows through
   TASK-131.
 - `MemoryService` read integration is TASK-132.

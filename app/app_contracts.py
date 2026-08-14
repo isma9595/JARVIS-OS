@@ -207,6 +207,21 @@ class AppStatusCard(_ContractMixin):
 
 
 @dataclass(frozen=True)
+class AppPersistenceStoreHealth(_ContractMixin):
+    layout_version: str
+    store_id: str
+    code: str
+    schema_version: str | int | None = None
+    item_count: int | None = None
+
+
+@dataclass(frozen=True)
+class AppPersistenceHealthSnapshot(_ContractMixin):
+    layout_version: str
+    stores: tuple[AppPersistenceStoreHealth, ...]
+
+
+@dataclass(frozen=True)
 class AppCommandCard(_ContractMixin):
     command_id: str
     title_ru: str

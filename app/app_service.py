@@ -5,8 +5,10 @@ and delegate execution to CommandProcessor, but it does not execute commands,
 call providers, route actions, read arbitrary files, or persist prompts.
 """
 
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
+import os
+from pathlib import Path
 import re
 from threading import Lock
 from uuid import uuid4
@@ -29,6 +31,7 @@ from app.app_contracts import (
     AppDesktopTurnResult,
     AppExecutionContract,
     AppLanguagePreferenceContract,
+    AppPersistenceHealthSnapshot,
     AppPreviewContract,
     AppStatusCard,
     AppVoiceRequestResult,
@@ -269,7 +272,13 @@ class JarvisAppService:
         cognitive_clarification_coordinator=None,
         cognitive_response_composer=None,
         cognitive_interaction_service=None,
+        persistence_health_service=None,
+        user_data_paths=None,
+        migration_report=None,
     ):
+        self.persistence_health_service = persistence_health_service
+        self.user_data_paths = user_data_paths
+        self.migration_report = migration_report
         self._startup_profiler = StartupProfiler(clock=startup_clock)
         self._startup_eager_components = (
             "command_registry",
@@ -572,8 +581,42 @@ class JarvisAppService:
             ),
         )
 
+    def persistence_health(self) -> AppPersistenceHealthSnapshot | None:
+        if self.persistence_health_service is None:
+            return None
+        return self.persistence_health_service.snapshot()
+
+    def persistence_health_status_card(self) -> AppStatusCard | None:
+        snapshot = self.persistence_health()
+        if snapshot is None:
+            return None
+        blocking_codes = {
+            "corrupt",
+            "unsupported_version",
+            "canonical_legacy_conflict",
+            "multiple_legacy_sources",
+            "migration_state_invalid",
+            "unavailable",
+        }
+        blocking_count = sum(store.code in blocking_codes for store in snapshot.stores)
+        return AppStatusCard(
+            card_id="persistence_health",
+            title_ru="Local persistence",
+            value_ru="ready" if blocking_count == 0 else "attention required",
+            status="ready" if blocking_count == 0 else "blocked",
+            category="persistence",
+            safe=True,
+            ui_visible=True,
+            details_ru=(
+                f"layout: {snapshot.layout_version}",
+                f"stores checked: {len(snapshot.stores)}",
+                f"blocking stores: {blocking_count}",
+                "No paths, contents, identifiers, or secrets are included.",
+            ),
+        )
+
     def status_cards(self) -> tuple[AppStatusCard, ...]:
-        return (
+        cards = (
             self.audio_status_card(),
             AppStatusCard(
                 card_id="conversational_loop",
@@ -688,6 +731,8 @@ class JarvisAppService:
                 details_ru=("Contract methods do not make accidental network calls.",),
             ),
         )
+        persistence_card = self.persistence_health_status_card()
+        return cards if persistence_card is None else (*cards, persistence_card)
 
     def command_cards(self, category: str | None = None) -> tuple[AppCommandCard, ...]:
         command_category = self._parse_category(category)
@@ -4992,9 +5037,151 @@ class JarvisAppService:
         return getattr(source, key, default)
 
 
-def create_default_desktop_app_service() -> JarvisAppService:
-    """Create the standard Desktop composition with local session persistence."""
+def create_default_desktop_app_service(
+    *,
+    environment: Mapping[str, object] | None = None,
+    home: str | os.PathLike[str] | None = None,
+    project_root: str | os.PathLike[str] | None = None,
+    store_overrides: Mapping[str, str | os.PathLike[str]] | None = None,
+) -> JarvisAppService:
+    """Create the supported Desktop composition after bounded migration."""
 
-    return JarvisAppService(
-        cognitive_session_repository=LocalConversationSessionRepository(),
+    from app.persistence_health import PersistenceHealthService
+    from core.command_processor import CommandProcessor
+    from dialogue import DialogueManager
+    from ideas import IdeaManager
+    from memory import LocalMemoryManager
+    from platform_adapters.user_data_migration import (
+        DeterministicLegacyRegistry,
+        UserDataMigrationBlockedError,
+        UserDataMigrationCoordinator,
     )
+    from platform_adapters.user_data_paths import UserDataPaths
+    from security.secure_key_store import WindowsDpapiSecureKeyBackend
+    from users.user_profile import UserProfileManager
+    from voice import VoiceInputManager
+    from voice.one_shot_vosk_real_recognition import OneShotVoskRealRecognition
+    from voice.vosk_settings_manager import VoskSettingsManager
+
+    selected_environment = os.environ if environment is None else environment
+    paths = UserDataPaths.resolve(
+        environment=selected_environment,
+        home=home,
+        project_root=project_root,
+    )
+    conversation_override = _nonempty_environment_path(
+        selected_environment,
+        "JARVIS_COGNITIVE_SESSION_DIR",
+    )
+    external_overrides = {
+        store_id: Path(os.fspath(path))
+        for store_id, path in (store_overrides or {}).items()
+    }
+    if "conversation" not in external_overrides and conversation_override is not None:
+        external_overrides["conversation"] = conversation_override
+    registry = DeterministicLegacyRegistry.from_user_data_paths(
+        paths,
+        conversation_legacy=_legacy_conversation_storage_dir(
+            selected_environment,
+            home=home,
+        ),
+    )
+    migration_report = UserDataMigrationCoordinator(
+        paths,
+        registry,
+        external_overrides=external_overrides,
+    ).migrate_all()
+    if not migration_report.completed:
+        raise UserDataMigrationBlockedError(migration_report.blocking_store_id or "unknown")
+
+    memory_manager = LocalMemoryManager(
+        storage_path=external_overrides.get("memory", paths.memory)
+    )
+    profile_manager = UserProfileManager(
+        profile_path=external_overrides.get("profile", paths.profile)
+    )
+    idea_manager = IdeaManager(
+        storage_path=external_overrides.get("ideas", paths.ideas)
+    )
+    vosk_settings_manager = VoskSettingsManager(
+        settings_path=external_overrides.get("vosk_settings", paths.vosk_settings)
+    )
+    user_profile = profile_manager.load_profile() if profile_manager.profile_exists() else {}
+    dialogue_manager = DialogueManager(user_profile)
+    one_shot_recognition = OneShotVoskRealRecognition(
+        settings_manager=vosk_settings_manager,
+    )
+    command_processor = CommandProcessor(
+        user_profile=user_profile,
+        dialogue_manager=dialogue_manager,
+        idea_manager=idea_manager,
+        memory_manager=memory_manager,
+        user_profile_manager=profile_manager,
+        one_shot_vosk_real_recognition=one_shot_recognition,
+    )
+    voice_input_manager = VoiceInputManager(
+        command_processor=command_processor,
+        dialogue_manager=dialogue_manager,
+        user_profile=user_profile,
+        vosk_settings_manager=vosk_settings_manager,
+    )
+    command_processor.set_voice_input_manager(voice_input_manager)
+
+    conversation_path = external_overrides.get("conversation", paths.conversation_sessions)
+    secure_path = _secure_key_storage_path(selected_environment, home=home)
+    secure_status = WindowsDpapiSecureKeyBackend(storage_path=secure_path).status()
+    health_service = PersistenceHealthService(
+        paths,
+        registry,
+        external_overrides=external_overrides,
+        secure_keys_path=secure_path,
+        secure_keys_backend_available=secure_status.available,
+    )
+    return JarvisAppService(
+        command_processor=command_processor,
+        one_shot_voice_recognition=one_shot_recognition,
+        memory_manager=memory_manager,
+        cognitive_session_repository=LocalConversationSessionRepository(conversation_path),
+        persistence_health_service=health_service,
+        user_data_paths=paths,
+        migration_report=migration_report,
+    )
+
+
+def _nonempty_environment_path(
+    environment: Mapping[str, object],
+    name: str,
+) -> Path | None:
+    try:
+        value = environment.get(name)
+        if value is None or value == "":
+            return None
+        return Path(os.fspath(value))
+    except Exception:
+        raise ValueError(f"{name.lower()}_invalid") from None
+
+
+def _legacy_conversation_storage_dir(
+    environment: Mapping[str, object],
+    *,
+    home: str | os.PathLike[str] | None,
+) -> Path:
+    local_app_data = _nonempty_environment_path(environment, "LOCALAPPDATA")
+    if local_app_data is not None and local_app_data.is_absolute():
+        parent = local_app_data
+    else:
+        parent = Path.home() if home is None else Path(home)
+        return parent / ".jarvis-os" / "data" / "v1" / "cognition" / "sessions"
+    return parent / "JARVIS-OS" / "data" / "v1" / "cognition" / "sessions"
+
+
+def _secure_key_storage_path(
+    environment: Mapping[str, object],
+    *,
+    home: str | os.PathLike[str] | None,
+) -> Path:
+    roaming = _nonempty_environment_path(environment, "APPDATA")
+    if roaming is not None:
+        return roaming / "JARVIS-OS" / "secure_keys.json"
+    selected_home = Path.home() if home is None else Path(home)
+    return selected_home / "AppData" / "Roaming" / "JARVIS-OS" / "secure_keys.json"

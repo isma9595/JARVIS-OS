@@ -305,7 +305,7 @@ user scenarios establish their requirements.
   makes non-daemon worker-test cleanup failure-safe. Its single full acceptance
   passed with `2506 passed, 2 skipped in 24.68s`.
 
-### TASK-125 - Unified User Data and Persistence Health
+### TASK-125 - Unified User Data and Persistence Health - Completed
 
 - Purpose: define one authoritative user-data root and expose safe health for
   conversation, memory, configuration, and other local persistence.
@@ -315,6 +315,10 @@ user scenarios establish their requirements.
 - Completion criteria: supported launches resolve the same bounded user-data
   locations, migration/fallback behavior is explicit, DPAPI and filesystem
   adapter boundaries remain intact, and failures are safely observable.
+- Validation: the single full acceptance passed with
+  `2669 passed, 4 skipped in 13.41s` before the post-audit remediation; the
+  single post-audit full acceptance passed with
+  `2677 passed, 4 skipped in 18.42s`.
 - Explicit non-goals: cloud sync, broad storage redesign, or deleting legacy
   user data.
 

@@ -23,6 +23,8 @@ def test_status_text_is_safe():
         in text
     )
     assert "no keys printed" in text
+    assert "storage path" not in text.lower()
+    assert "storage_path" not in text.lower()
     assert "no network" in text
 
 
