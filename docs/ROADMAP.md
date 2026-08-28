@@ -365,7 +365,7 @@ reproducible environment are complete.
   compileall exit code `0`; single full acceptance
   `2696 passed, 4 skipped in 14.34s`.
 
-### TASK-128 - Chat-First Desktop UX v1
+### TASK-128 - Chat-First Desktop UX v1 - Completed
 
 - Purpose: make sessions, response state, cancellation, retry, and persistence
   status clear through AppService DTOs.
@@ -376,6 +376,21 @@ reproducible environment are complete.
   safe.
 - Explicit non-goals: broad visual redesign, hidden automation, or direct
   Desktop imports of cognition/provider internals.
+- Implementation status: completed and audit-remediated in the unstaged
+  worktree on published TASK-127 commit `435f660`. AppService now
+  projects path-free chat session/response/retry/persistence state; Desktop
+  presents a chat-first input/response/status flow and explicit eligible retry
+  through the existing single worker without acquiring cognition, provider,
+  persistence, or execution ownership.
+- Validation so far: expected contract RED `2 errors in 1.92s`; focused GREEN
+  `179 passed in 2.98s`; related regression `406 passed in 5.97s`; compileall
+  exit code `0`; safe non-GUI fake-provider smoke passed; single full
+  acceptance `2704 passed, 4 skipped in 27.16s`.
+- Audit remediation: controlled RED `3 failed, 179 passed in 4.88s`; focused
+  GREEN `182 passed in 5.44s`; related regression `427 passed in 8.35s`;
+  compileall exit code `0`; safe non-GUI smoke passed. The pre-audit full result
+  above is historical; the single post-audit full acceptance passed with
+  `2707 passed, 4 skipped in 14.35s`.
 
 ### TASK-129 - Document Intake v1
 

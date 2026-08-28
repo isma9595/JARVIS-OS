@@ -1,13 +1,13 @@
 # JARVIS-OS Checkpoint
 
-- Published baseline: TASK-126 - Reproducible Environment and CI
+- Published baseline: TASK-127 - Real AI Conversation Vertical Slice
 - Baseline commit:
-  `95702dbb772d903446c6a9c8660fa3a12b5c3762`
+  `435f66041149226840481efbb7728ceb4b7324a1`
 - Baseline tree:
-  `75610bd1b8b939021bd05d62722f683c61eee4d5`
-- Completed in the unstaged worktree: TASK-127 - Real AI Conversation Vertical
-  Slice. Focused, related, and full acceptance passed.
-- Next runtime task: TASK-128 - Chat-First Desktop UX v1.
+  `3e2022167d5de714128a60eb62d33c35e0b31f0a`
+- Completed in the unstaged worktree: TASK-128 - Chat-First Desktop UX v1.
+  Audit remediation and the single post-audit full acceptance passed.
+- Next runtime task: TASK-129 - Document Intake v1.
 - Published TASK-123 full pytest:
   `2476 passed, 2 skipped in 9.23s`
 - Validation history: the initial gate was
@@ -76,6 +76,19 @@
   `437 passed in 2.69s`; compileall exit code `0`; fake-provider Desktop
   vertical slice made exactly one provider call and no command/execution call.
   Single full repository acceptance: `2696 passed, 4 skipped in 14.34s`.
+- TASK-128 validation so far: expected contract RED
+  `2 errors in 1.92s`; final focused GREEN `179 passed in 2.98s`; related
+  regression `406 passed in 5.97s`; compileall exit code `0`; safe non-GUI
+  fake-provider smoke passed with one worker, explicit retry, duplicate
+  rejection, and no execution journal entry. Single full repository acceptance:
+  `2704 passed, 4 skipped in 27.16s`.
+- TASK-128 final read-only audit found two MEDIUM issues and one LOW issue.
+  Remediation validation: controlled RED `3 failed, 179 passed in 4.88s`;
+  first GREEN candidate `1 failed, 181 passed in 3.88s` due only to a stale
+  FakeAppService idle-status contract; focused GREEN `182 passed in 5.44s`;
+  related regression `427 passed in 8.35s`; compileall exit code `0`; safe
+  non-GUI remediation smoke passed. Single post-audit full acceptance:
+  `2707 passed, 4 skipped in 14.35s`.
 
 ## Approved Workflow
 

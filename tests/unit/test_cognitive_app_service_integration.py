@@ -6,6 +6,7 @@ from types import SimpleNamespace
 from app import AppCommandSource, JarvisAppService
 import app.app_service as app_service_module
 import ai.groq_request_gate as groq_request_gate_module
+from ai.groq_request_gate import GroqRequestGate
 from app.desktop_shell import DesktopShellViewModel
 from app.provider_backed_response_composer import ProviderBackedResponseComposer
 from ai import AIProviderCapability, AIProviderSafetyLevel, AIResponse
@@ -179,6 +180,21 @@ def test_plain_app_service_keeps_compatibility_conversation_without_provider():
     assert result.diagnostics.network_may_be_used is False
 
 
+def test_plain_app_service_projects_in_memory_idle_chat_status():
+    service = JarvisAppService(command_processor=FakeCommandProcessor())
+
+    status = service.desktop_chat_status()
+
+    assert status.session_id is None
+    assert status.session_state == "none"
+    assert status.turn_count == 0
+    assert status.resumable is False
+    assert status.response_state == "idle"
+    assert status.retry_available is False
+    assert status.persistence_state == "in_memory"
+    assert status.persistence_code == "not_configured"
+
+
 def test_provider_backed_app_service_answers_ordinary_turn_without_execution():
     processor = FakeCommandProcessor()
     gate = FakeConversationGroqGate(_groq_response("Земля — планета."))
@@ -197,6 +213,11 @@ def test_provider_backed_app_service_answers_ordinary_turn_without_execution():
     assert len(gate.calls) == 1
     assert processor.calls == []
     assert service.execution_coordinator.journal.recent() == ()
+    assert result.chat_status.session_id == result.cognitive_session_id
+    assert result.chat_status.session_state == "active"
+    assert result.chat_status.response_state == "ready"
+    assert result.chat_status.response_source == "groq"
+    assert result.chat_status.retry_available is True
 
 
 def test_provider_output_that_looks_like_command_is_never_executed():
@@ -236,6 +257,64 @@ def test_provider_failure_returns_compatibility_answer_without_error_details():
     )
     assert result.diagnostics.network_may_be_used is True
     assert result.diagnostics.response_executed_as_command is False
+    assert result.chat_status.response_state == "fallback"
+    assert result.chat_status.response_source == "compatibility"
+    assert result.chat_status.retry_available is True
+    assert result.chat_status.retry_reason == "provider_unavailable"
+
+
+def test_private_conversation_fallback_is_not_retryable_and_never_calls_provider():
+    secret = "gsk_test-private-chat-1234567890"
+    gate = FakeConversationGroqGate(_groq_response("provider must not answer"))
+    service = JarvisAppService(
+        command_processor=FakeCommandProcessor(),
+        cognitive_primary_provider_gate=gate,
+    )
+
+    result = service.handle_desktop_turn(
+        f"Объясни token={secret}",
+        AppCommandSource.TEST,
+    )
+
+    assert gate.calls == []
+    assert secret not in result.response_text
+    assert result.chat_status.response_state == "local_private"
+    assert result.chat_status.retry_available is False
+    assert result.chat_status.retry_reason == "privacy_blocked"
+
+
+def test_gate_level_private_context_refusal_is_projected_as_non_retryable():
+    class ForbiddenProvider:
+        def __init__(self, **_kwargs):
+            raise AssertionError("privacy refusal must happen before provider creation")
+
+    gate = GroqRequestGate(provider_factory=ForbiddenProvider, environ={})
+    service = JarvisAppService(
+        command_processor=FakeCommandProcessor(),
+        cognitive_primary_provider_gate=gate,
+    )
+
+    result = service.handle_desktop_turn(
+        "Объясни мои личные данные кратко",
+        AppCommandSource.TEST,
+    )
+
+    assert result.diagnostics.response_executed_as_command is False
+    assert result.chat_status.response_state == "local_private"
+    assert result.chat_status.retry_available is False
+    assert result.chat_status.retry_reason == "privacy_blocked"
+
+
+def test_unknown_path_shaped_session_id_is_not_published_by_chat_status():
+    service = JarvisAppService(command_processor=FakeCommandProcessor())
+    unsafe_id = "C:\\Users\\User\\private-session.txt"
+
+    status = service.desktop_chat_status(unsafe_id)
+
+    assert status.session_state == "unavailable"
+    assert status.session_id is None
+    assert unsafe_id not in str(status.to_dict())
+    assert unsafe_id not in status.safe_text_ru()
 
 
 def _default_desktop_service(tmp_path, storage_dir):
@@ -308,6 +387,8 @@ def test_provider_backed_service_keeps_known_command_on_existing_execution_route
     assert gate.calls == []
     assert processor.calls == ["app contracts status"]
     assert result.diagnostics.response_executed_as_command is False
+    assert result.chat_status.response_state == "command"
+    assert result.chat_status.retry_available is False
 
 
 def test_default_desktop_factory_connects_local_repository_without_creating_directory(
@@ -327,6 +408,10 @@ def test_default_desktop_factory_connects_local_repository_without_creating_dire
     assert service.resumable_conversation_session_id() is None
     assert not storage_dir.exists()
     assert isinstance(service.cognitive_response_composer, ProviderBackedResponseComposer)
+    chat_status = service.desktop_chat_status()
+    assert chat_status.persistence_state == "ready"
+    assert chat_status.persistence_code in {"ready", "not_initialized", "missing"}
+    assert "sessions" not in chat_status.safe_text_ru().lower()
 
 
 def test_default_desktop_factory_does_not_hide_invalid_storage_configuration(

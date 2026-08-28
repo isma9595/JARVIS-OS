@@ -1,7 +1,6 @@
 # JARVIS OS Architecture
 
-Status: runtime implementation through TASK-125 on the published TASK-124
-baseline.
+Status: TASK-128 implementation on the published TASK-127 baseline.
 
 JARVIS OS is currently a Windows-first assistant application. It includes a CLI,
 a Tkinter Desktop Shell prototype, an AppService boundary for application
@@ -91,7 +90,7 @@ decomposition.
 
 `app/app_contracts.py` contains versioned UI-safe contract dataclasses such as
 `AppCommandPreview`, `AppCommandResult`, `AppExecutionContract`,
-`AppVoiceRequestResult`, `AppDesktopTurnResult`,
+`AppVoiceRequestResult`, `AppDesktopTurnResult`, `AppDesktopChatStatus`,
 `AppDesktopTurnDiagnostics`, `AppContractStatus`, `AppStatusCard`,
 `AppCommandCard`, and `AppContractManifest`.
 
@@ -101,10 +100,18 @@ clients. Internal Python objects, provider objects, credentials, microphone
 streams, and filesystem handles are not public contracts.
 
 `AppDesktopTurnResult` keeps the natural response, cognitive session id,
-structured diagnostics, and optional execution contract in separate fields.
+structured diagnostics, optional execution contract, and one path-free chat
+status projection in separate fields.
 Desktop renders the natural response as its primary output and retains
 diagnostics in a separate state projection; it does not parse operation,
 category, risk, network, or cognitive fields from formatted response text.
+
+TASK-128 makes `AppDesktopChatStatus` the application-owned contract for
+session state, bounded turn count, resumability, response/source state,
+explicit retry eligibility/reason, and persistence state/code. It exposes no
+repository path, persisted record, provider object, raw exception, traceback,
+or secret. Desktop presents that projection and retains no parallel session
+history or persistence health model.
 
 ## Cognitive Conversation
 
@@ -154,6 +161,18 @@ owns eligibility and retention decisions only; it owns no memory records,
 pending approvals, repository, or persistence. It is exported but is not
 connected to AppService, Desktop, `LocalMemoryManager`, or the existing memory
 command routes.
+
+TASK-128 changes presentation, not routing ownership. The primary Desktop flow
+uses `Сообщение`, `Отправить`, a prominent response, safe chat status, and an
+explicit eligible retry. Retry submits the same bounded input through the same
+AppService facade, cognitive session id, and serialized Desktop worker. It is
+not automatic, creates no backlog, and is disabled for command/control,
+clarification, privacy-blocked, and failed results. Provider output remains
+presentation-only and never becomes a retry-time execution instruction.
+Gate-level privacy refusal is projected from the configured policy's semantic
+decision rather than formatted refusal text. Unknown session ids are omitted
+from the path-free DTO, and clearing Desktop output refreshes idle/no-retry
+status through the AppService read contract.
 
 TASK-124 adds a Desktop-only scheduling and shutdown boundary. Typed turns,
 one-shot voice requests, and workflow resume GUI handlers submit to one lazy,

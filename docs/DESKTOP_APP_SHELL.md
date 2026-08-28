@@ -56,7 +56,12 @@ python run_desktop.py
 - Show desktop/app service status.
 - List command registry categories and commands.
 - Preview command risk without execution.
-- Execute explicit command text through AppService.
+- Send typed text through the unified AppService Desktop-turn facade.
+- Present the natural assistant response before secondary diagnostics.
+- Show a compact path-free chat status projected by AppService: session,
+  response/source, retry eligibility, and persistence state.
+- Explicitly retry an eligible conversational turn through the same session,
+  AppService facade, and serialized worker.
 - Display a compact Activity Status panel with current idle/busy state,
   user-attention state, and bounded recent outcomes from AppService.
 - Display a bounded, newest-first execution history list from AppService.
@@ -84,12 +89,14 @@ python run_desktop.py
 
 - No installer.
 - No key input UI.
-- No automatic provider use of secure key storage.
+- No provider settings or raw-key handling in Desktop; standard composition may
+  use the existing gated Groq credential boundary for eligible conversation.
 - No AI settings UI yet.
 - No file reading.
 - No screen capture.
 - No automation.
-- No network by default.
+- No hidden or background network use; eligible ordinary Desktop conversation
+  may make the TASK-127 gated provider attempt and otherwise falls back locally.
 - No continuous listening or wake-word service.
 - No history deletion, editing, replay, re-execution, file export, cloud sync,
   or remote history access.
@@ -101,7 +108,8 @@ python run_desktop.py
 
 - No auto execution on startup.
 - No secrets are stored or printed by the shell.
-- No network by default.
+- No hidden or background network use. Provider eligibility and fallback are
+  owned by AppService composition, not Desktop.
 - AI responses are not executed as commands.
 - Preview does not execute target commands.
 - Activity Status is read-only and uses `JarvisAppService.application_activity()`.
@@ -141,6 +149,10 @@ python run_desktop.py
 - Typed turns, explicit one-shot voice requests, and workflow resume use one
   lazy serialized non-daemon `DesktopInteractionWorker`; there is no separate
   voice thread and no backlog.
+- TASK-128 chat retry uses that same worker and current cognitive session id.
+  It is explicit-only, never queues automatically, and is unavailable when the
+  AppService projection reports command/control, clarification,
+  privacy-blocked, failed, or otherwise ineligible state.
 - Accepted work projects a busy state, disables Execute/microphone/resume, and
   enables one general cooperative-cancel control. Domain workflow cancellation
   remains a separate AppService-mediated action.
@@ -163,6 +175,13 @@ python run_desktop.py
   cancellation has already been requested.
 - The shell does not construct Vosk, microphone, provider, credential, or
   command-processing internals.
+- `AppDesktopChatStatus` is the only chat-status source. Its bounded fields do
+  not include repository paths, records, provider objects, raw exception text,
+  tracebacks, or secrets; `DesktopShellState` remains a non-authoritative UI
+  projection and creates no parallel conversation history.
+- A gate-level semantic privacy refusal is local/private and non-retryable.
+  Unknown session ids are not echoed by the path-free status DTO, and Clear
+  refreshes the visible status through AppService to idle/no-retry.
 - Before the shell is constructed, the standard Desktop AppService factory
   resolves the TASK-125 canonical user-data layout and completes the bounded
   fail-fast migration gate. Desktop still reads no persistence store directly;

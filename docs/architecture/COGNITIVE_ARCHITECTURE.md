@@ -106,7 +106,7 @@ TASK-111 history:
   planning checkpoint without its own task file. TASK-112 must not invent
   implementation work for TASK-111.
 
-## Implemented State After TASK-115 Through TASK-127
+## Implemented State After TASK-115 Through TASK-128
 
 The first conversational vertical slice is now implemented:
 
@@ -148,6 +148,16 @@ The first conversational vertical slice is now implemented:
   compatibility composition. Only bounded safe session projection is supplied;
   provider output remains untrusted presentation text and never becomes an
   execution input.
+- TASK-128 adds a path-free `AppDesktopChatStatus` projection owned by
+  AppService. Desktop renders session, response, retry, and persistence state
+  without importing cognition, providers, repositories, or persistence health
+  internals. Explicit eligible retry re-enters the same AppService Desktop-turn
+  facade and serialized worker; it creates no queue or second session/history
+  owner.
+- TASK-128 audit remediation keeps privacy authority in the configured gate:
+  AppService reuses its deterministic semantic decision only for the UI
+  projection, never matches refusal prose, never retries blocked context, and
+  publishes no unknown external session id through the path-free DTO.
 - `DesktopShellState` owns only presentation state and the current cognitive
   session id. Natural response text and structured diagnostics are projected
   separately; Desktop does not parse a formatted execution report to recover
@@ -1394,11 +1404,13 @@ execution authority.
 
 ### DesktopShellState
 
-Desktop remains presentation-only. As of TASK-123 it calls
+Desktop remains presentation-only. As of TASK-128 it calls
 `handle_desktop_turn()`, stores the current cognitive session id, renders
 natural response text, and keeps structured diagnostics in a separate state
 projection. Initial resume selection is requested only through AppService. It
-must not import cognitive internals. Future Desktop work may add
+also renders the AppService-owned chat status and keeps only ephemeral retry
+input for an explicitly eligible conversational result. It must not import
+cognitive, provider, repository, or persistence internals. Future Desktop work may add
 plans and suggestions only through AppService DTOs.
 
 ### AI Providers
@@ -1515,8 +1527,10 @@ Current sequencing implications:
   Desktop worker/shutdown boundary, TASK-125 adds unified user-data paths,
   bounded migration, and read-only health, TASK-126 adds reproducible
   environment/CI, and TASK-127 adds the first real Desktop AI conversation
-  path. TASK-128 chat-first UX is the next product-runtime stage, followed by
-  document/drafting/report workflows through TASK-131.
+  path. TASK-128 adds the chat-first Desktop projection and explicit eligible
+  retry without changing session, provider, execution, persistence, or worker
+  ownership. TASK-129 document intake is the next product-runtime stage,
+  followed by drafting/report workflows through TASK-131.
 - `MemoryService` read integration is TASK-132.
 - Existing memory command migration is TASK-133.
 - Memory candidates and explicit approval are TASK-134.

@@ -7,6 +7,7 @@ registry browsing, preview, and explicit execution.
 from dataclasses import dataclass, field
 import re
 
+from app.app_contracts import AppDesktopChatStatus
 from app.app_service import (
     AppCommandSource,
     JarvisAppService,
@@ -72,6 +73,9 @@ class DesktopShellState:
     workflow_cancellation_text: str
     workflow_cancellation_available: bool
     workflow_cancellation_in_progress: bool
+    chat_status_text: str
+    chat_response_state: str
+    chat_retry_available: bool
     interaction_busy: bool
     active_interaction_id: str | None
     active_interaction_kind: str | None
@@ -107,6 +111,7 @@ class DesktopShellViewModel:
         self,
         app_service: JarvisAppService,
         cognitive_session_id: str | None = None,
+        initial_chat_status: AppDesktopChatStatus | None = None,
     ):
         self.app_service = app_service
         self._initial_cognitive_session_id = (
@@ -114,6 +119,12 @@ class DesktopShellViewModel:
             if cognitive_session_id is not None
             else self.app_service.resumable_conversation_session_id()
         )
+        if initial_chat_status is None and isinstance(app_service, JarvisAppService):
+            initial_chat_status = app_service.desktop_chat_status(
+                self._initial_cognitive_session_id
+            )
+        self._initial_chat_status = initial_chat_status
+        self._chat_retry_input: str | None = None
         self.state = self.build_initial_state()
 
     def build_initial_state(self) -> DesktopShellState:
@@ -125,6 +136,7 @@ class DesktopShellViewModel:
         history = self._load_history_state()
         activity = self._load_activity_state()
         workflow = self._load_workflow_state()
+        chat_status = self._initial_chat_status
         return DesktopShellState(
             app_title="JARVIS OS",
             status_text=status_text,
@@ -185,6 +197,15 @@ class DesktopShellViewModel:
             workflow_cancellation_text=workflow["workflow_cancellation_text"],
             workflow_cancellation_available=workflow["workflow_cancellation_available"],
             workflow_cancellation_in_progress=False,
+            chat_status_text=(
+                self._safe_text(chat_status.safe_text_ru())
+                if chat_status is not None
+                else "Состояние чата недоступно до первого ответа AppService."
+            ),
+            chat_response_state=(
+                chat_status.response_state if chat_status is not None else "unavailable"
+            ),
+            chat_retry_available=False,
             interaction_busy=False,
             active_interaction_id=None,
             active_interaction_kind=None,
@@ -245,6 +266,22 @@ class DesktopShellViewModel:
         except Exception as exc:
             return self.apply_execute_command(captured_text, exception=exc)
 
+    def retry_last_chat_turn(self) -> str:
+        retry_text = self.chat_retry_input()
+        if retry_text is None:
+            message = "Повтор запроса сейчас недоступен."
+            self.state = self._replace(
+                interaction_status_text=message,
+                chat_retry_available=False,
+            )
+            return message
+        return self.execute_command(retry_text)
+
+    def chat_retry_input(self) -> str | None:
+        if not self.state.chat_retry_available:
+            return None
+        return self._chat_retry_input
+
     def perform_execute_command(self, text: str, session_id: str | None):
         return self.app_service.handle_desktop_turn(
             text,
@@ -261,11 +298,14 @@ class DesktopShellViewModel:
                 output_text=output_text,
                 diagnostics_text=diagnostics_text,
             )
+            retry_available = bool(turn_projection.get("chat_retry_available", False))
+            self._chat_retry_input = str(text or "") if retry_available else None
             self.state = self._replace(
                 command_input=str(text or ""),
                 **turn_projection,
             )
             return output_text
+        self._chat_retry_input = None
         error = self._safe_error(exception)
         self.state = self._replace(
             **self._empty_turn_state_projection(
@@ -316,6 +356,14 @@ class DesktopShellViewModel:
                     output_text=output_text,
                     diagnostics_text=diagnostics_text,
                 )
+                voice_retry_available = bool(
+                    turn_projection.get("chat_retry_available", False)
+                    and str(recognized_text or "").strip()
+                )
+                turn_projection["chat_retry_available"] = voice_retry_available
+                self._chat_retry_input = (
+                    str(recognized_text) if voice_retry_available else None
+                )
             else:
                 turn_projection = self._turn_state_projection(
                     current_turn_result=result,
@@ -328,6 +376,7 @@ class DesktopShellViewModel:
                     ),
                     ok=getattr(result, "ok", False),
                 )
+                self._chat_retry_input = None
             self.state = self._replace(
                 command_input=str(recognized_text or self.state.command_input),
                 preview_text="\n".join(preview_lines),
@@ -335,6 +384,7 @@ class DesktopShellViewModel:
             )
             return output_text
         error = self._safe_error(exception)
+        self._chat_retry_input = None
         self.state = self._replace(
             **self._empty_turn_state_projection(
                 output_text=error,
@@ -347,12 +397,28 @@ class DesktopShellViewModel:
 
     def clear_output(self) -> str:
         output_text = "Output cleared. No command has been executed by clear."
+        self._chat_retry_input = None
+        try:
+            chat_projection = self._chat_state_projection(
+                self.app_service.desktop_chat_status(self.state.cognitive_session_id)
+            )
+        except Exception:
+            chat_projection = {
+                "chat_status_text": (
+                    "Состояние чата:\n"
+                    "- response state: idle\n"
+                    "- retry available: no"
+                ),
+                "chat_response_state": "idle",
+                "chat_retry_available": False,
+            }
         self.state = self._replace(
             preview_text="Command preview cleared.",
             output_text=output_text,
             diagnostics_text="Desktop turn diagnostics cleared.",
             current_turn_result=None,
             execution_metadata=None,
+            **chat_projection,
             requires_clarification=False,
             requires_confirmation=False,
             clarification_question=None,
@@ -1568,7 +1634,7 @@ class DesktopShellViewModel:
         output_text: str,
         diagnostics_text: str,
     ) -> dict[str, object]:
-        return self._turn_state_projection(
+        projection = self._turn_state_projection(
             current_turn_result=result,
             execution_metadata=getattr(result, "execution", None),
             output_text=output_text,
@@ -1576,6 +1642,29 @@ class DesktopShellViewModel:
             cognitive_session_id=getattr(result, "cognitive_session_id", None),
             ok=getattr(result, "ok", False),
         )
+        projection.update(self._chat_state_projection(getattr(result, "chat_status", None)))
+        return projection
+
+    def _chat_state_projection(self, chat_status) -> dict[str, object]:
+        if chat_status is None:
+            return {
+                "chat_status_text": self.state.chat_status_text,
+                "chat_response_state": self.state.chat_response_state,
+                "chat_retry_available": False,
+            }
+        try:
+            status_text = self._safe_text(chat_status.safe_text_ru())
+        except Exception:
+            status_text = "Состояние чата временно недоступно."
+        return {
+            "chat_status_text": status_text,
+            "chat_response_state": self._safe_text(
+                getattr(chat_status, "response_state", "unavailable")
+            ),
+            "chat_retry_available": bool(
+                getattr(chat_status, "retry_available", False)
+            ),
+        }
 
     def _turn_state_projection(
         self,
@@ -1643,6 +1732,13 @@ class DesktopShellViewModel:
             "clarification_question": None,
             "clarification_options": (),
             "confirmation_prompt": None,
+            "chat_status_text": (
+                "Состояние чата:\n"
+                "- response state: error\n"
+                "- retry available: no"
+            ),
+            "chat_response_state": "error",
+            "chat_retry_available": False,
             "last_error": last_error,
         }
 
@@ -1869,7 +1965,7 @@ class JarvisDesktopShell:
         input_panel.grid_columnconfigure(0, weight=1)
         tk.Label(
             input_panel,
-            text="Command",
+            text="Сообщение",
             bg=self.COLORS["panel"],
             fg=self.COLORS["text"],
             font=("Segoe UI", 12, "bold"),
@@ -1896,7 +1992,7 @@ class JarvisDesktopShell:
         ).grid(row=1, column=1, padx=(10, 4), pady=(8, 0))
         self.execute_button = tk.Button(
             input_panel,
-            text="Execute",
+            text="Отправить",
             command=self._on_execute,
             bg=self.COLORS["accent_alt"],
             fg="#071018",
@@ -1930,10 +2026,42 @@ class JarvisDesktopShell:
             state="disabled",
         )
         self.interaction_cancel_button.grid(row=1, column=4, padx=(8, 0), pady=(8, 0))
+        self.chat_retry_button = tk.Button(
+            input_panel,
+            text="Повторить запрос",
+            command=self._on_chat_retry,
+            bg=self.COLORS["panel_alt"],
+            fg=self.COLORS["text"],
+            activebackground=self.COLORS["accent"],
+            activeforeground=self.COLORS["text"],
+            relief="flat",
+            padx=12,
+            pady=8,
+            state="disabled",
+        )
+        self.chat_retry_button.grid(row=1, column=5, padx=(8, 0), pady=(8, 0))
+        self.chat_status_label = tk.Label(
+            input_panel,
+            text="",
+            bg=self.COLORS["panel"],
+            fg=self.COLORS["muted"],
+            justify="left",
+            anchor="w",
+        )
+        self.chat_status_label.grid(
+            row=2,
+            column=0,
+            columnspan=6,
+            sticky="ew",
+            pady=(8, 0),
+        )
 
         note = tk.Label(
             main,
-            text="No auto-execution. Network/provider commands require explicit command text and Execute.",
+            text=(
+                "Обычные вопросы могут использовать Groq с безопасным fallback. "
+                "Ответ ассистента никогда не исполняется как команда."
+            ),
             bg=self.COLORS["bg"],
             fg=self.COLORS["warning"],
             anchor="w",
@@ -2180,8 +2308,8 @@ class JarvisDesktopShell:
             self.command_list_box,
         ):
             self._bind_readonly_text_copy(text_widget)
-        split.add(self.preview_box)
         split.add(self.output_box)
+        split.add(self.preview_box)
         split.add(self.diagnostics_box)
         split.add(self.command_list_box)
 
@@ -2318,6 +2446,7 @@ class JarvisDesktopShell:
         self._set_text(self.output_box, state.output_text)
         self._set_text(self.diagnostics_box, state.diagnostics_text)
         self._set_text(self.command_list_box, state.command_list_text)
+        self.chat_status_label.configure(text=state.chat_status_text)
         self._set_text(self.activity_box, state.activity_text)
         self.activity_refresh_button.configure(
             state="disabled" if state.activity_refresh_in_progress else "normal"
@@ -2340,6 +2469,11 @@ class JarvisDesktopShell:
             and not state.interaction_cancellation_requested
             and not state.interaction_completion_pending
             and not state.shutdown_in_progress
+            else "disabled"
+        )
+        self.chat_retry_button.configure(
+            state="normal"
+            if state.chat_retry_available and not busy
             else "disabled"
         )
 
@@ -2434,6 +2568,25 @@ class JarvisDesktopShell:
 
     def _on_execute(self) -> None:
         text = self._command_input()
+        session_id = self.view_model.state.cognitive_session_id
+        self._submit_interaction(
+            DesktopInteractionKind.TYPED_TURN,
+            lambda _token: _DesktopInteractionPayload(
+                DesktopInteractionKind.TYPED_TURN,
+                text,
+                self.view_model.perform_execute_command(text, session_id),
+            ),
+        )
+
+    def _on_chat_retry(self) -> None:
+        text = self.view_model.chat_retry_input()
+        if text is None:
+            self.view_model.state = self.view_model._replace(
+                interaction_status_text="Повтор запроса сейчас недоступен.",
+                chat_retry_available=False,
+            )
+            self._render_state()
+            return
         session_id = self.view_model.state.cognitive_session_id
         self._submit_interaction(
             DesktopInteractionKind.TYPED_TURN,

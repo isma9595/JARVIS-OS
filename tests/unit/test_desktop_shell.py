@@ -1,9 +1,10 @@
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from threading import Event, Thread, current_thread
 
 import pytest
 
 from app.app_contracts import (
+    AppDesktopChatStatus,
     AppExecutionHistoryEntry,
     AppExecutionHistoryResult,
     ApplicationActivityDto,
@@ -309,6 +310,7 @@ class FakeDesktopTurnResult:
     diagnostics: FakeDesktopDiagnostics = field(default_factory=FakeDesktopDiagnostics)
     execution: object | None = None
     error: str | None = None
+    chat_status: AppDesktopChatStatus | None = None
 
 
 @dataclass
@@ -350,6 +352,7 @@ class FakeAppService:
     def __init__(self):
         self.preview_calls = []
         self.execute_calls = []
+        self.desktop_turn_calls = []
         self.voice_calls = []
         self.list_calls = []
         self.history_calls = []
@@ -399,10 +402,32 @@ class FakeAppService:
         self.activity_error = None
         self.resumable_session_id = None
         self.resumable_session_calls = 0
+        self.chat_status = AppDesktopChatStatus(
+            session_id=None,
+            session_state="none",
+            turn_count=0,
+            resumable=False,
+            response_state="idle",
+            response_source="none",
+            retry_available=False,
+            retry_reason="not_available",
+            persistence_state="in_memory",
+            persistence_code="not_configured",
+        )
 
     def resumable_conversation_session_id(self):
         self.resumable_session_calls += 1
         return self.resumable_session_id
+
+    def desktop_chat_status(self, session_id=None):
+        return replace(
+            self.chat_status,
+            session_id=session_id or self.chat_status.session_id,
+            response_state="idle",
+            response_source="none",
+            retry_available=False,
+            retry_reason="not_available",
+        )
 
     def status_text_ru(self):
         return "\n".join(
@@ -463,6 +488,7 @@ class FakeAppService:
         return FakeExecutionResult(output_text=f"processed: {text}")
 
     def handle_desktop_turn(self, text, source, *, session_id=None):
+        self.desktop_turn_calls.append((text, source, session_id))
         execution = self.execute_command(text, source)
         return FakeDesktopTurnResult(
             ok=execution.ok,
@@ -471,6 +497,7 @@ class FakeAppService:
             diagnostics=FakeDesktopDiagnostics(),
             execution=execution,
             error=execution.error,
+            chat_status=self.chat_status,
         )
 
     def process_one_shot_voice_request(self, source, *, session_id=None):
@@ -2368,6 +2395,92 @@ def test_desktop_shell_clears_execution_projection_for_conversation_turn():
     ]
 
 
+def test_chat_first_state_projects_injected_session_and_persistence_status():
+    service = FakeAppService()
+    service.chat_status = AppDesktopChatStatus(
+        session_id="cog-session-resumed",
+        session_state="active",
+        turn_count=6,
+        resumable=True,
+        response_state="idle",
+        response_source="none",
+        retry_available=False,
+        retry_reason="not_available",
+        persistence_state="ready",
+        persistence_code="ready",
+    )
+
+    view_model = DesktopShellViewModel(
+        service,
+        cognitive_session_id="cog-session-resumed",
+        initial_chat_status=service.chat_status,
+    )
+
+    assert view_model.state.cognitive_session_id == "cog-session-resumed"
+    assert view_model.state.chat_response_state == "idle"
+    assert view_model.state.chat_retry_available is False
+    assert "cog-session-resumed" in view_model.state.chat_status_text
+    assert "ready" in view_model.state.chat_status_text
+
+
+def test_chat_retry_is_explicit_reuses_same_session_and_does_not_create_backlog():
+    service = FakeAppService()
+    service.resumable_session_id = "cog-session-active"
+    service.chat_status = AppDesktopChatStatus(
+        session_id="cog-session-active",
+        session_state="active",
+        turn_count=2,
+        resumable=True,
+        response_state="fallback",
+        response_source="compatibility",
+        retry_available=True,
+        retry_reason="provider_unavailable",
+        persistence_state="ready",
+        persistence_code="ready",
+    )
+    view_model = DesktopShellViewModel(service)
+
+    view_model.execute_command("Что такое Земля?")
+    first_state = view_model.state
+    output = view_model.retry_last_chat_turn()
+
+    assert first_state.chat_retry_available is True
+    assert output == "processed: Что такое Земля?"
+    assert service.desktop_turn_calls == [
+        ("Что такое Земля?", AppCommandSource.DESKTOP_UI, "cog-session-active"),
+        ("Что такое Земля?", AppCommandSource.DESKTOP_UI, "cog-session-active"),
+    ]
+
+
+def test_clear_output_resets_visible_chat_status_with_retry_projection():
+    service = FakeAppService()
+    service.chat_status = AppDesktopChatStatus(
+        session_id="cog-session-active",
+        session_state="active",
+        turn_count=2,
+        resumable=True,
+        response_state="ready",
+        response_source="groq",
+        retry_available=True,
+        retry_reason="user_requested",
+        persistence_state="ready",
+        persistence_code="ready",
+    )
+    view_model = DesktopShellViewModel(
+        service,
+        cognitive_session_id="cog-session-active",
+        initial_chat_status=service.chat_status,
+    )
+    view_model.execute_command("Что такое Земля?")
+
+    view_model.clear_output()
+
+    assert view_model.state.chat_response_state == "idle"
+    assert view_model.state.chat_retry_available is False
+    assert "response state: idle" in view_model.state.chat_status_text
+    assert "retry available: no" in view_model.state.chat_status_text
+
+
 def test_desktop_shell_non_gui_clarification_control_smoke_matches_app_service():
     processor = FakeAppServiceCommandProcessor()
     service = JarvisAppService(command_processor=processor)
@@ -2917,6 +3030,7 @@ def interaction_shell(service=None):
     shell.voice_button = FakeButton()
     shell.workflow_resume_button = FakeButton()
     shell.interaction_cancel_button = FakeButton()
+    shell.chat_retry_button = FakeButton()
     shell._render_threads = []
     def render_state():
         shell._render_threads.append(current_thread().ident)
@@ -2925,6 +3039,56 @@ def interaction_shell(service=None):
     shell._command_input = lambda: "typed secret"
     shell._confirm_workflow_resume = lambda _text: True
     return shell, service
+
+
+def test_chat_retry_control_is_disabled_while_worker_busy_or_retry_is_unavailable():
+    shell, _service = interaction_shell()
+    shell.view_model.state = shell.view_model._replace(chat_retry_available=True)
+
+    shell._render_interaction_controls(shell.view_model.state)
+    assert shell.chat_retry_button.state == "normal"
+
+    shell.view_model.state = shell.view_model._replace(interaction_busy=True)
+    shell._render_interaction_controls(shell.view_model.state)
+    assert shell.chat_retry_button.state == "disabled"
+
+    shell.view_model.state = shell.view_model._replace(
+        interaction_busy=False,
+        chat_retry_available=False,
+    )
+    shell._render_interaction_controls(shell.view_model.state)
+    assert shell.chat_retry_button.state == "disabled"
+
+
+def test_chat_retry_gui_uses_same_worker_and_rejects_duplicate_submission():
+    service = FakeAppService()
+    service.resumable_session_id = "cog-session-active"
+    service.chat_status = AppDesktopChatStatus(
+        session_id="cog-session-active",
+        session_state="active",
+        turn_count=2,
+        resumable=True,
+        response_state="fallback",
+        response_source="compatibility",
+        retry_available=True,
+        retry_reason="provider_unavailable",
+        persistence_state="ready",
+        persistence_code="ready",
+    )
+    shell, _service = interaction_shell(service)
+    shell.view_model.execute_command("Что такое Земля?")
+    service.desktop_turn_calls.clear()
+    service.execute_calls.clear()
+
+    shell._on_chat_retry()
+    shell._on_chat_retry()
+    _drive_shell_until_idle(shell)
+
+    assert service.desktop_turn_calls == [
+        ("Что такое Земля?", AppCommandSource.DESKTOP_UI, "cog-session-active")
+    ]
+    assert len(service.execute_calls) == 1
+    assert shell.view_model.state.interaction_busy is False
 
 
 def _drive_shell_until_idle(shell, limit=50):
@@ -3305,7 +3469,8 @@ def test_shell_build_keeps_preview_and_execute_buttons_distinct():
 
     preview_buttons = [widget for widget in Widget.created if widget.text == "Preview"]
     assert len(preview_buttons) == 1
-    assert shell.execute_button.text == "Execute"
+    assert shell.execute_button.text == "Отправить"
+    assert shell.chat_retry_button.text == "Повторить запрос"
     assert shell.execute_button is not preview_buttons[0]
     assert shell.root.protocol_registration[0] == "WM_DELETE_WINDOW"
     shell._on_close()

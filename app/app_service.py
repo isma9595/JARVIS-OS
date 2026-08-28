@@ -27,6 +27,7 @@ from app.app_contracts import (
     AppClarificationOption,
     AppContractManifest,
     AppContractStatus,
+    AppDesktopChatStatus,
     AppDesktopTurnDiagnostics,
     AppDesktopTurnResult,
     AppExecutionContract,
@@ -66,6 +67,7 @@ from cognition import (
     ConversationContextTurn,
     ConversationRole,
     ConversationSessionService,
+    ConversationSessionNotFoundError,
     ConversationSessionSnapshot,
     ConversationSessionStatus,
     ConversationTurn,
@@ -101,6 +103,7 @@ from platform_adapters.local_filesystem import WindowsLocalFileSystemAdapter
 from voice.audio_lifecycle import AudioLifecycleController, AudioLifecycleStatus
 from voice.russian_voice_normalizer import normalize_russian_voice_text
 from ai.secure_provider_runtime import SecureProviderRuntime
+from ai.context_privacy_policy import AIContextTarget
 from workflows.document_review import (
     LocalTextDocumentReviewWorkflow,
     DocumentReviewProposal,
@@ -280,6 +283,7 @@ class JarvisAppService:
         self.persistence_health_service = persistence_health_service
         self.user_data_paths = user_data_paths
         self.migration_report = migration_report
+        self._cognitive_primary_provider_gate = cognitive_primary_provider_gate
         self._startup_profiler = StartupProfiler(clock=startup_clock)
         self._startup_eager_components = (
             "command_registry",
@@ -901,6 +905,7 @@ class JarvisAppService:
                 session_id=session_id,
                 locale=self.language_manager.runtime_locale(),
             )
+            privacy_blocked = self._chat_privacy_blocked(interaction)
             diagnostics = AppDesktopTurnDiagnostics(
                 route="conversation",
                 source=source.value,
@@ -938,6 +943,30 @@ class JarvisAppService:
                     if interaction.response.response_type.value == "error"
                     else None
                 ),
+                chat_status=self._desktop_chat_status(
+                    interaction.session.session_id,
+                    response_state=self._chat_response_state(
+                        interaction.composition.composition_source,
+                        diagnostics.requires_clarification,
+                        interaction.response.response_type.value == "error",
+                        privacy_blocked,
+                    ),
+                    response_source=self._chat_response_source(
+                        interaction.composition.composition_source
+                    ),
+                    retry_available=self._chat_retry_available(
+                        interaction.composition.composition_source,
+                        diagnostics.requires_clarification,
+                        interaction.response.response_type.value == "error",
+                        privacy_blocked,
+                    ),
+                    retry_reason=self._chat_retry_reason(
+                        interaction.composition.composition_source,
+                        diagnostics.requires_clarification,
+                        interaction.response.response_type.value == "error",
+                        privacy_blocked,
+                    ),
+                ),
             )
 
         command_result = self.execute_command(
@@ -969,6 +998,13 @@ class JarvisAppService:
             diagnostics=diagnostics,
             execution=execution,
             error=safe_contract_text(command_result.error) if command_result.error else None,
+            chat_status=self._desktop_chat_status(
+                session_id,
+                response_state="command",
+                response_source="none",
+                retry_available=False,
+                retry_reason="not_conversation",
+            ),
         )
 
     def _desktop_turn_is_conversational(
@@ -1039,6 +1075,89 @@ class JarvisAppService:
         return source.startswith("primary_provider:groq") or (
             "primary_provider=groq" in source
         )
+
+    @staticmethod
+    def _chat_response_state(
+        composition_source: str,
+        requires_clarification: bool,
+        is_error: bool,
+        privacy_blocked: bool,
+    ) -> str:
+        source = str(composition_source or "")
+        if is_error:
+            return "error"
+        if requires_clarification:
+            return "awaiting_clarification"
+        if privacy_blocked or "status=privacy_fallback" in source:
+            return "local_private"
+        if "status=fallback" in source:
+            return "fallback"
+        if source.startswith("primary_provider:groq"):
+            return "ready"
+        return "local"
+
+    @staticmethod
+    def _chat_response_source(composition_source: str) -> str:
+        source = str(composition_source or "")
+        if source.startswith("primary_provider:groq"):
+            return "groq"
+        if source:
+            return "compatibility"
+        return "none"
+
+    @staticmethod
+    def _chat_retry_available(
+        composition_source: str,
+        requires_clarification: bool,
+        is_error: bool,
+        privacy_blocked: bool,
+    ) -> bool:
+        source = str(composition_source or "")
+        if (
+            is_error
+            or requires_clarification
+            or privacy_blocked
+            or "status=privacy_fallback" in source
+        ):
+            return False
+        return source.startswith("primary_provider:groq") or "status=fallback" in source
+
+    @staticmethod
+    def _chat_retry_reason(
+        composition_source: str,
+        requires_clarification: bool,
+        is_error: bool,
+        privacy_blocked: bool,
+    ) -> str:
+        source = str(composition_source or "")
+        if is_error:
+            return "response_error"
+        if requires_clarification:
+            return "clarification_required"
+        if privacy_blocked or "status=privacy_fallback" in source:
+            return "privacy_blocked"
+        if "status=fallback" in source:
+            return "provider_unavailable"
+        if source.startswith("primary_provider:groq"):
+            return "user_requested"
+        return "deterministic_response"
+
+    def _chat_privacy_blocked(self, interaction: CognitiveInteractionResult) -> bool:
+        source = str(interaction.composition.composition_source or "")
+        if "status=privacy_fallback" in source:
+            return True
+        if "status=fallback" not in source:
+            return False
+        gate = self._cognitive_primary_provider_gate
+        policy = getattr(gate, "context_privacy_policy", None)
+        if policy is None:
+            return False
+        context_text = "\n".join(turn.safe_text for turn in interaction.context.turns)
+        try:
+            decision = policy.decide(context_text, AIContextTarget.EXTERNAL_PROVIDER)
+        except Exception:
+            return False
+        return not decision.allowed
 
     def _has_pending_desktop_control(self) -> bool:
         return any(
@@ -1290,6 +1409,78 @@ class JarvisAppService:
     def resumable_conversation_session_id(self) -> str | None:
         snapshot = self.cognitive_session_service.latest_active_session_snapshot()
         return snapshot.session_id if snapshot is not None else None
+
+    def desktop_chat_status(self, session_id: str | None = None) -> AppDesktopChatStatus:
+        """Return path-free session and persistence state for presentation clients."""
+
+        return self._desktop_chat_status(
+            session_id,
+            response_state="idle",
+            response_source="none",
+            retry_available=False,
+            retry_reason="not_available",
+        )
+
+    def _desktop_chat_status(
+        self,
+        session_id: str | None,
+        *,
+        response_state: str,
+        response_source: str,
+        retry_available: bool,
+        retry_reason: str,
+    ) -> AppDesktopChatStatus:
+        requested_id = str(session_id or "").strip() or None
+        snapshot = None
+        session_state = "none"
+        if requested_id is not None:
+            try:
+                snapshot = self.cognitive_session_service.get_snapshot(requested_id)
+            except ConversationSessionNotFoundError:
+                session_state = "unavailable"
+        else:
+            snapshot = self.cognitive_session_service.latest_active_session_snapshot()
+
+        if snapshot is not None:
+            session_state = snapshot.status.value
+        persistence_state, persistence_code = self._desktop_chat_persistence_state()
+        return AppDesktopChatStatus(
+            session_id=snapshot.session_id if snapshot is not None else None,
+            session_state=session_state,
+            turn_count=snapshot.turn_count if snapshot is not None else 0,
+            resumable=bool(
+                snapshot is not None
+                and snapshot.status is ConversationSessionStatus.ACTIVE
+            ),
+            response_state=str(response_state),
+            response_source=str(response_source),
+            retry_available=bool(retry_available),
+            retry_reason=str(retry_reason),
+            persistence_state=persistence_state,
+            persistence_code=persistence_code,
+        )
+
+    def _desktop_chat_persistence_state(self) -> tuple[str, str]:
+        if self.persistence_health_service is None:
+            return "in_memory", "not_configured"
+        try:
+            snapshot = self.persistence_health()
+        except Exception:
+            return "unavailable", "unavailable"
+        if snapshot is None:
+            return "unavailable", "unavailable"
+        store = next(
+            (candidate for candidate in snapshot.stores if candidate.store_id == "conversation"),
+            None,
+        )
+        if store is None:
+            return "unavailable", "unavailable"
+        code = safe_contract_text(store.code or "unavailable")
+        if code in {"ready", "not_initialized", "missing"}:
+            return "ready", code
+        if code != "unavailable":
+            return "degraded", code
+        return "unavailable", code
 
     def handle_conversation_turn(
         self,

@@ -167,6 +167,22 @@ def test_desktop_shell_remains_provider_neutral_for_primary_conversation():
     )
 
 
+def test_chat_first_desktop_uses_appservice_dtos_without_runtime_ownership():
+    imports = _imports_for(DESKTOP_SHELL_PATH)
+    source = DESKTOP_SHELL_PATH.read_text(encoding="utf-8")
+    lowered = source.lower()
+
+    assert "app.app_contracts" in imports
+    assert "desktop_chat_status" in source
+    assert "chat_retry_available" in source
+    assert "_on_chat_retry" in source
+    assert "cognitive_session_service" not in source
+    assert "persistence_health_service" not in source
+    assert "providerbackedresponsecomposer" not in lowered
+    assert "groqrequestgate" not in lowered
+    assert "command_processor" not in lowered
+
+
 def test_persistence_does_not_import_appservice_or_runtime_owners():
     imports = _imports_for(COGNITION_ROOT / "persistence.py")
     forbidden = {

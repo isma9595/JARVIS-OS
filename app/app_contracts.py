@@ -222,6 +222,38 @@ class AppPersistenceHealthSnapshot(_ContractMixin):
 
 
 @dataclass(frozen=True)
+class AppDesktopChatStatus(_ContractMixin):
+    """Path-free chat state projected by AppService for presentation clients."""
+
+    session_id: str | None
+    session_state: str
+    turn_count: int
+    resumable: bool
+    response_state: str
+    response_source: str
+    retry_available: bool
+    retry_reason: str
+    persistence_state: str
+    persistence_code: str
+
+    def safe_text_ru(self) -> str:
+        return "\n".join(
+            [
+                "Состояние чата:",
+                f"- session id: {safe_contract_text(self.session_id or 'none')}",
+                f"- session state: {safe_contract_text(self.session_state)}",
+                f"- turns: {max(0, int(self.turn_count))}",
+                f"- resumable: {'yes' if self.resumable else 'no'}",
+                f"- response state: {safe_contract_text(self.response_state)}",
+                f"- response source: {safe_contract_text(self.response_source)}",
+                f"- retry available: {'yes' if self.retry_available else 'no'}",
+                f"- persistence: {safe_contract_text(self.persistence_state)}",
+                f"- persistence code: {safe_contract_text(self.persistence_code)}",
+            ]
+        )
+
+
+@dataclass(frozen=True)
 class AppCommandCard(_ContractMixin):
     command_id: str
     title_ru: str
@@ -522,6 +554,7 @@ class AppDesktopTurnResult(_ContractMixin):
     diagnostics: AppDesktopTurnDiagnostics
     execution: AppExecutionContract | None
     error: str | None = None
+    chat_status: AppDesktopChatStatus | None = None
 
     @property
     def operation_id(self) -> str | None:

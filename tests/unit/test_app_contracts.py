@@ -2,6 +2,7 @@ from app.app_contracts import (
     APP_CONTRACT_SCHEMA_NAME,
     APP_CONTRACT_VERSION,
     AppCommandCard,
+    AppDesktopChatStatus,
     AppStatusCard,
 )
 from app import AppCommandSource, JarvisAppService
@@ -50,6 +51,41 @@ def test_dataclasses_to_dict_are_deterministic_and_safe():
     ]
     assert "sk-test-1234567890secret" not in str(card.to_dict())
     assert "token=abcd1234567890" not in str(card.to_dict())
+
+
+def test_desktop_chat_status_is_path_free_serializable_and_safe():
+    status = AppDesktopChatStatus(
+        session_id="cog-session-safe",
+        session_state="active",
+        turn_count=4,
+        resumable=True,
+        response_state="fallback",
+        response_source="compatibility",
+        retry_available=True,
+        retry_reason="provider_unavailable",
+        persistence_state="ready",
+        persistence_code="ready",
+    )
+
+    data = status.to_dict()
+    text = status.safe_text_ru()
+
+    assert list(data) == [
+        "session_id",
+        "session_state",
+        "turn_count",
+        "resumable",
+        "response_state",
+        "response_source",
+        "retry_available",
+        "retry_reason",
+        "persistence_state",
+        "persistence_code",
+    ]
+    assert "cog-session-safe" in text
+    assert "C:\\Users" not in text
+    assert "Traceback" not in text
+    assert "api_key" not in text
 
 
 def test_command_card_to_dict_safe():

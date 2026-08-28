@@ -16,11 +16,10 @@ future work: targeted decomposition, documentation maintenance, optional test
 coverage tooling, repository line-ending maintenance, and Desktop Shell UX
 polish.
 
-The published baseline is TASK-124 at
-`7bc74d9d8f93947419ec443cfdd6bf4ed94db8d5`. TASK-125 adds a unified local
-user-data layout, bounded legacy adoption, and privacy-safe persistence health
-while retaining the TASK-124 Desktop worker and TASK-123 conversation
-persistence boundaries. The
+The published baseline is TASK-127 at
+`435f66041149226840481efbb7728ceb4b7324a1`. TASK-128 adds the first
+chat-first Desktop projection while retaining the TASK-127 provider boundary,
+TASK-124 Desktop worker, and TASK-123 conversation persistence boundaries. The
 implementation remains transitional. `JarvisAppService` is the current
 application-facing boundary, and major responsibilities have been extracted,
 but `app/app_service.py` and `core/command_processor.py` are still large
@@ -62,6 +61,9 @@ orchestration modules.
 - One AppService-owned Desktop cognitive turn facade shared by typed input and
   one-shot voice, with natural response text separated from technical
   diagnostics and optional execution metadata.
+- One immutable path-free `AppDesktopChatStatus` projection for session,
+  response, explicit retry, and persistence state. Desktop presents this DTO
+  but does not inspect cognition, providers, repositories, or health internals.
 - Deterministic stateless `MemoryPolicy` foundation for eligibility, approval,
   retention, deduplication, supersession, sensitivity, and deletion decisions.
   The policy owns no storage and is not yet connected to AppService, Desktop,
@@ -136,6 +138,19 @@ continue through their existing AppService routes. Legacy `run.py` remains on
 its separate `CommandProcessor` compatibility path; TASK-127 changes the
 supported Desktop conversation composition, not the later CLI router
 consolidation.
+
+TASK-128 makes the Desktop primary flow visibly chat-first: `Сообщение` and
+`Отправить` lead to a prominent assistant response, a compact AppService-owned
+chat status, and an explicit `Повторить запрос` action when the projected result
+is eligible. Retry uses the same cognitive session, AppService facade, and
+single bounded Desktop worker. It is never automatic, does not create a queue,
+and is unavailable for command/control, clarification, privacy-blocked, or
+failed turns. Persistence is shown only as path-free state/code; no record,
+path, secret, traceback, or raw provider error is exposed.
+Gate-level privacy refusals use the configured semantic privacy decision and do
+not become misleading provider-unavailable retries. Unknown externally supplied
+session ids are not echoed into the path-free status projection, and clearing
+the response refreshes the visible status to idle/no-retry.
 
 ## Architecture
 
@@ -320,14 +335,15 @@ git diff --check
 - Default Desktop persistence provides automatic latest-ACTIVE resume only;
   chat history browsing, manual session selection, retention, and migration of
   the former unversioned path are not implemented.
-- Ordinary Desktop cognitive responses remain compatibility-based rather than
-  primary-provider-backed AI conversation.
+- Standard Desktop conversation may use the gated Groq primary provider and
+  falls back deterministically; direct `JarvisAppService()` construction
+  remains compatibility-based and in-memory.
 - `MemoryPolicy` is implemented and exported but is not used by AppService,
   Desktop, or existing memory command routes.
 - Desktop GUI entry points now share one bounded interaction worker; deeper
   domain cancellation remains owned by execution and workflow services.
-- User data has no single authoritative directory; some paths still depend on
-  the current working directory.
+- Supported Desktop and CLI composition use the TASK-125 canonical user-data
+  root; explicitly unsupported legacy paths remain outside that migration.
 - Automated verification currently supports one Windows Server 2025 / Python
   3.14.6 baseline; broader platform and interpreter matrices are not claimed.
 - Formal coverage tooling/policy is not tracked.
