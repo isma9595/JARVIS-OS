@@ -1,8 +1,8 @@
 """Safe app-facing service layer for JARVIS.
 
-The service is a boundary for future UI code. It can inspect command metadata
-and delegate execution to CommandProcessor, but it does not execute commands,
-call providers, route actions, read arbitrary files, or persist prompts.
+The service is a boundary for UI code. It can inspect command metadata,
+delegate execution to existing owners, and compose explicitly gated provider
+responses. It never executes provider response text or persists raw prompts.
 """
 
 from collections.abc import Callable, Mapping
@@ -271,6 +271,7 @@ class JarvisAppService:
         cognitive_reference_resolver=None,
         cognitive_clarification_coordinator=None,
         cognitive_response_composer=None,
+        cognitive_primary_provider_gate=None,
         cognitive_interaction_service=None,
         persistence_health_service=None,
         user_data_paths=None,
@@ -359,12 +360,22 @@ class JarvisAppService:
                 cognitive_clarification_coordinator
                 or RuleBasedClarificationCoordinator()
             )
-            self.cognitive_response_composer = (
-                cognitive_response_composer
-                or CompatibilityResponseComposer(
-                    delegate=self._cognitive_compatibility_response,
-                )
+            compatibility_response_composer = CompatibilityResponseComposer(
+                delegate=self._cognitive_compatibility_response,
             )
+            if cognitive_response_composer is not None:
+                self.cognitive_response_composer = cognitive_response_composer
+            elif cognitive_primary_provider_gate is not None:
+                from app.provider_backed_response_composer import (
+                    ProviderBackedResponseComposer,
+                )
+
+                self.cognitive_response_composer = ProviderBackedResponseComposer(
+                    request_gate=cognitive_primary_provider_gate,
+                    fallback=compatibility_response_composer,
+                )
+            else:
+                self.cognitive_response_composer = compatibility_response_composer
             self.cognitive_interaction_service = (
                 cognitive_interaction_service
                 or CognitiveInteractionService(
@@ -909,7 +920,9 @@ class JarvisAppService:
                     in {ClarificationStatus.NEEDED, ClarificationStatus.UNAVAILABLE}
                 ),
                 requires_confirmation=False,
-                network_may_be_used=False,
+                network_may_be_used=self._conversation_network_may_have_been_used(
+                    interaction.composition.composition_source
+                ),
                 response_executed_as_command=False,
             )
             return AppDesktopTurnResult(
@@ -1018,6 +1031,13 @@ class JarvisAppService:
         return any(
             reference.detected_reference.kind in conversational_reference_kinds
             for reference in references.references
+        )
+
+    @staticmethod
+    def _conversation_network_may_have_been_used(composition_source: str) -> bool:
+        source = str(composition_source or "")
+        return source.startswith("primary_provider:groq") or (
+            "primary_provider=groq" in source
         )
 
     def _has_pending_desktop_control(self) -> bool:
@@ -5046,6 +5066,8 @@ def create_default_desktop_app_service(
 ) -> JarvisAppService:
     """Create the supported Desktop composition after bounded migration."""
 
+    from ai.groq_request_gate import GroqRequestGate
+    from ai.secure_provider_runtime import SecureProviderRuntime
     from app.persistence_health import PersistenceHealthService
     from core.command_processor import CommandProcessor
     from dialogue import DialogueManager
@@ -5057,7 +5079,11 @@ def create_default_desktop_app_service(
         UserDataMigrationCoordinator,
     )
     from platform_adapters.user_data_paths import UserDataPaths
-    from security.secure_key_store import WindowsDpapiSecureKeyBackend
+    from security.api_key_manager import ApiKeyManager
+    from security.secure_key_store import (
+        SecureKeyStore,
+        WindowsDpapiSecureKeyBackend,
+    )
     from users.user_profile import UserProfileManager
     from voice import VoiceInputManager
     from voice.one_shot_vosk_real_recognition import OneShotVoskRealRecognition
@@ -5129,7 +5155,19 @@ def create_default_desktop_app_service(
 
     conversation_path = external_overrides.get("conversation", paths.conversation_sessions)
     secure_path = _secure_key_storage_path(selected_environment, home=home)
-    secure_status = WindowsDpapiSecureKeyBackend(storage_path=secure_path).status()
+    secure_backend = WindowsDpapiSecureKeyBackend(storage_path=secure_path)
+    secure_status = secure_backend.status()
+    credential_runtime = SecureProviderRuntime(
+        api_key_manager=ApiKeyManager(
+            secure_key_store=SecureKeyStore(backend=secure_backend),
+            environ=selected_environment,
+        ),
+        environ=selected_environment,
+    )
+    primary_provider_gate = GroqRequestGate(
+        environ=selected_environment,
+        credential_runtime=credential_runtime,
+    )
     health_service = PersistenceHealthService(
         paths,
         registry,
@@ -5142,6 +5180,7 @@ def create_default_desktop_app_service(
         one_shot_voice_recognition=one_shot_recognition,
         memory_manager=memory_manager,
         cognitive_session_repository=LocalConversationSessionRepository(conversation_path),
+        cognitive_primary_provider_gate=primary_provider_gate,
         persistence_health_service=health_service,
         user_data_paths=paths,
         migration_report=migration_report,

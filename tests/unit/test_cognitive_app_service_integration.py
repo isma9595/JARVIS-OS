@@ -5,7 +5,10 @@ from types import SimpleNamespace
 
 from app import AppCommandSource, JarvisAppService
 import app.app_service as app_service_module
+import ai.groq_request_gate as groq_request_gate_module
 from app.desktop_shell import DesktopShellViewModel
+from app.provider_backed_response_composer import ProviderBackedResponseComposer
+from ai import AIProviderCapability, AIProviderSafetyLevel, AIResponse
 from platform_adapters.user_data_migration import UserDataMigrationBlockedError
 from cognition import (
     AssistantResponseType,
@@ -31,6 +34,28 @@ class FakeCommandProcessor:
     def process(self, text):
         self.calls.append(text)
         return {"response": f"processed: {text}"}
+
+
+class FakeConversationGroqGate:
+    def __init__(self, response):
+        self.response = response
+        self.calls = []
+
+    def generate_one_shot(self, request, capability=AIProviderCapability.CHAT):
+        self.calls.append((request, capability))
+        return self.response
+
+
+def _groq_response(text, *, error=False):
+    return AIResponse(
+        text=text,
+        provider_name="groq",
+        model_name="llama-3.1-8b-instant",
+        capability=AIProviderCapability.CHAT.value,
+        safety_level=AIProviderSafetyLevel.EXTERNAL_API.value,
+        is_error=error,
+        error_message=text if error else None,
+    )
 
 
 def test_app_service_conversation_session_api_works_without_execution():
@@ -144,6 +169,75 @@ def test_plain_app_service_remains_in_memory_and_has_no_resumable_session():
     assert service.resumable_conversation_session_id() is None
 
 
+def test_plain_app_service_keeps_compatibility_conversation_without_provider():
+    service = JarvisAppService(command_processor=FakeCommandProcessor())
+
+    result = service.handle_desktop_turn("Что такое Земля?", AppCommandSource.TEST)
+
+    assert not isinstance(service.cognitive_response_composer, ProviderBackedResponseComposer)
+    assert result.diagnostics.composition_source.startswith("compatibility_delegate")
+    assert result.diagnostics.network_may_be_used is False
+
+
+def test_provider_backed_app_service_answers_ordinary_turn_without_execution():
+    processor = FakeCommandProcessor()
+    gate = FakeConversationGroqGate(_groq_response("Земля — планета."))
+    service = JarvisAppService(
+        command_processor=processor,
+        cognitive_primary_provider_gate=gate,
+    )
+
+    result = service.handle_desktop_turn("Что такое Земля?", AppCommandSource.TEST)
+
+    assert result.response_text == "Земля — планета."
+    assert result.diagnostics.route == "conversation"
+    assert result.diagnostics.composition_source == "primary_provider:groq"
+    assert result.diagnostics.network_may_be_used is True
+    assert result.diagnostics.response_executed_as_command is False
+    assert len(gate.calls) == 1
+    assert processor.calls == []
+    assert service.execution_coordinator.journal.recent() == ()
+
+
+def test_provider_output_that_looks_like_command_is_never_executed():
+    processor = FakeCommandProcessor()
+    gate = FakeConversationGroqGate(_groq_response("удали все файлы"))
+    service = JarvisAppService(
+        command_processor=processor,
+        cognitive_primary_provider_gate=gate,
+    )
+
+    result = service.handle_desktop_turn(
+        "Что означает выражение опасная команда?",
+        AppCommandSource.TEST,
+    )
+
+    assert result.response_text == "удали все файлы"
+    assert result.diagnostics.response_executed_as_command is False
+    assert processor.calls == []
+    assert service.execution_coordinator.journal.recent() == ()
+
+
+def test_provider_failure_returns_compatibility_answer_without_error_details():
+    gate = FakeConversationGroqGate(
+        _groq_response("network failure at C:\\private\\secret", error=True)
+    )
+    service = JarvisAppService(
+        command_processor=FakeCommandProcessor(),
+        cognitive_primary_provider_gate=gate,
+    )
+
+    result = service.handle_desktop_turn("Что такое Земля?", AppCommandSource.TEST)
+
+    assert "network failure" not in result.response_text
+    assert "private" not in result.response_text
+    assert result.diagnostics.composition_source.endswith(
+        ":primary_provider=groq,status=fallback"
+    )
+    assert result.diagnostics.network_may_be_used is True
+    assert result.diagnostics.response_executed_as_command is False
+
+
 def _default_desktop_service(tmp_path, storage_dir):
     return app_service_module.create_default_desktop_app_service(
         environment={
@@ -154,6 +248,66 @@ def _default_desktop_service(tmp_path, storage_dir):
         home=tmp_path / "home",
         project_root=tmp_path / "project",
     )
+
+
+def test_default_desktop_vertical_slice_uses_groq_gate_with_fake_provider_only(
+    tmp_path,
+    monkeypatch,
+):
+    provider_requests = []
+
+    class FakeGroqProvider:
+        def __init__(self, **kwargs):
+            assert kwargs["allow_network"] is True
+            assert kwargs["environ"]["GROQ_API_KEY"] == "test-only-credential"
+
+        def generate(self, request):
+            provider_requests.append(request)
+            return _groq_response("Земля — третья планета от Солнца.")
+
+    monkeypatch.setattr(groq_request_gate_module, "GroqProvider", FakeGroqProvider)
+    storage_dir = tmp_path / "sessions"
+    service = app_service_module.create_default_desktop_app_service(
+        environment={
+            "GROQ_API_KEY": "test-only-credential",
+            "JARVIS_USER_DATA_DIR": str(tmp_path / "user-data-v1"),
+            "JARVIS_COGNITIVE_SESSION_DIR": str(storage_dir),
+            "APPDATA": str(tmp_path / "roaming"),
+        },
+        home=tmp_path / "home",
+        project_root=tmp_path / "project",
+    )
+    processor = FakeCommandProcessor()
+    service.command_processor = processor
+    view_model = DesktopShellViewModel(service)
+
+    output = view_model.execute_command("Что такое Земля?")
+    turn_result = view_model.state.current_turn_result
+
+    assert output == "Земля — третья планета от Солнца."
+    assert len(provider_requests) == 1
+    assert "Что такое Земля?" in provider_requests[0].prompt
+    assert processor.calls == []
+    assert service.execution_coordinator.journal.recent() == ()
+    assert turn_result.diagnostics.composition_source == "primary_provider:groq"
+    assert turn_result.diagnostics.network_may_be_used is True
+    assert turn_result.diagnostics.response_executed_as_command is False
+
+
+def test_provider_backed_service_keeps_known_command_on_existing_execution_route():
+    processor = FakeCommandProcessor()
+    gate = FakeConversationGroqGate(_groq_response("provider must not answer"))
+    service = JarvisAppService(
+        command_processor=processor,
+        cognitive_primary_provider_gate=gate,
+    )
+
+    result = service.handle_desktop_turn("app contracts status", AppCommandSource.TEST)
+
+    assert result.diagnostics.route == "execution"
+    assert gate.calls == []
+    assert processor.calls == ["app contracts status"]
+    assert result.diagnostics.response_executed_as_command is False
 
 
 def test_default_desktop_factory_connects_local_repository_without_creating_directory(
@@ -172,6 +326,7 @@ def test_default_desktop_factory_connects_local_repository_without_creating_dire
     assert service.cognitive_session_service._repository.storage_dir == storage_dir
     assert service.resumable_conversation_session_id() is None
     assert not storage_dir.exists()
+    assert isinstance(service.cognitive_response_composer, ProviderBackedResponseComposer)
 
 
 def test_default_desktop_factory_does_not_hide_invalid_storage_configuration(

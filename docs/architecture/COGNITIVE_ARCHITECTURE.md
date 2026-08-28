@@ -106,7 +106,7 @@ TASK-111 history:
   planning checkpoint without its own task file. TASK-112 must not invent
   implementation work for TASK-111.
 
-## Implemented State After TASK-115 Through TASK-125
+## Implemented State After TASK-115 Through TASK-127
 
 The first conversational vertical slice is now implemented:
 
@@ -140,6 +140,14 @@ The first conversational vertical slice is now implemented:
   `ConversationSessionService` still owns session lifecycle, cognition receives
   no migration or health responsibility, and `DesktopInteractionWorker`
   receives no paths, repositories, or persistence internals.
+- TASK-126 adds only the reproducible test-environment and CI verification
+  boundary; runtime ownership is unchanged.
+- TASK-127 adds an app-owned primary-provider response adapter. Standard
+  Desktop composition injects the existing Groq gate, while cognition remains
+  provider-neutral and direct AppService construction retains deterministic
+  compatibility composition. Only bounded safe session projection is supplied;
+  provider output remains untrusted presentation text and never becomes an
+  execution input.
 - `DesktopShellState` owns only presentation state and the current cognitive
   session id. Natural response text and structured diagnostics are projected
   separately; Desktop does not parse a formatted execution report to recover
@@ -169,6 +177,7 @@ DesktopShellViewModel / Tk UI
              -> ReferenceResolver
              -> ClarificationCoordinator
              -> ResponseComposer exactly once
+                -> standard Desktop: app-owned Groq gate or deterministic fallback
              -> AppDesktopTurnResult(response, diagnostics, session id)
         -> command or control:
              existing AppService execute_command()
@@ -1399,6 +1408,14 @@ through existing provider runtime, privacy, selection, fallback, and explicit
 request gates. Provider output is schema-validated and never executable
 without conversion and policy evaluation.
 
+TASK-127 implements the first narrow version of this rule at the app composition
+boundary: standard Desktop uses Groq for eligible ordinary conversation through
+the existing privacy, cost/model, credential, and language gates. The adapter
+owns no cognitive or provider session state, packages no memory/profile/files,
+and falls back deterministically. Legacy CLI conversation remains on the
+documented `CommandProcessor` path until the later semantic-router
+consolidation.
+
 The LLM/provider golden rule applies here: providers are optional replaceable
 reasoning components, not the brain. Deterministic logic remains available;
 provider output is untrusted; providers do not own session, intent, goal, plan,
@@ -1495,11 +1512,11 @@ The current normative task sequence is maintained in `docs/ROADMAP.md`.
 Current sequencing implications:
 
 - TASK-123 establishes default conversation persistence, TASK-124 adds the
-  Desktop worker/shutdown boundary, and TASK-125 adds unified user-data paths,
-  bounded migration, and read-only health. TASK-126 remains the next product-runtime
-  stage: reproducible environment/CI, followed by real AI
-  conversation, chat-first UX, and document/drafting/report workflows through
-  TASK-131.
+  Desktop worker/shutdown boundary, TASK-125 adds unified user-data paths,
+  bounded migration, and read-only health, TASK-126 adds reproducible
+  environment/CI, and TASK-127 adds the first real Desktop AI conversation
+  path. TASK-128 chat-first UX is the next product-runtime stage, followed by
+  document/drafting/report workflows through TASK-131.
 - `MemoryService` read integration is TASK-132.
 - Existing memory command migration is TASK-133.
 - Memory candidates and explicit approval are TASK-134.

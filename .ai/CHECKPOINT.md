@@ -1,13 +1,13 @@
 # JARVIS-OS Checkpoint
 
-- Published baseline: TASK-125 - Unified User Data and Persistence Health
+- Published baseline: TASK-126 - Reproducible Environment and CI
 - Baseline commit:
-  `12d88cf133c260c3bf49aff9ea3a5323d9f43d9f`
+  `95702dbb772d903446c6a9c8660fa3a12b5c3762`
 - Baseline tree:
-  `5562cd95820c8b8fe076e33ea5a2f1acc0d2a377`
-- Completed in the unstaged worktree: TASK-126 - Reproducible Environment and
-  CI. Clean-environment and full-suite acceptance passed.
-- Next runtime task: TASK-127 - Real AI Conversation Vertical Slice.
+  `75610bd1b8b939021bd05d62722f683c61eee4d5`
+- Completed in the unstaged worktree: TASK-127 - Real AI Conversation Vertical
+  Slice. Focused, related, and full acceptance passed.
+- Next runtime task: TASK-128 - Chat-First Desktop UX v1.
 - Published TASK-123 full pytest:
   `2476 passed, 2 skipped in 9.23s`
 - Validation history: the initial gate was
@@ -71,6 +71,11 @@
   `pip check` passed; clean-environment related regression
   `123 passed in 1.15s`; single clean-environment full acceptance
   `2683 passed, 4 skipped in 40.35s`.
+- TASK-127 validation so far: expected missing-module RED with two collection
+  errors; focused GREEN `56 passed in 1.13s`; related regression
+  `437 passed in 2.69s`; compileall exit code `0`; fake-provider Desktop
+  vertical slice made exactly one provider call and no command/execution call.
+  Single full repository acceptance: `2696 passed, 4 skipped in 14.34s`.
 
 ## Approved Workflow
 

@@ -121,11 +121,21 @@ and supported by source and tests. Provider settings UI, installer mode, mobile
 clients, admin/support surfaces, broad portability, wake-word listening, and
 continuous autonomous automation remain future work.
 
-`CompatibilityResponseComposer` is the current default cognitive response
-composer. Ordinary Desktop cognitive conversation therefore uses the existing
-compatibility response path; it is not yet a complete AI conversation backed
-by the primary provider. Generated assistant response text is presentation
-output and is never automatically submitted for command execution.
+TASK-127 makes standard Desktop conversation Groq-backed through the existing
+privacy, cost/model, credential, and language gates. Only bounded safe session
+context is packaged; memory, profile, files, logs, screen content, audio, and
+raw secrets are not sent automatically. A missing key, blocked context, guard
+refusal, or provider failure returns the existing deterministic compatibility
+answer. Direct `JarvisAppService()` construction remains in-memory and
+compatibility-based unless a composer/gate is explicitly injected.
+
+Groq response text is bounded, redacted, and treated only as untrusted
+presentation output. It is never automatically submitted for command or
+workflow execution. Known commands, confirmation, cancellation, and execution
+continue through their existing AppService routes. Legacy `run.py` remains on
+its separate `CommandProcessor` compatibility path; TASK-127 changes the
+supported Desktop conversation composition, not the later CLI router
+consolidation.
 
 ## Architecture
 

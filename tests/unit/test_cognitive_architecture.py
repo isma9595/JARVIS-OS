@@ -10,6 +10,7 @@ DESKTOP_SHELL_PATH = Path("app/desktop_shell.py")
 DESKTOP_WORKER_PATH = Path("app/desktop_interaction_worker.py")
 USER_DATA_MIGRATION_PATH = Path("platform_adapters/user_data_migration.py")
 PERSISTENCE_HEALTH_PATH = Path("app/persistence_health.py")
+PROVIDER_COMPOSER_PATH = Path("app/provider_backed_response_composer.py")
 
 
 def _imports_for(path: Path) -> set[str]:
@@ -137,6 +138,33 @@ def test_interaction_service_does_not_import_execution_or_provider_owners():
     assert "workflows.runner" not in imports
     assert not any(module.startswith("ai.") for module in imports)
     assert "memory" not in imports
+
+
+def test_provider_backed_composer_is_app_owned_and_cognition_remains_provider_neutral():
+    imports = _imports_for(PROVIDER_COMPOSER_PATH)
+    source = PROVIDER_COMPOSER_PATH.read_text(encoding="utf-8").lower()
+
+    assert any(module == "ai" or module.startswith("ai.") for module in imports)
+    assert any(module == "cognition" or module.startswith("cognition.") for module in imports)
+    assert "app.desktop_shell" not in imports
+    assert "core.command_processor" not in imports
+    assert "core.execution_coordinator" not in imports
+    assert not any(module.startswith("workflows") for module in imports)
+    assert "repository" not in source
+    assert "session_cache" not in source
+    assert "execute_command" not in source
+
+    for path in COGNITION_ROOT.glob("*.py"):
+        assert not any(module == "ai" or module.startswith("ai.") for module in _imports_for(path))
+
+
+def test_desktop_shell_remains_provider_neutral_for_primary_conversation():
+    imports = _imports_for(DESKTOP_SHELL_PATH)
+
+    assert not any(module == "ai" or module.startswith("ai.") for module in imports)
+    assert "ProviderBackedResponseComposer" not in DESKTOP_SHELL_PATH.read_text(
+        encoding="utf-8"
+    )
 
 
 def test_persistence_does_not_import_appservice_or_runtime_owners():

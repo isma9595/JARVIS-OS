@@ -134,12 +134,20 @@ raw user text or secrets. Conversation turns do not
 create execution operations, invoke `CommandProcessor`, call policy/workflow
 execution, or create a parallel history or memory store.
 
-`CompatibilityResponseComposer` is the current default and receives the clean
-conversational answer content. It is a safe compatibility boundary around the
-existing response path, not a complete primary-provider-backed AI
-conversation. Technical `SafeConversationalLoop` fields are retained only as
-diagnostics and are not embedded into the natural assistant answer. Assistant
-response text is presentation output and is never submitted to execution.
+TASK-127 adds `ProviderBackedResponseComposer` at the app composition boundary.
+Standard Desktop construction injects the existing `GroqRequestGate`; direct
+`JarvisAppService()` construction retains the compatibility composer. The
+provider adapter receives only the bounded safe conversation projection and
+owns no session, intent, policy, execution, workflow, persistence, or Desktop
+state. Missing credentials, privacy or cost/model refusal, provider failure,
+and unexpected provider exceptions fall back to the deterministic compatibility
+answer without exposing raw provider errors.
+
+Technical provenance stays in structured diagnostics and is not embedded into
+the natural answer. Provider response text is bounded, redacted, untrusted
+presentation output and is never submitted to command or workflow execution.
+Known commands and control turns retain the existing AppService route. Legacy
+`run.py` remains on its separate `CommandProcessor` compatibility path.
 
 TASK-121 adds `MemoryPolicy` as a deterministic stateless policy contract. It
 owns eligibility and retention decisions only; it owns no memory records,
@@ -194,10 +202,21 @@ Implemented verification boundary:
 - optional `numpy`, `sounddevice`, and `vosk` voice dependencies remain manual
   and are not mandatory test dependencies.
 
+Implemented primary conversation boundary:
+
+- standard Desktop ordinary conversation uses Groq through the existing
+  privacy, model/cost, credential, and language gates;
+- provider context is capped and derived only from the existing bounded safe
+  session projection; memory, profile, files, logs, screen, audio, and raw
+  secrets are not packaged automatically;
+- deterministic fallback remains available and direct AppService construction
+  remains compatibility-based and in-memory;
+- cognition stays provider-neutral, Desktop stays AppService-only, and
+  provider output never becomes execution input.
+
 Planned:
 
-- primary-provider-backed AI conversation, followed by the product stages in
-  `docs/ROADMAP.md`.
+- chat-first Desktop UX and the later product stages in `docs/ROADMAP.md`.
 
 ## Preview Versus Execution
 

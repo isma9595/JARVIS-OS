@@ -343,7 +343,7 @@ Real primary-provider-backed AI conversation begins only after default
 persistence, the Desktop worker lifecycle, unified user-data paths, and a
 reproducible environment are complete.
 
-### TASK-127 - Real AI Conversation Vertical Slice
+### TASK-127 - Real AI Conversation Vertical Slice - Completed
 
 - Purpose: replace the ordinary compatibility-only answer path with one useful,
   explicitly gated primary-provider conversation path while retaining a safe
@@ -356,6 +356,14 @@ reproducible environment are complete.
   generated response text is never executed.
 - Explicit non-goals: autonomous tools, provider-owned domain state, or complex
   consensus/multi-provider orchestration.
+- Implementation status: standard Desktop composition now uses the existing
+  Groq gate with bounded safe context and deterministic compatibility fallback;
+  direct AppService construction and legacy CLI compatibility behavior remain
+  unchanged.
+- Validation: expected missing-module RED with two collection errors; focused
+  GREEN `56 passed in 1.13s`; related regression `437 passed in 2.69s`;
+  compileall exit code `0`; single full acceptance
+  `2696 passed, 4 skipped in 14.34s`.
 
 ### TASK-128 - Chat-First Desktop UX v1
 
