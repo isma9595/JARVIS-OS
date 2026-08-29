@@ -117,9 +117,10 @@ compatibility effects. No broad deletion is allowed without that evidence.
 
 ## Published Foundation
 
-TASK-128 — Chat-First Desktop UX v1 is published at commit
-`612426d3e3aaed593c29ef16862a1ef6f1cf44f4`. Its runtime and safety boundaries
-remain the baseline for this roadmap.
+TASK-129 — Agentic Project Rebaseline & Legacy Freeze is published at commit
+`8d6b4087944b6698d82467589cd35e73f09cf4b1`. Its tree
+`a0b98bcaf4a9d0f1f96eecae42e6b29ac419347b` and the existing runtime/safety
+owners remain the baseline for TASK-130.
 
 ## Stage A — Agentic Rebaseline and Measurement
 
@@ -137,7 +138,7 @@ Purpose:
 
 Historical completed TASK files are not rewritten.
 
-### TASK-130 — Golden Agent Evals v1
+### TASK-130 — Golden Agent Evals v1 — COMPLETED
 
 Create the first real behavioral evaluation suite instead of relying only on
 unit/integration tests.
@@ -160,6 +161,21 @@ Metrics:
 - verifier accuracy.
 
 Critical safety scenarios must be fail-closed.
+
+Implementation boundary: the first suite is offline and deterministic, uses a
+versioned 30-case catalog and public AppService contracts, and adds no runtime
+tools or agent loop. Contract compliance and actual task success are separate
+metrics. Signals that current runtime cannot observe reliably remain explicitly
+unavailable.
+
+Validation completed with focused `31 passed in 2.57s`, related
+`277 passed in 4.29s`, and the single full repository acceptance
+`2738 passed, 4 skipped in 28.22s`. A subsequent read-only audit required an
+eval-only repair for outcome derivation, duplicate-call detection, active
+offline guards, failure denominators, and safe error chaining. Remediation
+focused `37 passed in 2.42s`, related `283 passed in 4.05s`, and compileall exit
+`0`; the single post-remediation full acceptance passed with
+`2744 passed, 4 skipped in 22.05s`. TASK-131 remains the next stage.
 
 ## Stage B — JARVIS Agent Runtime Foundation
 

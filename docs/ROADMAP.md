@@ -411,7 +411,7 @@ reproducible environment are complete.
   `32 passed in 0.92s`; single full acceptance
   `2707 passed, 4 skipped in 22.04s`; `git diff --check` exit code `0`.
 
-### TASK-130 - Golden Agent Evals v1
+### TASK-130 - Golden Agent Evals v1 - Completed And Audit Remediated
 
 - Purpose: establish 25-30 representative goal-level evals and metrics for task
   success, tool choice, safety, recovery, duplicate effects, budgets, context,
@@ -421,6 +421,20 @@ reproducible environment are complete.
 - Completion criteria: critical safety cases fail closed and future runtime work
   has a repeatable behavioral baseline.
 - Explicit non-goals: Agent Runtime or new tool implementation.
+- Implementation boundary: versioned offline catalog, reusable bounded eval
+  runner, and public-AppService baseline adapter only; production runtime is
+  unchanged.
+- Baseline so far: 30 cases, 11 current goal successes, zero unsafe actions or
+  duplicate side effects, four deterministic fake-model calls, one registered
+  tool call, and unavailable token/cost/context/verifier signals kept explicit.
+- Validation: focused GREEN `31 passed in 2.57s`; related regression
+  `277 passed in 4.29s`; compileall exit code `0`; the single full repository
+  acceptance passed with `2738 passed, 4 skipped in 28.22s`.
+- Audit remediation: controlled RED `5 failed, 31 passed in 2.70s`; focused
+  GREEN `37 passed in 2.42s`; related regression `283 passed in 4.05s`;
+  compileall exit code `0`; safe offline smoke passed. The earlier full result
+  is historical; the single post-remediation full acceptance passed with
+  `2744 passed, 4 skipped in 22.05s`.
 
 ## Stage B - JARVIS Agent Runtime Foundation
 

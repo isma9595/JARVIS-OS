@@ -163,6 +163,21 @@ planner grammar. Existing behavior stays as a tested compatibility layer until
 an eval-backed migration task replaces it. TASK-130 — Golden Agent Evals v1 is
 the next implementation task.
 
+TASK-130 adds the first Golden Agent Eval suite without changing production
+runtime behavior. Thirty versioned offline goals exercise the public AppService
+boundary with deterministic fakes across conversation, provider isolation,
+privacy, command selection, preview, clarification, confirmation, cancellation,
+sessions, bounded context, and deliberately unsupported future agent goals.
+The report separates behavioral-contract pass rate from actual task-success
+rate and records unsafe actions, unnecessary confirmation, human intervention,
+recovery, duplicate effects, steps, and model/tool calls. Token/cost, context
+precision, and verifier accuracy remain explicitly unavailable until a future
+runtime exposes trustworthy signals; they are not reported as artificial zeros.
+The baseline adapter derives outcomes from AppService DTOs rather than expected
+fixture labels, counts actual registered-command invocations, and installs
+fail-closed network/provider/microphone/filesystem boundaries for every case.
+Callback failures count as failed goals in the total-case task-success rate.
+
 ## Architecture
 
 Current dependency direction:
@@ -346,6 +361,9 @@ git diff --check
 - `JarvisAppService` and `CommandProcessor` remain comparatively large.
 - Agent Runtime, Tool Registry, durable AgentRun state, Planner v2, verification,
   and autonomous tool loops are roadmap items, not current runtime features.
+- Golden Agent Evals measure the current baseline but do not themselves add
+  tools, execution capability, provider access, or autonomous behavior. Current
+  task success is intentionally below full-agent acceptance.
 - Literal `CommandProcessor`, legacy passthrough, and deterministic planner
   phrase-grammar growth are frozen; existing compatibility behavior remains.
 - Default Desktop persistence provides automatic latest-ACTIVE resume only;

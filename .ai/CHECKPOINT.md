@@ -1,14 +1,15 @@
 # JARVIS-OS Checkpoint
 
-- Published baseline: TASK-128 - Chat-First Desktop UX v1
+- Published baseline: TASK-129 - Agentic Project Rebaseline & Legacy Freeze
 - Baseline commit:
-  `612426d3e3aaed593c29ef16862a1ef6f1cf44f4`
+  `8d6b4087944b6698d82467589cd35e73f09cf4b1`
 - Baseline tree:
-  `a2133d563993b1e88b9e3a7c6d27de86f3bf259b`
-- Completed in the unstaged worktree: TASK-129 - Agentic Project Rebaseline &
-  Legacy Freeze. This documentation/liveness-audit rebaseline changes no
-  runtime.
-- Next implementation task after TASK-129: TASK-130 - Golden Agent Evals v1.
+  `a0b98bcaf4a9d0f1f96eecae42e6b29ac419347b`
+- Completed unstaged task: TASK-130 - Golden Agent Evals v1, including its
+  final audit remediation. The eval-only repair changes no production runtime
+  behavior.
+- Next implementation task after TASK-130: TASK-131 - Unified Tool Contract &
+  Tool Registry v1.
 - Published TASK-123 full pytest:
   `2476 passed, 2 skipped in 9.23s`
 - Validation history: the initial gate was
@@ -99,6 +100,28 @@
   architecture regression `32 passed in 0.92s`; the single full repository
   acceptance passed with `2707 passed, 4 skipped in 22.04s`; `git diff
   --check` exited `0` with only ordinary potential LF-to-CRLF warnings.
+- TASK-130 validation so far: expected missing-module RED with two collection
+  errors in `0.66s`; first GREEN candidate exposed only eval-layer baseline
+  assumptions (`5 failed, 18 passed in 2.80s`), the second narrowed them to
+  actual offline provider-call coverage (`2 failed, 21 passed in 3.32s`), and
+  initial focused GREEN passed with `23 passed in 2.47s`. After strict catalog
+  count/order validation, focused GREEN reached `26 passed in 2.55s` and the
+  related matrix `272 passed in 4.92s`. Final parser/observation hardening passed
+  with focused `31 passed in 2.57s`, related `277 passed in 4.29s`, and
+  compileall exit `0`. The final offline smoke reports 11/30 task success, zero
+  unsafe actions and duplicate side effects, four fake model calls, one
+  registered tool call, zero real network/microphone/TTS/filesystem calls, and
+  explicit unavailable token/cost/context-precision/verifier metrics. The
+  single full repository acceptance passed with
+  `2738 passed, 4 skipped in 28.22s`.
+- TASK-130 final read-only audit failed on outcome-oracle, duplicate-call,
+  offline-boundary, metric-denominator, and exception-chain defects. Controlled
+  remediation RED was `5 failed, 31 passed in 2.70s`; final focused GREEN
+  `37 passed in 2.42s`; related regression `283 passed in 4.05s`; compileall
+  exit `0`. The offline smoke retains 11/30 task success, four fake model calls,
+  one registered tool call, zero unsafe/duplicate/external calls, and explicit
+  unavailable metrics. The single post-remediation full acceptance passed with
+  `2744 passed, 4 skipped in 22.05s`.
 
 ## Approved Workflow
 

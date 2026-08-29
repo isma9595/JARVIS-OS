@@ -1,7 +1,8 @@
 # JARVIS OS Architecture
 
-Status: published TASK-128 runtime baseline with the completed TASK-129 agentic
-documentation rebaseline. TASK-129 changes no runtime ownership or behavior.
+Status: published TASK-129 agentic roadmap baseline with TASK-130 Golden Agent
+Eval audit remediation completed in the unstaged worktree. TASK-130 changes no
+production runtime ownership or behavior; TASK-131 remains next.
 
 JARVIS OS is currently a Windows-first assistant application. It includes a CLI,
 a Tkinter Desktop Shell prototype, an AppService boundary for application
@@ -190,6 +191,21 @@ covered. Future Agent Runtime and Tool Registry work must orchestrate the
 current AppService, policy, execution, workflow, persistence, cognition, and
 provider gates rather than duplicate or bypass them.
 
+TASK-130 adds a test/evaluation boundary outside production runtime. A versioned
+30-case catalog is executed offline through public AppService entry points with
+deterministic provider/command fakes. The runner owns only catalog validation,
+bounded observations, contract comparison, and aggregate metrics; it owns no
+application, cognition, policy, execution, workflow, provider, persistence,
+memory, Desktop, or tool state. Behavioral-contract success is reported
+separately from actual goal success, and unavailable token/cost/context/verifier
+signals remain unavailable rather than becoming invented measurements.
+The baseline adapter derives task outcome from bounded AppService DTO state,
+retains semantic verifiers only for goal-specific context/cancellation meaning,
+counts every recorded registered-command invocation, and blocks external
+network/provider/microphone/filesystem boundaries during evaluation. A blocked
+callback is a failed task in the total-case denominator; safe reports still
+contain no raw callback exception or payload.
+
 TASK-124 adds a Desktop-only scheduling and shutdown boundary. Typed turns,
 one-shot voice requests, and workflow resume GUI handlers submit to one lazy,
 serialized, non-daemon worker and receive completion through main-thread Tk
@@ -251,9 +267,9 @@ Implemented primary conversation boundary:
 
 Planned:
 
-- TASK-130 Golden Agent Evals v1, followed only later by the Agent Runtime,
-  tools, permissions, durable runs, planner/verifier, context, artifacts, and
-  environment-integration stages in `docs/ROADMAP.md` and
+- TASK-131 Unified Tool Contract & Tool Registry v1, followed only later by
+  permissions, durable runs, the Agent Runtime, planner/verifier, context,
+  artifacts, and environment-integration stages in `docs/ROADMAP.md` and
   `docs/AGENTIC_ROADMAP_V1.md`.
 
 ## Preview Versus Execution
