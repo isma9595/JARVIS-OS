@@ -1,8 +1,9 @@
 # JARVIS Cognitive Architecture
 
-Status: target architecture report from TASK-112 with a current-state addendum
-through TASK-125. Target sections remain design guidance; sections explicitly
-labelled current describe the implemented repository state.
+Status: target architecture report from TASK-112 with current-state addenda
+through published TASK-128 and the TASK-129 agentic roadmap rebaseline. Target
+sections remain design guidance; sections explicitly labelled current describe
+the implemented repository state.
 
 ## Executive Decision
 
@@ -158,6 +159,11 @@ The first conversational vertical slice is now implemented:
   AppService reuses its deterministic semantic decision only for the UI
   projection, never matches refusal prose, never retries blocked context, and
   publishes no unknown external session id through the path-free DTO.
+- TASK-129 changes documentation and future sequencing only. It establishes the
+  model-independent personal-agent goal, freezes literal legacy-route growth,
+  and leaves cognition/session, AppService, policy, execution, workflow,
+  persistence, provider, and Desktop ownership unchanged. No Agent Runtime,
+  Tool Registry, planner, verifier, or memory integration is implemented.
 - `DesktopShellState` owns only presentation state and the current cognitive
   session id. Natural response text and structured diagnostics are projected
   separately; Desktop does not parse a formatted execution report to recover
@@ -1511,15 +1517,16 @@ tests/integration/test_cognitive_*_appservice.py
 conversion interfaces, not workflow or coordinator internals. AppService is the
 composition root that binds those adapters to current implementation.
 
-## Roadmap 2.0 Summary
+## Agentic Roadmap Rebaseline Summary
 
 Implementation after TASK-112 remains small and reviewable. Completed
-TASK-113 through TASK-121 stages are historical records and are not renumbered
+TASK-113 through TASK-128 stages are historical records and are not renumbered
 or rewritten by later planning.
 
-The former future TASK-122 through TASK-139 numbering was projected design work
-and was not implemented. TASK-122 supersedes only that unimplemented sequence.
-The current normative task sequence is maintained in `docs/ROADMAP.md`.
+TASK-122 previously superseded its then-unimplemented future sequence. TASK-129
+now supersedes only the old unimplemented TASK-129+ sequence after published
+TASK-128. The single normative future sequence is maintained in
+`docs/ROADMAP.md`, with strategic detail in `docs/AGENTIC_ROADMAP_V1.md`.
 
 Current sequencing implications:
 
@@ -1529,28 +1536,31 @@ Current sequencing implications:
   environment/CI, and TASK-127 adds the first real Desktop AI conversation
   path. TASK-128 adds the chat-first Desktop projection and explicit eligible
   retry without changing session, provider, execution, persistence, or worker
-  ownership. TASK-129 document intake is the next product-runtime stage,
-  followed by drafting/report workflows through TASK-131.
-- `MemoryService` read integration is TASK-132.
-- Existing memory command migration is TASK-133.
-- Memory candidates and explicit approval are TASK-134.
-- Goal and planning services remain deferred design work until proven user
-  scenarios establish their requirements.
-- Automation requires TASK-137 durable operation/workflow summaries and
-  TASK-138 restart recovery before unattended behavior can be considered.
-- Provider adapters and their tests remain; complex multi-provider
-  orchestration is not a near-term priority.
+  ownership. TASK-129 is the documentation/liveness-audit rebaseline.
+- TASK-130 Golden Agent Evals v1 is the next implementation task. Agent Runtime,
+  Tool Registry, scoped permissions, durable AgentRun state, Planner v2,
+  verification, context/provenance, artifacts, and real agent vertical slices
+  follow only in the numbered order defined by the normative roadmap.
+- Memory integration begins only at TASK-146 after Agentic Runtime v1
+  acceptance; existing `MemoryPolicy` and storage ownership do not change now.
+- `CommandProcessor`, legacy passthrough tables, and deterministic planner
+  phrase grammar remain compatibility layers; new capability growth through
+  literal phrases is frozen.
+- Provider adapters and their tests remain; models are replaceable engines and
+  complex multi-provider orchestration is not a near-term priority.
 
 ## Open Architectural Questions
 
 - TASK-115 resolved the first persistence boundary in favor of bounded safe
   persisted summaries rather than raw sensitive text by default.
-- Should cognitive planning initially remain deterministic, provider-assisted,
-  or hybrid? The safer first milestone is deterministic with provider support
-  added behind explicit gates later.
+- Planner v2 is scheduled only after Golden Agent Evals, the Tool Registry,
+  scoped permissions, durable AgentRun state, and the first single-agent loop.
+  The deterministic planner remains a compatibility path; model assistance does
+  not grant policy or execution authority.
 - Should restart-persistent workflow recovery be designed before background
   automation? Yes, if automation requires unattended long-running workflows.
-- Should `CommandProcessor` stay as CLI facade long term? It can, but it should
-  stop being a cognitive owner.
+- `CommandProcessor` may remain the CLI compatibility facade until an eval-backed
+  migration exists, but literal route growth is frozen and it must not become a
+  cognitive or agent-runtime owner.
 - Which storage backend should versioned cognitive sessions use after the JSON
   prototype? A separate persistence task should decide after schemas stabilize.

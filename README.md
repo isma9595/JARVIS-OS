@@ -16,14 +16,15 @@ future work: targeted decomposition, documentation maintenance, optional test
 coverage tooling, repository line-ending maintenance, and Desktop Shell UX
 polish.
 
-The published baseline is TASK-127 at
-`435f66041149226840481efbb7728ceb4b7324a1`. TASK-128 adds the first
-chat-first Desktop projection while retaining the TASK-127 provider boundary,
-TASK-124 Desktop worker, and TASK-123 conversation persistence boundaries. The
-implementation remains transitional. `JarvisAppService` is the current
-application-facing boundary, and major responsibilities have been extracted,
-but `app/app_service.py` and `core/command_processor.py` are still large
-orchestration modules.
+The published baseline is TASK-128 at
+`612426d3e3aaed593c29ef16862a1ef6f1cf44f4`. It includes the chat-first
+Desktop projection while retaining the TASK-127 provider boundary, TASK-124
+Desktop worker, and TASK-123 conversation persistence boundaries. TASK-129 is a
+documentation-only project rebaseline: it changes no runtime behavior and makes
+the full-personal-agent direction normative. `JarvisAppService` remains the
+current application-facing boundary, and major responsibilities have been
+extracted, but `app/app_service.py` and `core/command_processor.py` are still
+large orchestration modules.
 
 ## Implemented Capabilities
 
@@ -152,6 +153,16 @@ not become misleading provider-unavailable retries. Unknown externally supplied
 session ids are not echoed into the path-free status projection, and clearing
 the response refreshes the visible status to idle/no-retry.
 
+TASK-129 defines JARVIS as a goal-driven, tool-using, verifiable, resumable,
+model-independent personal AI agent. Models remain replaceable engines beneath
+JARVIS-owned permissions, context, execution, provenance, persistence, memory,
+and verification. This direction is a roadmap, not implemented Agent Runtime.
+New user capabilities must not be built primarily by expanding literal phrase
+tables in `CommandProcessor`, legacy passthrough tables, or deterministic
+planner grammar. Existing behavior stays as a tested compatibility layer until
+an eval-backed migration task replaces it. TASK-130 — Golden Agent Evals v1 is
+the next implementation task.
+
 ## Architecture
 
 Current dependency direction:
@@ -166,6 +177,7 @@ Key architecture documents:
 
 - `docs/ARCHITECTURE.md`
 - `docs/ROADMAP.md`
+- `docs/AGENTIC_ROADMAP_V1.md`
 - `docs/architecture/COGNITIVE_ARCHITECTURE.md`
 - `docs/JARVIS_APP_SERVICE.md`
 - `docs/APPSERVICE_CONTRACTS.md`
@@ -332,6 +344,10 @@ git diff --check
 ## Current Limitations
 
 - `JarvisAppService` and `CommandProcessor` remain comparatively large.
+- Agent Runtime, Tool Registry, durable AgentRun state, Planner v2, verification,
+  and autonomous tool loops are roadmap items, not current runtime features.
+- Literal `CommandProcessor`, legacy passthrough, and deterministic planner
+  phrase-grammar growth are frozen; existing compatibility behavior remains.
 - Default Desktop persistence provides automatic latest-ACTIVE resume only;
   chat history browsing, manual session selection, retention, and migration of
   the former unversioned path are not implemented.

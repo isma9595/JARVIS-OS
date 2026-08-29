@@ -1,13 +1,14 @@
 # JARVIS-OS Checkpoint
 
-- Published baseline: TASK-127 - Real AI Conversation Vertical Slice
+- Published baseline: TASK-128 - Chat-First Desktop UX v1
 - Baseline commit:
-  `435f66041149226840481efbb7728ceb4b7324a1`
+  `612426d3e3aaed593c29ef16862a1ef6f1cf44f4`
 - Baseline tree:
-  `3e2022167d5de714128a60eb62d33c35e0b31f0a`
-- Completed in the unstaged worktree: TASK-128 - Chat-First Desktop UX v1.
-  Audit remediation and the single post-audit full acceptance passed.
-- Next runtime task: TASK-129 - Document Intake v1.
+  `a2133d563993b1e88b9e3a7c6d27de86f3bf259b`
+- Completed in the unstaged worktree: TASK-129 - Agentic Project Rebaseline &
+  Legacy Freeze. This documentation/liveness-audit rebaseline changes no
+  runtime.
+- Next implementation task after TASK-129: TASK-130 - Golden Agent Evals v1.
 - Published TASK-123 full pytest:
   `2476 passed, 2 skipped in 9.23s`
 - Validation history: the initial gate was
@@ -89,6 +90,15 @@
   related regression `427 passed in 8.35s`; compileall exit code `0`; safe
   non-GUI remediation smoke passed. Single post-audit full acceptance:
   `2707 passed, 4 skipped in 14.35s`.
+- TASK-129 establishes `docs/AGENTIC_ROADMAP_V1.md` as the strategic roadmap
+  and replaces only the old unimplemented TASK-129+ sequence. Literal route,
+  passthrough-table, and deterministic phrase-grammar growth are frozen as
+  compatibility layers. The liveness audit found no placeholder that met the
+  complete no-runtime/test/docs/migration/package/compatibility deletion bar;
+  no production file was removed. Roadmap structure checks passed; focused
+  architecture regression `32 passed in 0.92s`; the single full repository
+  acceptance passed with `2707 passed, 4 skipped in 22.04s`; `git diff
+  --check` exited `0` with only ordinary potential LF-to-CRLF warnings.
 
 ## Approved Workflow
 

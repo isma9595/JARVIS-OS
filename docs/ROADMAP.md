@@ -1,10 +1,9 @@
 # JARVIS Roadmap
 
-Status: verified code baseline through TASK-121; future sequence realigned by
-TASK-122. This roadmap begins after the completed execution/workflow platform
-milestone and the TASK-112 cognitive architecture report. It records completed
-TASK-113 through TASK-121 history and defines the current product sequence from
-TASK-122 onward.
+Status: verified and published implementation history through TASK-128; the
+normative future sequence is rebaselined by TASK-129 around the approved
+full-personal-agent product goal. This roadmap preserves completed TASK-113
+through TASK-128 history and defines one future sequence from TASK-129 onward.
 
 Task numbering note: repository evidence shows no `.ai/tasks/TASK-111*.md`
 record and no separate TASK-111 implementation commit in the reviewed history.
@@ -12,9 +11,10 @@ TASK-111 is treated as a completed read-only architecture audit or planning
 checkpoint without its own task file. This roadmap does not invent
 implementation work for TASK-111.
 
-The sequence is intentionally small. Do not combine architecture, persistence,
-provider behavior, UI, and execution changes in a single task unless a later
-approved task explicitly changes this rule.
+The detailed architecture principles and progress gates for the new sequence are
+recorded in `docs/AGENTIC_ROADMAP_V1.md`. Future capability work must preserve
+existing policy, confirmation, cancellation, idempotency, workflow, execution,
+persistence, provider-privacy, and application-facade ownership.
 
 ## Milestone 1: Conversational Core
 
@@ -376,8 +376,8 @@ reproducible environment are complete.
   safe.
 - Explicit non-goals: broad visual redesign, hidden automation, or direct
   Desktop imports of cognition/provider internals.
-- Implementation status: completed and audit-remediated in the unstaged
-  worktree on published TASK-127 commit `435f660`. AppService now
+- Implementation status: completed, audit-remediated, and published at commit
+  `612426d3e3aaed593c29ef16862a1ef6f1cf44f4`. AppService
   projects path-free chat session/response/retry/persistence state; Desktop
   presents a chat-first input/response/status flow and explicit eligible retry
   through the existing single worker without acquiring cognition, provider,
@@ -392,187 +392,212 @@ reproducible environment are complete.
   above is historical; the single post-audit full acceptance passed with
   `2707 passed, 4 skipped in 14.35s`.
 
-### TASK-129 - Document Intake v1
+## Stage A - Agentic Rebaseline And Measurement
 
-- Purpose: accept bounded approved documents through the filesystem adapter and
-  make their extracted content available to a visible user-requested workflow.
-- Main risk: reading unrelated/private files, unbounded content, or treating
-  document text as executable instructions.
-- Dependencies: TASK-124 through TASK-128.
-- Completion criteria: supported files are selected explicitly, bounded,
-  provenance-labelled, and processed without source mutation or hidden network
-  access.
-- Explicit non-goals: recursive drive indexing, arbitrary format support, or
-  automatic document actions.
+### TASK-129 - Agentic Project Rebaseline & Legacy Freeze - Completed
 
-### TASK-130 - Official Drafting Workflow
+- Purpose: make the approved full-personal-agent direction normative, replace
+  only the old unimplemented TASK-129+ sequence, freeze literal-route growth,
+  and classify legacy scaffolding without changing runtime behavior.
+- Baseline: published TASK-128 commit
+  `612426d3e3aaed593c29ef16862a1ef6f1cf44f4`.
+- Implementation boundary: documentation and liveness audit only; no Agent
+  Runtime, tools, planner, provider, memory, execution, or workflow changes.
+- Liveness result: no file met the complete safe-deletion standard; empty
+  unreferenced legacy placeholders remain delete-candidates, not removals.
+- Completion criteria: one normative future sequence, TASK-130 next, completed
+  history preserved, architecture ownership unchanged, validation green.
+- Validation: roadmap structure check passed; focused architecture regression
+  `32 passed in 0.92s`; single full acceptance
+  `2707 passed, 4 skipped in 22.04s`; `git diff --check` exit code `0`.
 
-- Purpose: provide a reviewable workflow for drafting official text from
-  user-approved context and sources.
-- Main risk: fabricated facts, hidden transmission, or overwriting source
-  documents.
-- Dependencies: TASK-127 through TASK-129.
-- Completion criteria: drafts retain source/provenance context, require user
-  review, save only through approved filesystem behavior, and are never sent
-  automatically.
-- Explicit non-goals: email sending, e-signature, filing, or autonomous
-  submission.
+### TASK-130 - Golden Agent Evals v1
 
-### TASK-131 - Spreadsheet and Registry Reports
+- Purpose: establish 25-30 representative goal-level evals and metrics for task
+  success, tool choice, safety, recovery, duplicate effects, budgets, context,
+  and verification.
+- Main risk: optimizing architecture without measurable user-goal outcomes.
+- Dependencies: TASK-129.
+- Completion criteria: critical safety cases fail closed and future runtime work
+  has a repeatable behavioral baseline.
+- Explicit non-goals: Agent Runtime or new tool implementation.
 
-- Purpose: produce bounded, reviewable spreadsheet/registry-style reports from
-  explicitly supplied local data.
-- Main risk: formula injection, malformed data, silent overwrite, or inaccurate
-  aggregation.
-- Dependencies: TASK-129 and TASK-130.
-- Completion criteria: inputs and output destination are explicit, generated
-  artifacts are validated, sources are preserved, and no external transmission
-  occurs.
-- Explicit non-goals: live enterprise-system integration or unattended report
-  distribution.
+## Stage B - JARVIS Agent Runtime Foundation
 
-## Stage III - Memory And Knowledge
+### TASK-131 - Unified Tool Contract & Tool Registry v1
 
-### TASK-132 - MemoryService Read Adapter
+- Purpose: define one structured tool contract and registry covering schema,
+  capability, side effects, risk, confirmation, reversibility, idempotency,
+  data/network scope, budgets, and provenance.
+- Boundary: adapt existing deterministic capabilities; do not create a second
+  execution or workflow system.
 
-- Purpose: expose existing memory through bounded cognitive read/recall
-  contracts while preserving one storage owner and provenance.
-- Main risk: creating a second memory store or exposing secret/private values.
-- Dependencies: TASK-127 and the TASK-121 `MemoryPolicy` contract.
-- Completion criteria: approved reads use existing records, fail safely when
-  unavailable, preserve provenance, and do not give `MemoryPolicy` storage
-  ownership.
-- Explicit non-goals: memory writes, inferred candidates, or command migration.
+### TASK-132 - Structured Capabilities, Scoped Permissions & Trust v1
 
-### TASK-133 - Memory Command Migration
+- Purpose: evolve existing policy capabilities into structured, scoped
+  permissions for agent runs.
+- Boundary: natural-language phrases never grant tool permission.
 
-- Purpose: route explicit remember, recall, list, forget, and forget-all flows
-  through the cognitive memory service without changing visible safety.
-- Main risk: breaking preview/execute parity, confirmation, idempotency, or
-  current storage compatibility.
-- Dependencies: TASK-132.
-- Completion criteria: existing commands retain behavior and metadata through
-  the new service boundary, and destructive forgetting still requires the
-  established confirmation path.
-- Explicit non-goals: inferred writes or automatic fact extraction.
+### TASK-133 - Durable Agent Run Model & Repository
 
-### TASK-134 - Memory Candidates and Approval
+- Purpose: add a durable higher-level AgentRun owner for goals, criteria,
+  plans, observations, linked operations, artifacts, approvals, budgets, and
+  checkpoints.
+- Boundary: `ExecutionJournal` remains the low-level operation journal.
 
-- Purpose: represent inferred personal-memory writes as bounded candidates that
-  require `MemoryPolicy` evaluation and explicit approval.
-- Main risk: silently persisting inferred or secret personal data.
-- Dependencies: TASK-133.
-- Completion criteria: candidates expire safely, secrets are rejected,
-  approval is explicit and target-bound, and no inferred fact persists before
-  approval.
-- Explicit non-goals: autonomous profile building or provider-owned memory.
+### TASK-134 - Single-Agent Runtime Loop v1
 
-### TASK-135 - Local Knowledge Workspace
+- Purpose: implement one bounded `goal -> plan -> tool -> policy -> act ->
+  observe` cycle through existing safety and execution owners.
+- Boundary: no multi-agent behavior and no executable tool-output instructions.
 
-- Purpose: retrieve from explicitly approved local documents and memory
-  summaries with source, timestamp, freshness, and confidence metadata.
-- Main risk: scanning unrelated files or treating retrieval as authoritative
-  truth.
-- Dependencies: TASK-129, TASK-132, and TASK-134.
-- Completion criteria: source boundaries are explicit, retrieval is local and
-  provenance-bearing, stale/unavailable sources are visible, and no duplicate
-  durable memory store is created.
-- Explicit non-goals: whole-disk indexing, embeddings by default, or hidden
-  network access.
+### TASK-135 - Planner v2: Short-Horizon Goal Planning
 
-### TASK-136 - External Research Gate
+- Purpose: add model-assisted next-step planning over registered tools while
+  keeping the deterministic planner as a compatibility path.
+- Boundary: planning never grants execution permission.
 
-- Purpose: add an explicit permission, privacy, and network gate for
-  user-requested external research.
-- Main risk: hidden network access, private-context disclosure, or unsourced
-  answers.
-- Dependencies: TASK-127, TASK-135, and existing provider/privacy gates.
-- Completion criteria: each external research action is explicit, scoped,
-  observable, and provenance-bearing; denial or provider failure is safe.
-- Explicit non-goals: background browsing, automatic research, or direct
-  execution from retrieved content.
+### TASK-136 - Verifier, Replanner & Runtime Budgets
 
-## Stage IV - Long-Task Reliability
+- Purpose: separate goal verification from tool success, add bounded replanning,
+  and enforce step/call/retry/token/cost/runtime budgets.
+- Completion criteria: the first full plan/act/observe/verify/replan loop is
+  measurable by Golden Agent Evals.
 
-### TASK-137 - Durable Operation and Workflow Summaries
+### TASK-137 - Context Manager & Provenance v1
 
-- Purpose: persist bounded safe summaries and linkage for operations and
-  workflows without duplicating execution authority.
-- Main risk: claiming recoverability from incomplete summaries or persisting
-  sensitive arguments.
-- Dependencies: TASK-124 through TASK-126 and proven daily workflows.
-- Completion criteria: durable summaries have stable identity, safe metadata,
-  explicit terminal/interrupted states, and remain projections rather than
-  execution owners.
-- Explicit non-goals: automatic replay, unattended automation, or persistence
-  of raw secrets.
+- Purpose: select high-signal context just in time and label system, user,
+  memory, tool, and external/untrusted sources.
+- Boundary: external content remains data and never gains instruction authority.
 
-### TASK-138 - Restart Recovery
+## Stage C - Real Autonomous User Value
 
-- Purpose: define and implement safe recovery decisions for interrupted
-  operations/workflows after restart.
-- Main risk: duplicate side effects, stale approvals, or resuming an
-  incompatible workflow.
-- Dependencies: TASK-137.
-- Completion criteria: recovery distinguishes resume, restart, revise, and
-  abandon; user approval and idempotency are preserved; unsafe recovery fails
-  closed.
-- Explicit non-goals: universal process checkpointing or automatic resume of
-  risky actions.
+### TASK-138 - Artifact Registry & Safe Workspace
 
-### TASK-139 - Routing Consolidation
+- Purpose: give generated/received artifacts stable identity, provenance,
+  version/location, creator run, and input/output relationships.
 
-- Purpose: consolidate remaining user-facing routes behind the established
-  AppService cognitive and execution boundaries after durable recovery exists.
-- Main risk: changing legacy behavior or creating a second authorization path.
-- Dependencies: TASK-127, TASK-133, and TASK-138.
-- Completion criteria: supported Desktop/CLI routes have explicit semantic
-  ownership, compatibility paths remain covered, and safety/confirmation/
-  cancellation/idempotency invariants are unchanged.
-- Explicit non-goals: deleting provider adapters/tests or enabling autonomous
-  execution.
+### TASK-139 - File & Document Agent Vertical Slice
 
-Automation is not scheduled before TASK-137 and TASK-138 establish durable
-operation and recovery semantics.
+- Purpose: complete bounded multi-step work over explicitly approved documents
+  with provenance, injection resistance, safe artifacts, and final verification.
 
-## Stage V - Expansion After Proven Daily Value
+### TASK-140 - Spreadsheet & Registry Agent
 
-The exact architecture of TASK-140 through TASK-144 is not yet approved. These
-entries constrain intent and order only.
+- Purpose: inspect and transform approved structured data while preserving
+  sources, validating outputs, and preventing formula injection/overwrite.
 
-### TASK-140 - Voice Dictation and Accessibility
+### TASK-141 - Official Drafting Agent
 
-High-level scope: improve explicit voice dictation and accessibility after the
-chat-first workflows are stable. Always-on microphone listening and hidden
-execution remain out of scope.
+- Purpose: create sourced, reviewable official/business draft artifacts without
+  automatic transmission, signing, or submission.
 
-### TASK-141 - Email and Calendar Connectors
+### TASK-142 - External Research Agent
 
-High-level scope: add explicit connector boundaries for reading and drafting.
-Sending email and creating calendar events must remain separate, visible,
-individually confirmed actions.
+- Purpose: perform explicitly scoped web research with visible network use,
+  source provenance/freshness, privacy gates, and untrusted-content handling.
 
-### TASK-142 - Reminders and Scheduled Tasks
+### TASK-143 - MCP Adapter & Dynamic Tool Discovery
 
-High-level scope: add user-created reminders and scheduled proposals only after
-durable operation/recovery exists. Scheduling must not become execution
-authority.
+- Purpose: discover a bounded tool shortlist by capability and support external
+  tool ecosystems without building a proprietary MCP replacement.
 
-### TASK-143 - Opt-In Proactive Suggestions
+### TASK-144 - Pause, Resume & Restart Recovery
 
-High-level scope: consent-bound suggestions with dismiss/snooze controls.
-Proactive behavior is disabled by default and never executes hidden actions.
+- Purpose: recover durable AgentRuns using explicit resume/restart/revise/
+  abandon decisions while preserving approvals, idempotency, and budgets.
+- Boundary: risky interrupted steps are never automatically replayed.
 
-### TASK-144 - Installer, Upgrade, Backup and Release Audit
+### TASK-145 - JARVIS Agentic Runtime v1 Acceptance
 
-High-level scope: package the proven product, define safe upgrade/backup
-behavior, and perform the full audit required before public release or other
-dangerous external capabilities.
+- Purpose: use Golden Agent Evals to prove safe completion of meaningful
+  multi-step user goals.
+- Milestone: **JARVIS Agentic Runtime v1**.
 
-## Deferred Backlog
+## Stage D - Memory, Knowledge And Intelligence Routing
 
-Goal services, cognitive planning, plan approval models, and other earlier
-planning concepts remain valid design ideas but are intentionally unnumbered
-until completed user scenarios demonstrate their requirements. Provider
-adapters and tests are retained. Complex multi-provider consensus remains a
-secondary option, not a near-term milestone.
+### TASK-146 - MemoryService Read + Agent Context
+
+- Purpose: expose existing memory through bounded, provenance-bearing reads
+  without creating a second memory store.
+
+### TASK-147 - Explicit Memory Command Migration
+
+- Purpose: migrate explicit remember/recall/list/forget flows while preserving
+  preview/execute parity, confirmation, and storage compatibility.
+
+### TASK-148 - Memory Candidates & Approval
+
+- Purpose: permit inferred facts only as expiring `MemoryPolicy` candidates;
+  persist nothing inferred before explicit approval.
+
+### TASK-149 - Personal Knowledge Workspace
+
+- Purpose: retrieve from approved documents, artifacts, and safe memory
+  summaries with provenance and freshness; no whole-disk indexing by default.
+
+### TASK-150 - Model Capability Router
+
+- Purpose: select replaceable GPT, Gemini, Groq, local, or future models by
+  capability and policy beneath JARVIS-owned orchestration.
+
+## Stage E - Deep Environment Integration
+
+### TASK-151 - Windows Computer Tools v1
+
+- Purpose: add bounded, permission-scoped local computer tools for approved
+  file, application, and system interactions, preferring structured APIs over
+  unconstrained GUI automation.
+
+### TASK-152 - Browser Interaction v1
+
+- Purpose: add explicit browser interaction with provenance, domain/permission
+  limits, and strong prompt-injection boundaries.
+
+### TASK-153 - Email & Calendar Connectors
+
+- Purpose: read and draft first; send/create/update actions remain separate,
+  policy-gated, and visibly confirmed.
+
+### TASK-154 - Voice Agent v2
+
+- Purpose: unify voice goals with Agent Runtime and conversation/run state
+  without creating a weaker execution authorization path.
+
+### TASK-155 - Durable Scheduled Tasks
+
+- Purpose: add user-created schedules only after durable AgentRun/recovery
+  semantics exist; scheduling never becomes independent execution authority.
+
+### TASK-156 - Opt-In Proactive Agent
+
+- Purpose: add consent-bound suggestions and monitoring with dismiss, snooze,
+  and disable controls; hidden consequential actions remain prohibited.
+
+### TASK-157 - Multi-Agent, Only If Evals Prove Benefit
+
+- Purpose: permit specialist subagents only when Golden Evals demonstrate a
+  measurable reliability benefit that justifies complexity and cost.
+
+### TASK-158 - Installer, Backup, Upgrade & Security Audit
+
+- Purpose: package the proven system and define safe backup, migration,
+  recovery, security, and permission behavior before broader release.
+
+### TASK-159 - JARVIS Personal Agent v1 Stabilization
+
+- Purpose: stabilize the accepted runtime, tools, memory, recovery,
+  integrations, packaging, and Golden Agent Task results without scope growth.
+
+### TASK-160 - JARVIS Personal Agent v1 Release
+
+- Purpose: release the first serious personal-agent product line only after all
+  stabilization and acceptance gates pass.
+
+## Progress Gate
+
+From TASK-130 onward, each task must measurably improve a Golden Agent Task,
+enable a named Golden Agent Task, remove a demonstrated safety/reliability
+bottleneck, or reduce legacy complexity without breaking behavior. New
+abstractions are not milestones by themselves. Multi-agent work remains deferred
+until evals prove benefit, and literal-route growth remains frozen.

@@ -1,6 +1,7 @@
 # JARVIS OS Architecture
 
-Status: TASK-128 implementation on the published TASK-127 baseline.
+Status: published TASK-128 runtime baseline with the completed TASK-129 agentic
+documentation rebaseline. TASK-129 changes no runtime ownership or behavior.
 
 JARVIS OS is currently a Windows-first assistant application. It includes a CLI,
 a Tkinter Desktop Shell prototype, an AppService boundary for application
@@ -174,6 +175,21 @@ decision rather than formatted refusal text. Unknown session ids are omitted
 from the path-free DTO, and clearing Desktop output refreshes idle/no-retry
 status through the AppService read contract.
 
+TASK-129 sets the future product direction without adding runtime components.
+JARVIS is to become a goal-driven, tool-using, verifiable, resumable,
+model-independent personal AI agent. Models remain replaceable reasoning
+engines; JARVIS retains context, policy, execution, provenance, persistence,
+memory, and verification ownership. The normative future sequence is defined in
+`docs/AGENTIC_ROADMAP_V1.md` and starts with TASK-130 Golden Agent Evals v1.
+
+Legacy compatibility is explicitly frozen: new user capabilities must not be
+implemented primarily by expanding `CommandProcessor` literal phrase routing,
+`CommandResolutionService` passthrough tables, or deterministic
+`MultiStepPlanner` phrase grammar. Existing routes remain operational and
+covered. Future Agent Runtime and Tool Registry work must orchestrate the
+current AppService, policy, execution, workflow, persistence, cognition, and
+provider gates rather than duplicate or bypass them.
+
 TASK-124 adds a Desktop-only scheduling and shutdown boundary. Typed turns,
 one-shot voice requests, and workflow resume GUI handlers submit to one lazy,
 serialized, non-daemon worker and receive completion through main-thread Tk
@@ -235,7 +251,10 @@ Implemented primary conversation boundary:
 
 Planned:
 
-- chat-first Desktop UX and the later product stages in `docs/ROADMAP.md`.
+- TASK-130 Golden Agent Evals v1, followed only later by the Agent Runtime,
+  tools, permissions, durable runs, planner/verifier, context, artifacts, and
+  environment-integration stages in `docs/ROADMAP.md` and
+  `docs/AGENTIC_ROADMAP_V1.md`.
 
 ## Preview Versus Execution
 
